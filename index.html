@@ -34,10 +34,12 @@
   #rally .item b { display: block; font-size: 26px; color: #e6edf3; font-variant-numeric: tabular-nums; }
 
   /* ===== タイマー ===== */
-  #timerRow { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 14px; color: #8b949e; }
+  #timerRow { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; font-size: 14px; color: #8b949e; }
   #timerRow input { width: 56px; font-size: 15px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right; }
-  #timerBtn { background: #21262d; color: #e6edf3; font-size: 14px; padding: 8px 16px; }
+  #timerRow select { font-size: 15px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; }
+  #timerBtn, #restBtn, #resetBtn { font-size: 14px; padding: 8px 16px; background: #21262d; color: #e6edf3; }
   #timerBtn.running { background: #9e6a03; color: #fff; }
+  #restBtn.running { background: #1f6feb; color: #fff; }
   #timerDisp { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: #e6edf3; min-width: 70px; }
   #setSummary {
     max-width: 360px; margin: 8px auto; background: #161b22; border: 1px solid #30363d;
@@ -108,6 +110,9 @@
   #hudRec { background: rgba(0,0,0,.5); color: #ff6b6b; border: 1px solid #ff6b6b; }
   #hudRec.running { background: #da3633; color: #fff; border-color: #da3633; }
   #hudTimer { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #8b949e; }
+  #hudRest { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #58a6ff; }
+  #hudRest.running { background: #1f6feb; border-color: #1f6feb; }
+  #hudReset { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #8b949e; }
 </style>
 </head>
 <body>
@@ -130,8 +135,15 @@
   </div>
 
   <div id="timerRow">
+    <select id="rule">
+      <option value="free">フリー</option>
+      <option value="classic">クラシック</option>
+      <option value="top">トップ</option>
+    </select>
     <input type="number" id="timerMin" value="5" step="1" min="1"> 分
-    <button id="timerBtn">タイマー開始</button>
+    <button id="timerBtn">開始</button>
+    <button id="restBtn" hidden>タイム</button>
+    <button id="resetBtn">リセット</button>
     <span id="timerDisp">--:--</span>
   </div>
 
@@ -157,6 +169,8 @@
     <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
     <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
+    <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
+    <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
     <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
     <div class="note">
@@ -192,7 +206,9 @@
     <div id="hudBottom">
       <button id="hudStart">計測開始</button>
       <button id="hudRec">● REC</button>
-      <button id="hudTimer">⏱ タイマー</button>
+      <button id="hudTimer">⏱ 開始</button>
+      <button id="hudRest" hidden>タイム</button>
+      <button id="hudReset">リセット</button>
     </div>
   </div>
 </div>
@@ -346,6 +362,7 @@ function onHit(t) {
     if (rally.now > setStats.maxRally) setStats.maxRally = rally.now;
   }
   lastOnset = t; lastHitTime = t; onsetIndex++;
+  lastHitWall = performance.now(); // トップ・ラリー継続判定用（実時間）
 }
 
 function showSpeed(v0, vAvg, dt) {
@@ -423,41 +440,91 @@ $("beepTest").addEventListener("click", () => {
   [50, 55, 60].forEach((t, i) => setTimeout(() => beep(t), i * 400));
 });
 
-// ===== タイマー（5分カウントダウン＋セットサマリー） =====
-let timerActive = false, timerEndMs = 0, timerInterval = null;
+// ===== ゲーム（フリー / クラシック / トップ）＋休憩(タイム)＋セットサマリー =====
+let timerActive = false;            // ゲーム進行中（HUD・録画から参照）
+let mainRemain = 0, restActive = false, restRemain = 0, restUsed = 0;
+let gameInterval = null, lastTickMs = 0, lastHitWall = 0;
+
 function fmtTime(sec) {
   sec = Math.max(0, Math.ceil(sec));
   const m = Math.floor(sec / 60), s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
-function startTimer() {
-  if (timerActive) { endTimer(false); return; }
-  const min = Math.max(1, parseFloat($("timerMin").value) || 5);
-  timerEndMs = performance.now() + min * 60000;
+function ruleVal() { return $("rule").value; }
+function rallyActiveNow() {
+  if (rally.now < 1) return false;
+  const gap = parseFloat($("rallyGap").value) || 2.5;
+  return (performance.now() - lastHitWall) < gap * 1000;
+}
+function updateRestVisibility() {
+  const show = ruleVal() !== "free";
+  $("restBtn").hidden = !show;
+  $("hudRest").hidden = !show;
+}
+function flashSub(msg) { hudState.sub = msg; $("hSub").textContent = msg; statusEl.textContent = msg; }
+
+function startGame() {
+  if (timerActive) { endGame(false); return; }
+  const min = Math.max(0.1, parseFloat($("timerMin").value) || 5);
+  mainRemain = min * 60;
+  restActive = false; restRemain = 0; restUsed = 0;
   timerActive = true;
   setStats.active = true; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
   $("setSummary").hidden = true;
   $("timerBtn").textContent = "ストップ"; $("timerBtn").classList.add("running");
   $("hudTimerDisp").classList.add("show");
-  $("timerDisp").textContent = fmtTime(min * 60);
+  lastTickMs = performance.now();
   if (ctx) tone(660, 0.12, ctx.currentTime);
-  tickTimer();
-  timerInterval = setInterval(tickTimer, 250);
-  log(`タイマー開始（${min}分）`);
+  renderTimer();
+  gameInterval = setInterval(gameTick, 200);
+  log(`ゲーム開始（${ruleVal()} / ${min}分）`);
 }
-function tickTimer() {
-  const remain = (timerEndMs - performance.now()) / 1000;
-  const txt = fmtTime(remain);
+function takeRest() {
+  if (!timerActive || restActive) return;
+  if (ruleVal() === "classic") {
+    const lim = parseInt($("classicTimeouts").value); // 0=無制限
+    if (lim > 0 && restUsed >= lim) { flashSub(`タイムは${lim}回まで`); return; }
+  }
+  restUsed++;
+  restRemain = (parseFloat($("restMin").value) || 1) * 60;
+  restActive = true;
+  if (ctx) tone(520, 0.15, ctx.currentTime);
+  log(`タイム（休憩）${restUsed}回目`);
+  renderTimer();
+}
+function gameTick() {
+  const now = performance.now();
+  let dt = (now - lastTickMs) / 1000; lastTickMs = now;
+  if (dt > 1) dt = 1; // バックグラウンド復帰時の暴走防止
+  if (restActive) {
+    restRemain -= dt;
+    if (restRemain <= 0) { restActive = false; if (ctx) tone(660, 0.15, ctx.currentTime); }
+  } else {
+    const tick = (ruleVal() === "top") ? rallyActiveNow() : true; // トップは実プレー中のみ進む
+    if (tick) mainRemain -= dt;
+  }
+  renderTimer();
+  if (mainRemain <= 0) endGame(true);
+}
+function renderTimer() {
+  let txt;
+  if (restActive) txt = "休憩 " + fmtTime(restRemain);
+  else {
+    const paused = (ruleVal() === "top") && !rallyActiveNow();
+    txt = fmtTime(mainRemain) + (paused ? " ⏸" : "");
+  }
   $("timerDisp").textContent = txt;
   $("hudTimerDisp").textContent = txt;
-  if (remain <= 0) endTimer(true);
+  $("restBtn").classList.toggle("running", restActive);
+  $("hudRest").classList.toggle("running", restActive);
 }
-function endTimer(reachedZero) {
-  timerActive = false; setStats.active = false;
-  clearInterval(timerInterval); timerInterval = null;
-  $("timerBtn").textContent = "タイマー開始"; $("timerBtn").classList.remove("running");
+function endGame(reachedZero) {
+  timerActive = false; restActive = false; setStats.active = false;
+  clearInterval(gameInterval); gameInterval = null;
+  $("timerBtn").textContent = "開始"; $("timerBtn").classList.remove("running");
   $("hudTimerDisp").classList.remove("show");
   $("timerDisp").textContent = "--:--";
+  $("restBtn").classList.remove("running"); $("hudRest").classList.remove("running");
   if (reachedZero && ctx) {
     const t0 = ctx.currentTime;
     tone(880, 0.2, t0); tone(880, 0.2, t0 + 0.28); tone(1175, 0.4, t0 + 0.56);
@@ -475,8 +542,32 @@ function showSetSummary(reachedZero) {
   hudState.sub = `セット: 最高${setStats.maxSpeed.toFixed(1)} / 最長${setStats.maxRally} / 打${setStats.hits}`;
   $("hSub").textContent = hudState.sub;
 }
-$("timerBtn").addEventListener("click", startTimer);
-$("hudTimer").addEventListener("click", startTimer);
+
+// ===== リセット（カウンタ・タイマー初期化／マイク計測は維持） =====
+function resetAll() {
+  if (timerActive || restActive) endGame(false);
+  rally.now = rally.max = rally.total = 0;
+  for (const th of THRESHOLDS) counts[th] = 0;
+  setStats.active = false; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
+  lastOnset = null; lastHitTime = null; onsetIndex = 0;
+  hudState.speed = "--"; hudState.sub = "リセットしました";
+  renderCounts(); renderRally();
+  speedEl.innerHTML = `--<small> km/h</small>`;
+  avgEl.textContent = "初速換算（平均速×係数） / 平均速: --";
+  $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
+  $("setSummary").hidden = true;
+  statusEl.textContent = "リセットしました（計測は継続）";
+  log("リセット（カウンタ初期化）");
+}
+
+$("rule").addEventListener("change", updateRestVisibility);
+$("timerBtn").addEventListener("click", startGame);
+$("hudTimer").addEventListener("click", startGame);
+$("restBtn").addEventListener("click", takeRest);
+$("hudRest").addEventListener("click", takeRest);
+$("resetBtn").addEventListener("click", resetAll);
+$("hudReset").addEventListener("click", resetAll);
+updateRestVisibility();
 
 // ===== モード切替 =====
 let camStream = null;
