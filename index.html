@@ -4,75 +4,136 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#120A2E">
 <title>フレスコボール球速メーター（プロトタイプ）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Saira:wght@500;600;700;800&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, "Hiragino Sans", sans-serif;
-    background: #0d1117; color: #e6edf3;
-    min-height: 100vh; padding: 16px; text-align: center;
-    overflow-x: hidden;
+  :root {
+    color-scheme: dark;
+    /* DINはiOS標準搭載。PCはOswald/Sairaへフォールバック */
+    --num: "DIN Condensed", "Oswald", "Saira Condensed", sans-serif;
+    --ui:  "DIN Alternate", "Saira", -apple-system, "Hiragino Sans", sans-serif;
+    --pink:#FF2E7E; --orange:#FF7A18; --yellow:#FFD23F;
+    --aqua:#16E6C3; --blue:#2EC5FF; --purple:#9B5CFF;
+    --ink:#FFFFFF; --muted: rgba(234,240,255,.62);
+    --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.13);
+    --grad-hot:  linear-gradient(135deg,#FF2E7E 0%, #FF7A18 60%, #FFD23F 100%);
+    --grad-cool: linear-gradient(135deg,#16E6C3 0%, #2EC5FF 100%);
   }
-  h1 { font-size: 15px; color: #8b949e; font-weight: 600; margin-bottom: 10px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: var(--ui); color: var(--ink);
+    min-height: 100vh; padding: 18px 16px 44px; text-align: center; overflow-x: hidden;
+    background:
+      radial-gradient(900px 460px at 12% -8%, rgba(255,46,126,.30), transparent 60%),
+      radial-gradient(820px 420px at 100% 4%, rgba(22,230,195,.22), transparent 58%),
+      radial-gradient(700px 520px at 50% 120%, rgba(155,92,255,.30), transparent 60%),
+      linear-gradient(165deg,#120A2E 0%, #1C0C3D 48%, #0C0A24 100%);
+    background-attachment: fixed;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+
+  /* ===== ブランドヘッダー ===== */
+  #brand { margin-bottom: 16px; }
+  #brand .tag {
+    display: inline-block; font-family: var(--num); font-weight: 700;
+    letter-spacing: .18em; font-size: 13px; padding: 5px 15px; border-radius: 999px;
+    color: #1A0633; background: var(--grad-hot); box-shadow: 0 6px 18px rgba(255,122,24,.4);
+  }
+  #brand h1 { font-family: var(--num); font-weight: 700; font-size: 32px; letter-spacing: .02em; margin: 9px 0 2px; }
+  #brand h1 .beta { color: var(--aqua); font-size: 17px; margin-left: 6px; vertical-align: super; }
+  #brand .bsub { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
 
   /* ===== モード切替タブ ===== */
-  #modeTabs { display: inline-flex; background: #161b22; border-radius: 10px; padding: 4px; margin-bottom: 12px; }
+  #modeTabs { display: inline-flex; background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 999px; padding: 5px; margin-bottom: 14px; }
   #modeTabs button {
-    font-size: 14px; font-weight: 700; border: none; border-radius: 7px;
-    padding: 8px 18px; margin: 0; background: transparent; color: #8b949e; cursor: pointer;
+    font-family: var(--num); font-size: 16px; font-weight: 700; letter-spacing: .06em;
+    border: none; border-radius: 999px; padding: 9px 22px; margin: 0; background: transparent; color: var(--muted); cursor: pointer;
   }
-  #modeTabs button.active { background: #21262d; color: #e6edf3; }
+  #modeTabs button.active { background: var(--grad-cool); color: #06231F; box-shadow: 0 6px 16px rgba(22,230,195,.35); }
 
-  #speed { font-size: 92px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; margin: 6px 0; }
-  #speed small { font-size: 22px; color: #8b949e; font-weight: 400; }
-  #avg { color: #8b949e; font-size: 13px; margin-bottom: 8px; }
-
-  /* ===== ラリー表示 ===== */
-  #rally { display: flex; justify-content: center; gap: 22px; margin: 4px 0 10px; }
-  #rally .item { font-size: 13px; color: #8b949e; }
-  #rally .item b { display: block; font-size: 26px; color: #e6edf3; font-variant-numeric: tabular-nums; }
-
-  /* ===== タイマー ===== */
-  #timerRow { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; font-size: 14px; color: #8b949e; }
-  #timerRow input { width: 56px; font-size: 15px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right; }
-  #timerRow select { font-size: 15px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; }
-  #timerBtn, #restBtn, #resetBtn { font-size: 14px; padding: 8px 16px; background: #21262d; color: #e6edf3; }
-  #timerBtn.running { background: #9e6a03; color: #fff; }
-  #restBtn.running { background: #1f6feb; color: #fff; }
-  #timerDisp { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: #e6edf3; min-width: 70px; }
-  #setSummary {
-    max-width: 360px; margin: 8px auto; background: #161b22; border: 1px solid #30363d;
-    border-radius: 10px; padding: 12px 16px; font-size: 14px; text-align: left;
+  /* ===== ヒーロー速度 ===== */
+  #speed {
+    font-family: var(--num); font-weight: 700; font-size: clamp(104px, 36vw, 176px);
+    line-height: .9; letter-spacing: -1px; margin: 2px 0 0;
+    background: linear-gradient(180deg,#FFFFFF 0%, #FFE08A 46%, #FF7A18 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 8px 28px rgba(255,122,24,.5));
   }
-  #setSummary h3 { font-size: 14px; color: #58a6ff; margin-bottom: 6px; }
-  #setSummary .row { display: flex; justify-content: space-between; padding: 3px 0; }
-  #setSummary .row b { font-size: 18px; font-variant-numeric: tabular-nums; }
+  #speed small { font-family: var(--ui); font-size: 22px; font-weight: 700; -webkit-text-fill-color: var(--aqua); color: var(--aqua); letter-spacing: .04em; }
+  #speed.pop { animation: pop .28s ease-out; }
+  @keyframes pop { 0%{transform:scale(1)} 32%{transform:scale(1.07)} 100%{transform:scale(1)} }
+  #avg { color: var(--muted); font-size: 12.5px; margin-top: 6px; letter-spacing: .02em; }
 
-  #status { font-size: 13px; color: #8b949e; min-height: 18px; margin: 6px 0; }
+  /* ===== ラリー（3スタッツカード） ===== */
+  #rally { display: flex; justify-content: center; gap: 10px; margin: 16px auto 8px; }
+  #rally .item {
+    flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 11px 6px 9px; font-size: 11px; color: var(--muted); letter-spacing: .05em;
+  }
+  #rally .item b { display: block; font-family: var(--num); font-weight: 700; font-size: 40px; line-height: 1; margin-top: 2px; }
+  #rally .item:nth-child(1) b { color: var(--aqua); }
+  #rally .item:nth-child(2) b { color: var(--yellow); }
+  #rally .item:nth-child(3) b { color: var(--pink); }
+
+  /* ===== タイマー行 ===== */
+  #timerRow { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; font-size: 14px; color: var(--muted); }
+  #timerRow input { width: 56px; }
+  #timerDisp { font-family: var(--num); font-size: 32px; font-weight: 700; color: var(--ink); min-width: 76px; letter-spacing: .02em; }
+
+  input, select {
+    font-family: var(--ui); font-size: 15px; background: rgba(255,255,255,.07); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px;
+  }
+  input { text-align: right; }
+  input:focus, select:focus { outline: none; border-color: var(--aqua); box-shadow: 0 0 0 3px rgba(22,230,195,.25); }
+
   button {
-    font-size: 18px; font-weight: 700; border: none; border-radius: 12px;
-    padding: 14px 28px; margin: 6px; cursor: pointer;
+    font-family: var(--ui); font-size: 16px; font-weight: 800; border: none; border-radius: 14px;
+    padding: 13px 24px; margin: 6px; cursor: pointer; color: var(--ink); letter-spacing: .02em;
+    transition: transform .06s ease;
   }
-  #startBtn { background: #238636; color: #fff; }
-  #startBtn.running { background: #da3633; }
-  #beepTest { background: #21262d; color: #e6edf3; font-size: 14px; padding: 10px 16px; }
-  table { margin: 12px auto; border-collapse: collapse; font-size: 15px; }
-  td, th { padding: 4px 14px; border-bottom: 1px solid #21262d; }
-  th { color: #8b949e; font-weight: 600; }
-  #log {
-    margin-top: 12px; max-height: 140px; overflow-y: auto; font-size: 13px;
-    color: #8b949e; text-align: left; background: #161b22;
-    border-radius: 8px; padding: 8px 12px;
+  button:active { transform: scale(.96); }
+  .ghost { background: rgba(255,255,255,.08); border: 1px solid var(--line); color: var(--ink); }
+  #timerBtn, #restBtn, #resetBtn { font-size: 14px; padding: 9px 16px; background: rgba(255,255,255,.08); border: 1px solid var(--line); }
+  #timerBtn.running { background: var(--grad-hot); color: #1A0633; border-color: transparent; }
+  #restBtn.running { background: var(--grad-cool); color: #06231F; border-color: transparent; }
+
+  #startBtn {
+    font-size: 19px; padding: 15px 34px;
+    background: var(--grad-cool); color: #06231F; box-shadow: 0 10px 26px rgba(22,230,195,.38);
   }
-  details { margin-top: 16px; text-align: left; max-width: 440px; margin-left: auto; margin-right: auto; }
-  summary { color: #8b949e; font-size: 14px; cursor: pointer; }
-  .setting { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
-  .setting input, .setting select {
-    width: 110px; font-size: 15px; background: #21262d; color: #e6edf3;
-    border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right;
+  #startBtn.running { background: var(--grad-hot); color: #1A0633; box-shadow: 0 10px 26px rgba(255,46,126,.42); }
+  #beepTest { background: rgba(255,255,255,.08); border: 1px solid var(--line); font-size: 14px; padding: 12px 18px; }
+
+  #setSummary {
+    max-width: 380px; margin: 12px auto; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 14px 18px; font-size: 14px; text-align: left; backdrop-filter: blur(6px);
   }
-  .note { font-size: 12px; color: #6e7681; margin-top: 10px; line-height: 1.6; text-align: left; }
+  #setSummary h3 { font-family: var(--num); font-size: 17px; letter-spacing: .04em; color: var(--yellow); margin-bottom: 8px; }
+  #setSummary .row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; color: var(--muted); }
+  #setSummary .row b { font-family: var(--num); font-size: 24px; color: var(--ink); }
+
+  #status { font-size: 13px; color: var(--muted); min-height: 18px; margin: 8px 0; }
+
+  /* ===== 閾値テーブル ===== */
+  table { width: 100%; max-width: 380px; margin: 16px auto; border-collapse: separate; border-spacing: 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  th { background: rgba(255,255,255,.07); color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; padding: 9px; font-weight: 700; }
+  td { padding: 7px 14px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  #counts td:nth-child(odd) { font-family: var(--num); font-size: 17px; color: var(--ink); }
+  #counts b { font-family: var(--num); font-weight: 700; font-size: 22px; color: var(--yellow); }
+
+  #log { margin-top: 14px; max-height: 140px; overflow-y: auto; font-size: 12.5px; color: var(--muted); text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  #log b { color: var(--yellow); font-family: var(--num); font-size: 15px; }
+
+  details { margin-top: 18px; text-align: left; max-width: 440px; margin-left: auto; margin-right: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; }
+  summary { color: var(--ink); font-family: var(--num); font-size: 16px; letter-spacing: .04em; cursor: pointer; padding: 10px 0; }
+  .setting { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 14px; color: var(--muted); }
+  .setting input, .setting select { width: 120px; }
+  .note { font-size: 12px; color: rgba(234,240,255,.5); margin: 8px 0 12px; line-height: 1.7; text-align: left; }
+  .note b { color: var(--aqua); }
 
   /* ===== カメラHUDモード ===== */
   #camWrap { position: fixed; inset: 0; z-index: 50; background: #000; display: none; }
@@ -82,41 +143,49 @@
   #hud {
     position: absolute; inset: 0; pointer-events: none;
     display: flex; flex-direction: column; justify-content: space-between;
-    padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px);
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
   }
   #hudTop { display: flex; justify-content: space-between; align-items: flex-start; }
   #hudLeft { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  #hudClose, .hudPill {
-    background: rgba(0,0,0,.45); color: #fff; border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(4px);
-  }
-  #hudClose { pointer-events: auto; font-size: 14px; }
-  #hudTimerDisp { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; display: none; }
+  #hudClose, .hudPill { background: rgba(8,6,24,.5); color: var(--ink); border-radius: 12px; padding: 10px 16px; backdrop-filter: blur(6px); border: 1px solid var(--line); }
+  #hudClose { pointer-events: auto; font-family: var(--num); font-size: 15px; letter-spacing: .04em; }
+  #hudTimerDisp { font-family: var(--num); font-size: 26px; font-weight: 700; display: none; color: var(--ink); }
   #hudTimerDisp.show { display: block; }
-  #hudRecDot { display: none; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #ff6b6b; }
+  #hudRecDot { display: none; align-items: center; gap: 7px; font-family: var(--num); font-size: 15px; font-weight: 700; letter-spacing: .1em; color: #FF5A6E; }
   #hudRecDot.show { display: flex; }
-  #hudRecDot .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff3b30; animation: blink 1s infinite; }
+  #hudRecDot .dot { width: 12px; height: 12px; border-radius: 50%; background: #FF3B30; animation: blink 1s infinite; }
   @keyframes blink { 50% { opacity: .25; } }
-  #hudRally { background: rgba(0,0,0,.45); border-radius: 12px; padding: 10px 16px; text-align: right; backdrop-filter: blur(4px); }
-  #hudRally .lbl { font-size: 11px; color: #c9d1d9; }
-  #hudRally .big { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  #hudSpeed { align-self: center; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,.85); }
-  #hudSpeed .v { font-size: 110px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
-  #hudSpeed .u { font-size: 28px; color: #c9d1d9; }
-  #hudSpeed .sub { font-size: 15px; color: #c9d1d9; margin-top: 6px; }
+  #hudRally { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 14px; padding: 10px 16px; text-align: right; backdrop-filter: blur(6px); }
+  #hudRally .lbl { font-size: 11px; color: var(--muted); letter-spacing: .05em; }
+  #hudRally .big { font-family: var(--num); font-size: 34px; font-weight: 700; color: var(--aqua); }
+  #hudSpeed { align-self: center; text-align: center; }
+  #hudSpeed.pop { animation: pop .28s ease-out; }
+  #hudSpeed .v {
+    font-family: var(--num); font-weight: 700; font-size: clamp(120px, 30vw, 168px); line-height: 1;
+    color: var(--yellow); text-shadow: 0 3px 22px rgba(0,0,0,.85), 0 0 30px rgba(255,210,63,.35);
+  }
+  #hudSpeed .u { font-family: var(--ui); font-weight: 700; font-size: 28px; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,.8); }
+  #hudSpeed .sub { font-size: 15px; color: #EAF0FF; margin-top: 6px; text-shadow: 0 2px 10px rgba(0,0,0,.85); }
   #hudBottom { align-self: stretch; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-  #hudBottom button { pointer-events: auto; border-radius: 24px; padding: 13px 22px; font-size: 16px; font-weight: 800; margin: 0; }
-  #hudStart { background: #238636; color: #fff; }
-  #hudStart.running { background: #da3633; }
-  #hudRec { background: rgba(0,0,0,.5); color: #ff6b6b; border: 1px solid #ff6b6b; }
-  #hudRec.running { background: #da3633; color: #fff; border-color: #da3633; }
-  #hudTimer { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #8b949e; }
-  #hudRest { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #58a6ff; }
-  #hudRest.running { background: #1f6feb; border-color: #1f6feb; }
-  #hudReset { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #8b949e; }
+  #hudBottom button { pointer-events: auto; border-radius: 999px; padding: 13px 20px; font-size: 15px; font-weight: 800; margin: 0; backdrop-filter: blur(6px); }
+  #hudStart { background: var(--grad-cool); color: #06231F; }
+  #hudStart.running { background: var(--grad-hot); color: #1A0633; }
+  #hudRec { background: rgba(8,6,24,.5); color: #FF6B8A; border: 1px solid #FF6B8A; }
+  #hudRec.running { background: var(--grad-hot); color: #fff; border-color: transparent; }
+  #hudTimer { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
+  #hudRest { background: rgba(8,6,24,.5); color: var(--blue); border: 1px solid var(--blue); }
+  #hudRest.running { background: var(--grad-cool); color: #06231F; border-color: transparent; }
+  #hudReset { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
 </style>
 </head>
 <body>
-<h1>フレスコボール球速メーター β（A方式: 打音間隔→初速換算）</h1>
+<div class="wrap">
+
+<header id="brand">
+  <span class="tag">FRESCOBALL · SPEED</span>
+  <h1>球速メーター<span class="beta">β</span></h1>
+  <span class="bsub">打音間隔 → 初速換算 ・ A方式</span>
+</header>
 
 <div id="modeTabs">
   <button id="tabNum" class="active">数値モード</button>
@@ -182,6 +251,7 @@
     </div>
   </details>
 </div>
+</div><!-- /.wrap -->
 
 <!-- ===== カメラHUDモード ===== -->
 <div id="camWrap">
@@ -365,13 +435,17 @@ function onHit(t) {
   lastHitWall = performance.now(); // トップ・ラリー継続判定用（実時間）
 }
 
+function popEl(el) { el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
+
 function showSpeed(v0, vAvg, dt) {
   hudState.speed = v0.toFixed(1);
   hudState.sub = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
+  popEl(speedEl);
   avgEl.textContent = `平均速 ${vAvg.toFixed(1)} km/h ／ 飛行時間 ${dt.toFixed(3)} s`;
   $("hV").textContent = hudState.speed;
   $("hSub").textContent = hudState.sub;
+  popEl($("hudSpeed"));
   if (setStats.active && v0 > setStats.maxSpeed) setStats.maxSpeed = v0;
   let tier = null;
   for (const th of THRESHOLDS) if (v0 >= th) { counts[th]++; tier = th; }
@@ -599,6 +673,8 @@ $("hudClose").addEventListener("click", exitCamera);
 // ===== 録画（HUD焼き込み） =====
 let recording = false, mediaRecorder = null, recChunks = [], recRAF = 0, recAudioStream = null;
 const canvas = $("recCanvas"), c2d = canvas.getContext("2d");
+const FNUM = '"DIN Condensed","Oswald",sans-serif';
+const FUI  = '"DIN Alternate","Saira",-apple-system,sans-serif';
 
 function pickMime() {
   const types = ["video/mp4;codecs=h264,aac", "video/mp4", "video/webm;codecs=vp8,opus", "video/webm"];
@@ -661,38 +737,38 @@ function drawRecFrame() {
   c2d.textBaseline = "top";
 
   // 右上：ラリー
-  c2d.font = `700 ${u * 0.7}px -apple-system, sans-serif`;
+  c2d.font = `700 ${u * 0.78}px ${FNUM}`;
   const rTxt = `ラリー ${rally.now}`, rSub = `最長 ${rally.max} / 総 ${rally.total}`;
   const boxW = Math.max(c2d.measureText(rTxt).width, c2d.measureText(rSub).width) + u;
-  c2d.fillStyle = "rgba(0,0,0,.45)"; roundRect(W - boxW - u * 0.6, u * 0.6, boxW, u * 2.2, u * 0.3); c2d.fill();
-  c2d.fillStyle = "#fff"; c2d.textAlign = "right";
-  c2d.fillText(rTxt, W - u, u * 0.9);
-  c2d.font = `400 ${u * 0.45}px -apple-system, sans-serif`;
-  c2d.fillStyle = "#c9d1d9"; c2d.fillText(rSub, W - u, u * 1.8);
+  c2d.fillStyle = "rgba(8,6,24,.5)"; roundRect(W - boxW - u * 0.6, u * 0.6, boxW, u * 2.3, u * 0.35); c2d.fill();
+  c2d.textAlign = "right";
+  c2d.fillStyle = "#16E6C3"; c2d.fillText(rTxt, W - u, u * 0.95);
+  c2d.font = `400 ${u * 0.45}px ${FUI}`;
+  c2d.fillStyle = "#EAF0FF"; c2d.fillText(rSub, W - u, u * 1.95);
 
   // 左上：タイマー＋REC
   c2d.textAlign = "left";
   let ty = u * 0.6;
   if (timerActive) {
-    c2d.font = `800 ${u * 0.8}px -apple-system, sans-serif`;
+    c2d.font = `700 ${u * 0.9}px ${FNUM}`;
     const tTxt = $("hudTimerDisp").textContent;
     const tw = c2d.measureText(tTxt).width + u;
-    c2d.fillStyle = "rgba(0,0,0,.45)"; roundRect(u * 0.6, ty, tw, u * 1.3, u * 0.3); c2d.fill();
-    c2d.fillStyle = "#fff"; c2d.fillText(tTxt, u, ty + u * 0.25);
-    ty += u * 1.6;
+    c2d.fillStyle = "rgba(8,6,24,.5)"; roundRect(u * 0.6, ty, tw, u * 1.35, u * 0.35); c2d.fill();
+    c2d.fillStyle = "#fff"; c2d.fillText(tTxt, u, ty + u * 0.22);
+    ty += u * 1.65;
   }
-  c2d.fillStyle = "#ff3b30"; c2d.beginPath(); c2d.arc(u * 1.1, ty + u * 0.55, u * 0.28, 0, Math.PI * 2); c2d.fill();
-  c2d.fillStyle = "#ff6b6b"; c2d.font = `700 ${u * 0.55}px -apple-system, sans-serif`;
-  c2d.fillText("REC", u * 1.6, ty + u * 0.25);
+  c2d.fillStyle = "#FF3B30"; c2d.beginPath(); c2d.arc(u * 1.1, ty + u * 0.55, u * 0.28, 0, Math.PI * 2); c2d.fill();
+  c2d.fillStyle = "#FF6B8A"; c2d.font = `700 ${u * 0.58}px ${FNUM}`;
+  c2d.fillText("REC", u * 1.6, ty + u * 0.22);
 
-  // 中央：速度
+  // 中央：速度（ビビッドイエロー＋強い影で映像上でも視認性確保）
   c2d.textAlign = "center";
-  c2d.shadowColor = "rgba(0,0,0,.85)"; c2d.shadowBlur = u * 0.5;
-  c2d.fillStyle = "#fff"; c2d.font = `900 ${u * 2.6}px -apple-system, sans-serif`;
-  c2d.fillText(hudState.speed, W / 2, H * 0.42);
-  c2d.font = `400 ${u * 0.7}px -apple-system, sans-serif`; c2d.fillStyle = "#c9d1d9";
-  c2d.fillText("km/h", W / 2, H * 0.42 + u * 2.7);
-  c2d.shadowBlur = 0;
+  c2d.shadowColor = "rgba(0,0,0,.9)"; c2d.shadowBlur = u * 0.7; c2d.shadowOffsetY = u * 0.06;
+  c2d.fillStyle = "#FFD23F"; c2d.font = `700 ${u * 3.0}px ${FNUM}`;
+  c2d.fillText(hudState.speed, W / 2, H * 0.40);
+  c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 0.8}px ${FUI}`;
+  c2d.fillText("km/h", W / 2, H * 0.40 + u * 3.0);
+  c2d.shadowBlur = 0; c2d.shadowOffsetY = 0;
 
   recRAF = requestAnimationFrame(drawRecFrame);
 }
