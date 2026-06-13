@@ -686,9 +686,14 @@ async function startRec() {
   const v = $("camVideo");
   if (!camStream || v.readyState < 2) { $("hSub").textContent = "カメラ準備中…もう一度"; return; }
 
-  // canvasサイズ（最大幅1280に縮小して負荷軽減）
-  let w = v.videoWidth || 1280, h = v.videoHeight || 720;
-  if (w > 1280) { h = Math.round(h * 1280 / w); w = 1280; }
+  // canvasは「画面に表示されている見た目」に合わせる
+  // （object-fit:cover を再現し、縦横比を崩さず・録画＝見たままにする）
+  const dispW = v.clientWidth || window.innerWidth;
+  const dispH = v.clientHeight || window.innerHeight;
+  const targetLong = 1280; // 長辺の解像度（負荷とのバランス）
+  let w, h;
+  if (dispH >= dispW) { h = targetLong; w = Math.round(targetLong * dispW / dispH); } // 縦持ち
+  else { w = targetLong; h = Math.round(targetLong * dispH / dispW); }                 // 横持ち
   canvas.width = w; canvas.height = h;
 
   // 音声トラック確保（計測中ならそのマイクを再利用、なければ新規取得）
@@ -728,10 +733,20 @@ function roundRect(x, y, w, h, r) {
   c2d.arcTo(x, y, x + w, y, r); c2d.closePath();
 }
 
+// object-fit:cover と同じ「歪ませず中央クロップ」で映像を描画
+function drawVideoCover(video) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const cw = canvas.width, ch = canvas.height;
+  const scale = Math.max(cw / vw, ch / vh);
+  const dw = vw * scale, dh = vh * scale;
+  c2d.drawImage(video, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+}
+
 function drawRecFrame() {
   if (!recording) return;
   const v = $("camVideo");
-  if (v.readyState >= 2) c2d.drawImage(v, 0, 0, canvas.width, canvas.height);
+  if (v.readyState >= 2) drawVideoCover(v);
 
   const W = canvas.width, H = canvas.height, u = W / 40; // 基準フォント
   c2d.textBaseline = "top";
