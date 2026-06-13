@@ -29,9 +29,23 @@
   #avg { color: #8b949e; font-size: 13px; margin-bottom: 8px; }
 
   /* ===== ラリー表示 ===== */
-  #rally { display: flex; justify-content: center; gap: 22px; margin: 4px 0 12px; }
+  #rally { display: flex; justify-content: center; gap: 22px; margin: 4px 0 10px; }
   #rally .item { font-size: 13px; color: #8b949e; }
   #rally .item b { display: block; font-size: 26px; color: #e6edf3; font-variant-numeric: tabular-nums; }
+
+  /* ===== タイマー ===== */
+  #timerRow { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 14px; color: #8b949e; }
+  #timerRow input { width: 56px; font-size: 15px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right; }
+  #timerBtn { background: #21262d; color: #e6edf3; font-size: 14px; padding: 8px 16px; }
+  #timerBtn.running { background: #9e6a03; color: #fff; }
+  #timerDisp { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: #e6edf3; min-width: 70px; }
+  #setSummary {
+    max-width: 360px; margin: 8px auto; background: #161b22; border: 1px solid #30363d;
+    border-radius: 10px; padding: 12px 16px; font-size: 14px; text-align: left;
+  }
+  #setSummary h3 { font-size: 14px; color: #58a6ff; margin-bottom: 6px; }
+  #setSummary .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  #setSummary .row b { font-size: 18px; font-variant-numeric: tabular-nums; }
 
   #status { font-size: 13px; color: #8b949e; min-height: 18px; margin: 6px 0; }
   button {
@@ -59,46 +73,41 @@
   .note { font-size: 12px; color: #6e7681; margin-top: 10px; line-height: 1.6; text-align: left; }
 
   /* ===== カメラHUDモード ===== */
-  #camWrap {
-    position: fixed; inset: 0; z-index: 50; background: #000; display: none;
-  }
+  #camWrap { position: fixed; inset: 0; z-index: 50; background: #000; display: none; }
   #camWrap.show { display: block; }
   #camVideo { width: 100%; height: 100%; object-fit: cover; }
+  #recCanvas { display: none; }
   #hud {
     position: absolute; inset: 0; pointer-events: none;
     display: flex; flex-direction: column; justify-content: space-between;
     padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px);
   }
   #hudTop { display: flex; justify-content: space-between; align-items: flex-start; }
-  #hudClose {
-    pointer-events: auto; background: rgba(0,0,0,.45); color: #fff; font-size: 14px;
-    border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(4px);
+  #hudLeft { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  #hudClose, .hudPill {
+    background: rgba(0,0,0,.45); color: #fff; border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(4px);
   }
-  #hudRally {
-    background: rgba(0,0,0,.45); border-radius: 12px; padding: 10px 16px;
-    text-align: right; backdrop-filter: blur(4px);
-  }
+  #hudClose { pointer-events: auto; font-size: 14px; }
+  #hudTimerDisp { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; display: none; }
+  #hudTimerDisp.show { display: block; }
+  #hudRecDot { display: none; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #ff6b6b; }
+  #hudRecDot.show { display: flex; }
+  #hudRecDot .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff3b30; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  #hudRally { background: rgba(0,0,0,.45); border-radius: 12px; padding: 10px 16px; text-align: right; backdrop-filter: blur(4px); }
   #hudRally .lbl { font-size: 11px; color: #c9d1d9; }
   #hudRally .big { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  #hudSpeed {
-    align-self: center; text-align: center;
-    text-shadow: 0 2px 18px rgba(0,0,0,.85);
-  }
+  #hudSpeed { align-self: center; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,.85); }
   #hudSpeed .v { font-size: 110px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
   #hudSpeed .u { font-size: 28px; color: #c9d1d9; }
   #hudSpeed .sub { font-size: 15px; color: #c9d1d9; margin-top: 6px; }
-  #hudBottom {
-    align-self: stretch; display: flex; justify-content: center; gap: 10px;
-  }
-  #hudBottom .pill {
-    background: rgba(0,0,0,.45); border-radius: 20px; padding: 8px 14px;
-    font-size: 14px; font-weight: 700; backdrop-filter: blur(4px);
-  }
-  #hudStart {
-    pointer-events: auto; background: #238636; color: #fff; border-radius: 24px;
-    padding: 14px 32px; font-size: 17px; font-weight: 800;
-  }
+  #hudBottom { align-self: stretch; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  #hudBottom button { pointer-events: auto; border-radius: 24px; padding: 13px 22px; font-size: 16px; font-weight: 800; margin: 0; }
+  #hudStart { background: #238636; color: #fff; }
   #hudStart.running { background: #da3633; }
+  #hudRec { background: rgba(0,0,0,.5); color: #ff6b6b; border: 1px solid #ff6b6b; }
+  #hudRec.running { background: #da3633; color: #fff; border-color: #da3633; }
+  #hudTimer { background: rgba(0,0,0,.5); color: #fff; border: 1px solid #8b949e; }
 </style>
 </head>
 <body>
@@ -119,6 +128,14 @@
     <div class="item">最長<b id="rMax">0</b></div>
     <div class="item">総打数<b id="rTotal">0</b></div>
   </div>
+
+  <div id="timerRow">
+    <input type="number" id="timerMin" value="5" step="1" min="1"> 分
+    <button id="timerBtn">タイマー開始</button>
+    <span id="timerDisp">--:--</span>
+  </div>
+
+  <div id="setSummary" hidden></div>
 
   <button id="startBtn">計測開始</button>
   <button id="beepTest">音テスト</button>
@@ -145,8 +162,8 @@
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
       ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
-      ・打って約0.5秒後（相手のインパクト時）に1つ前の打球の判定音が鳴ります。<br>
-      ・係数1.070は理論値。スピードガン併走校正後に更新してください。<br>
+      ・<b>録画（HUD焼き込み）</b>はカメラモードの「● REC」。終了後にiOSの共有シートが開くので「写真／ファイルに保存」を選んでください。<br>
+      ・録画は30/60fps。スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
   </details>
@@ -155,9 +172,14 @@
 <!-- ===== カメラHUDモード ===== -->
 <div id="camWrap">
   <video id="camVideo" playsinline muted autoplay></video>
+  <canvas id="recCanvas"></canvas>
   <div id="hud">
     <div id="hudTop">
-      <button id="hudClose">✕ 閉じる</button>
+      <div id="hudLeft">
+        <button id="hudClose">✕ 閉じる</button>
+        <div id="hudTimerDisp" class="hudPill">--:--</div>
+        <div id="hudRecDot"><span class="dot"></span>REC</div>
+      </div>
       <div id="hudRally">
         <div class="lbl">現在ラリー</div><div class="big" id="hRNow">0</div>
         <div class="lbl" style="margin-top:4px">最長 <span id="hRMax">0</span> / 総 <span id="hRTotal">0</span></div>
@@ -169,6 +191,8 @@
     </div>
     <div id="hudBottom">
       <button id="hudStart">計測開始</button>
+      <button id="hudRec">● REC</button>
+      <button id="hudTimer">⏱ タイマー</button>
     </div>
   </div>
 </div>
@@ -177,7 +201,7 @@
 "use strict";
 // ===== 物理（fresco_physics.py と同一ロジック） =====
 const SOUND_SPEED = 343.0;
-const K_DRAG = 0.01914; // 1/m（直径5.7cm・40g・Cd0.5・空気1.2kg/m3）
+const K_DRAG = 0.01914;
 
 const THRESHOLDS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90];
 const counts = Object.fromEntries(THRESHOLDS.map(t => [t, 0]));
@@ -203,11 +227,14 @@ function log(msg) {
   logEl.insertAdjacentHTML("afterbegin", `<div>[${t}] ${msg}</div>`);
 }
 
+// HUD/録画用に最新値を保持
+const hudState = { speed: "--", sub: "計測待機" };
+
 // ===== ラリー集計 =====
 const rally = { now: 0, max: 0, total: 0 };
 function rallyOnHit(t) {
   const gap = parseFloat($("rallyGap").value) || 2.5;
-  if (lastHitTime !== null && (t - lastHitTime) > gap) rally.now = 0; // 無音が続いたら新ラリー
+  if (lastHitTime !== null && (t - lastHitTime) > gap) rally.now = 0;
   rally.now++; rally.total++;
   if (rally.now > rally.max) rally.max = rally.now;
   renderRally();
@@ -217,30 +244,28 @@ function renderRally() {
   $("hRNow").textContent = rally.now; $("hRMax").textContent = rally.max; $("hRTotal").textContent = rally.total;
 }
 
+// ===== セット集計（タイマー連動） =====
+const setStats = { active: false, maxSpeed: 0, hits: 0, maxRally: 0 };
+
 // ===== 音声処理 =====
 let ctx = null, stream = null, running = false;
-let analyser = null, freqBuf = null;     // 声カット用スペクトル解析
-let lastOnset = null;        // 直前打音の時刻（飛行時間Δt用）
-let lastHitTime = null;      // 直前打音の時刻（ラリー区切り用）
-let onsetIndex = 0;          // near配置の交互補正用
-let noiseFloor = 1e-4;       // 背景ノイズEMA（緩い）
-let fastEnv = 1e-4;          // 直近エンベロープEMA（速い・アタック比用）
-let refractoryUntil = 0;     // 多重検出・自己ビープ抑止
-const REFRACTORY = 0.12;     // 同一打音の多重検出防止 [s]
+let analyser = null, freqBuf = null;
+let lastOnset = null, lastHitTime = null, onsetIndex = 0;
+let noiseFloor = 1e-4, fastEnv = 1e-4, refractoryUntil = 0;
+const REFRACTORY = 0.12;
 
-// 高域バンドのスペクトル平坦度（広帯域=打音1に近い / 倍音ピーク=声0に近い）
 function spectralFlatness() {
   if (!analyser) return 1;
-  analyser.getFloatFrequencyData(freqBuf);           // dB
+  analyser.getFloatFrequencyData(freqBuf);
   const nyq = ctx.sampleRate / 2, n = freqBuf.length;
   const lo = Math.floor(2500 / nyq * n), hi = Math.floor(12000 / nyq * n);
   let logSum = 0, linSum = 0, cnt = 0;
   for (let i = lo; i < hi && i < n; i++) {
-    const p = Math.pow(10, freqBuf[i] / 10) + 1e-12;  // dB→パワー
+    const p = Math.pow(10, freqBuf[i] / 10) + 1e-12;
     logSum += Math.log(p); linSum += p; cnt++;
   }
   if (cnt === 0) return 1;
-  return Math.exp(logSum / cnt) / (linSum / cnt);     // 0(ピーキー)〜1(平坦)
+  return Math.exp(logSum / cnt) / (linSum / cnt);
 }
 
 async function start() {
@@ -250,11 +275,9 @@ async function start() {
   });
   const src = ctx.createMediaStreamSource(stream);
 
-  // 2.5kHzハイパス：声の基本周波数・波音・風を抑え、打球の衝撃音を残す
   const hp = ctx.createBiquadFilter();
   hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
 
-  // スペクトル解析（声カット判定用）
   analyser = ctx.createAnalyser();
   analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0;
   freqBuf = new Float32Array(analyser.frequencyBinCount);
@@ -262,7 +285,7 @@ async function start() {
   const proc = ctx.createScriptProcessor(512, 1, 1);
   src.connect(hp);
   hp.connect(analyser);
-  hp.connect(proc); proc.connect(ctx.destination); // destination接続はiOS動作要件
+  hp.connect(proc); proc.connect(ctx.destination);
 
   proc.onaudioprocess = e => {
     if (!running) return;
@@ -274,25 +297,18 @@ async function start() {
 
     const sens = parseFloat($("sens").value) || 6;
     const prevFast = fastEnv;
-    fastEnv = fastEnv * 0.6 + rms * 0.4; // 速いエンベロープ
+    fastEnv = fastEnv * 0.6 + rms * 0.4;
 
     const loudEnough = rms > noiseFloor * sens;
     if (loudEnough && now > refractoryUntil) {
-      // --- 声カット判定 ---
       const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
-      // ①アタック比：打音は直前比で急峻に立ち上がる（声はなだらか）
       const attackRatio = rms / (prevFast + 1e-9);
-      const needAttack = 1.6 + vc * 0.28;       // vc=5 → 約3.0倍
-      // ②広帯域性：打音は平坦、声は倍音ピークで平坦度が低い
+      const needAttack = 1.6 + vc * 0.28;
       const flat = spectralFlatness();
-      const needFlat = 0.06 + vc * 0.022;        // vc=5 → 約0.17
-      const isImpact = attackRatio >= needAttack && flat >= needFlat;
-
-      if (isImpact) {
+      const needFlat = 0.06 + vc * 0.022;
+      if (attackRatio >= needAttack && flat >= needFlat) {
         refractoryUntil = now + REFRACTORY;
         onHit(now);
-      } else {
-        // 弾いた（声・環境音）— ノイズフロアは更新しない
       }
     } else if (now > refractoryUntil && !loudEnough) {
       noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
@@ -303,7 +319,7 @@ async function start() {
   running = true;
   syncStartButtons(true);
   statusEl.textContent = "計測中… 打音を待っています";
-  $("hSub").textContent = "計測中…";
+  hudState.sub = "計測中…"; $("hSub").textContent = hudState.sub;
   log(`計測開始（fs=${ctx.sampleRate}Hz / 声カット有効）`);
 }
 
@@ -325,16 +341,21 @@ function onHit(t) {
     }
   }
   rallyOnHit(t);
-  lastOnset = t;
-  lastHitTime = t;
-  onsetIndex++;
+  if (setStats.active) {
+    setStats.hits++;
+    if (rally.now > setStats.maxRally) setStats.maxRally = rally.now;
+  }
+  lastOnset = t; lastHitTime = t; onsetIndex++;
 }
 
 function showSpeed(v0, vAvg, dt) {
+  hudState.speed = v0.toFixed(1);
+  hudState.sub = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
   avgEl.textContent = `平均速 ${vAvg.toFixed(1)} km/h ／ 飛行時間 ${dt.toFixed(3)} s`;
-  $("hV").textContent = v0.toFixed(1);
-  $("hSub").textContent = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
+  $("hV").textContent = hudState.speed;
+  $("hSub").textContent = hudState.sub;
+  if (setStats.active && v0 > setStats.maxSpeed) setStats.maxSpeed = v0;
   let tier = null;
   for (const th of THRESHOLDS) if (v0 >= th) { counts[th]++; tier = th; }
   renderCounts();
@@ -344,11 +365,10 @@ function showSpeed(v0, vAvg, dt) {
   if (tier !== null && tier >= minBeep) beep(tier);
 }
 
-// 閾値ごとに音程を変える（40→500Hz, 5km/h刻みで+120Hz）
 function beep(tier) {
   if (!ctx) return;
   const now = ctx.currentTime;
-  refractoryUntil = Math.max(refractoryUntil, now + 0.30); // 自己ビープの誤検出防止
+  refractoryUntil = Math.max(refractoryUntil, now + 0.30);
   const osc = ctx.createOscillator(), gain = ctx.createGain();
   osc.frequency.value = 500 + ((tier - 40) / 5) * 120;
   osc.type = "square";
@@ -358,6 +378,16 @@ function beep(tier) {
   osc.start(now); osc.stop(now + 0.25);
 }
 
+function tone(freq, dur, when) {
+  if (!ctx) return;
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.frequency.value = freq; osc.type = "sine";
+  gain.gain.setValueAtTime(0.3, when);
+  gain.gain.exponentialRampToValueAtTime(0.001, when + dur);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(when); osc.stop(when + dur);
+}
+
 function stop() {
   running = false;
   stream?.getTracks().forEach(t => t.stop());
@@ -365,16 +395,16 @@ function stop() {
   lastOnset = null; lastHitTime = null;
   syncStartButtons(false);
   statusEl.textContent = "停止しました";
-  $("hSub").textContent = "停止中";
+  hudState.sub = "停止中"; $("hSub").textContent = hudState.sub;
   log("計測停止");
 }
 
 function syncStartButtons(isRunning) {
-  const b1 = $("startBtn"), b2 = $("hudStart");
-  b1.textContent = isRunning ? "停止" : "計測開始";
-  b1.classList.toggle("running", isRunning);
-  b2.textContent = isRunning ? "停止" : "計測開始";
-  b2.classList.toggle("running", isRunning);
+  for (const id of ["startBtn", "hudStart"]) {
+    const b = $(id);
+    b.textContent = isRunning ? "停止" : "計測開始";
+    b.classList.toggle("running", isRunning);
+  }
 }
 
 async function toggleMeasure() {
@@ -386,14 +416,67 @@ async function toggleMeasure() {
     }
   } else { stop(); }
 }
-
 $("startBtn").addEventListener("click", toggleMeasure);
 $("hudStart").addEventListener("click", toggleMeasure);
-
 $("beepTest").addEventListener("click", () => {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   [50, 55, 60].forEach((t, i) => setTimeout(() => beep(t), i * 400));
 });
+
+// ===== タイマー（5分カウントダウン＋セットサマリー） =====
+let timerActive = false, timerEndMs = 0, timerInterval = null;
+function fmtTime(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function startTimer() {
+  if (timerActive) { endTimer(false); return; }
+  const min = Math.max(1, parseFloat($("timerMin").value) || 5);
+  timerEndMs = performance.now() + min * 60000;
+  timerActive = true;
+  setStats.active = true; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
+  $("setSummary").hidden = true;
+  $("timerBtn").textContent = "ストップ"; $("timerBtn").classList.add("running");
+  $("hudTimerDisp").classList.add("show");
+  $("timerDisp").textContent = fmtTime(min * 60);
+  if (ctx) tone(660, 0.12, ctx.currentTime);
+  tickTimer();
+  timerInterval = setInterval(tickTimer, 250);
+  log(`タイマー開始（${min}分）`);
+}
+function tickTimer() {
+  const remain = (timerEndMs - performance.now()) / 1000;
+  const txt = fmtTime(remain);
+  $("timerDisp").textContent = txt;
+  $("hudTimerDisp").textContent = txt;
+  if (remain <= 0) endTimer(true);
+}
+function endTimer(reachedZero) {
+  timerActive = false; setStats.active = false;
+  clearInterval(timerInterval); timerInterval = null;
+  $("timerBtn").textContent = "タイマー開始"; $("timerBtn").classList.remove("running");
+  $("hudTimerDisp").classList.remove("show");
+  $("timerDisp").textContent = "--:--";
+  if (reachedZero && ctx) {
+    const t0 = ctx.currentTime;
+    tone(880, 0.2, t0); tone(880, 0.2, t0 + 0.28); tone(1175, 0.4, t0 + 0.56);
+  }
+  showSetSummary(reachedZero);
+}
+function showSetSummary(reachedZero) {
+  const el = $("setSummary");
+  el.innerHTML =
+    `<h3>${reachedZero ? "セット終了 🎾" : "セット中断"}</h3>` +
+    `<div class="row"><span>最高速</span><b>${setStats.maxSpeed.toFixed(1)} km/h</b></div>` +
+    `<div class="row"><span>最長ラリー</span><b>${setStats.maxRally}</b></div>` +
+    `<div class="row"><span>総打数</span><b>${setStats.hits}</b></div>`;
+  el.hidden = false;
+  hudState.sub = `セット: 最高${setStats.maxSpeed.toFixed(1)} / 最長${setStats.maxRally} / 打${setStats.hits}`;
+  $("hSub").textContent = hudState.sub;
+}
+$("timerBtn").addEventListener("click", startTimer);
+$("hudTimer").addEventListener("click", startTimer);
 
 // ===== モード切替 =====
 let camStream = null;
@@ -412,6 +495,7 @@ async function enterCamera() {
   renderRally();
 }
 function exitCamera() {
+  if (recording) stopRec();
   $("tabNum").classList.add("active"); $("tabCam").classList.remove("active");
   $("camWrap").classList.remove("show");
   camStream?.getTracks().forEach(t => t.stop()); camStream = null;
@@ -420,6 +504,142 @@ function exitCamera() {
 $("tabCam").addEventListener("click", enterCamera);
 $("tabNum").addEventListener("click", exitCamera);
 $("hudClose").addEventListener("click", exitCamera);
+
+// ===== 録画（HUD焼き込み） =====
+let recording = false, mediaRecorder = null, recChunks = [], recRAF = 0, recAudioStream = null;
+const canvas = $("recCanvas"), c2d = canvas.getContext("2d");
+
+function pickMime() {
+  const types = ["video/mp4;codecs=h264,aac", "video/mp4", "video/webm;codecs=vp8,opus", "video/webm"];
+  for (const t of types) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t; }
+  return "";
+}
+
+async function startRec() {
+  const v = $("camVideo");
+  if (!camStream || v.readyState < 2) { $("hSub").textContent = "カメラ準備中…もう一度"; return; }
+
+  // canvasサイズ（最大幅1280に縮小して負荷軽減）
+  let w = v.videoWidth || 1280, h = v.videoHeight || 720;
+  if (w > 1280) { h = Math.round(h * 1280 / w); w = 1280; }
+  canvas.width = w; canvas.height = h;
+
+  // 音声トラック確保（計測中ならそのマイクを再利用、なければ新規取得）
+  let audioTrack = null;
+  if (stream && stream.getAudioTracks().length) audioTrack = stream.getAudioTracks()[0];
+  else {
+    try {
+      recAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioTrack = recAudioStream.getAudioTracks()[0];
+    } catch (_) { /* 音声なしで続行 */ }
+  }
+
+  const canvasStream = canvas.captureStream(30);
+  if (audioTrack) canvasStream.addTrack(audioTrack);
+
+  const mime = pickMime();
+  try {
+    mediaRecorder = mime ? new MediaRecorder(canvasStream, { mimeType: mime }) : new MediaRecorder(canvasStream);
+  } catch (err) { $("hSub").textContent = "録画非対応: " + err.message; return; }
+
+  recChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = saveRec;
+  mediaRecorder.start(1000);
+
+  recording = true;
+  $("hudRec").textContent = "■ 停止"; $("hudRec").classList.add("running");
+  $("hudRecDot").classList.add("show");
+  drawRecFrame();
+  log("録画開始（" + (mime || "default") + ", " + w + "x" + h + "）");
+}
+
+function roundRect(x, y, w, h, r) {
+  c2d.beginPath();
+  c2d.moveTo(x + r, y); c2d.arcTo(x + w, y, x + w, y + h, r);
+  c2d.arcTo(x + w, y + h, x, y + h, r); c2d.arcTo(x, y + h, x, y, r);
+  c2d.arcTo(x, y, x + w, y, r); c2d.closePath();
+}
+
+function drawRecFrame() {
+  if (!recording) return;
+  const v = $("camVideo");
+  if (v.readyState >= 2) c2d.drawImage(v, 0, 0, canvas.width, canvas.height);
+
+  const W = canvas.width, H = canvas.height, u = W / 40; // 基準フォント
+  c2d.textBaseline = "top";
+
+  // 右上：ラリー
+  c2d.font = `700 ${u * 0.7}px -apple-system, sans-serif`;
+  const rTxt = `ラリー ${rally.now}`, rSub = `最長 ${rally.max} / 総 ${rally.total}`;
+  const boxW = Math.max(c2d.measureText(rTxt).width, c2d.measureText(rSub).width) + u;
+  c2d.fillStyle = "rgba(0,0,0,.45)"; roundRect(W - boxW - u * 0.6, u * 0.6, boxW, u * 2.2, u * 0.3); c2d.fill();
+  c2d.fillStyle = "#fff"; c2d.textAlign = "right";
+  c2d.fillText(rTxt, W - u, u * 0.9);
+  c2d.font = `400 ${u * 0.45}px -apple-system, sans-serif`;
+  c2d.fillStyle = "#c9d1d9"; c2d.fillText(rSub, W - u, u * 1.8);
+
+  // 左上：タイマー＋REC
+  c2d.textAlign = "left";
+  let ty = u * 0.6;
+  if (timerActive) {
+    c2d.font = `800 ${u * 0.8}px -apple-system, sans-serif`;
+    const tTxt = $("hudTimerDisp").textContent;
+    const tw = c2d.measureText(tTxt).width + u;
+    c2d.fillStyle = "rgba(0,0,0,.45)"; roundRect(u * 0.6, ty, tw, u * 1.3, u * 0.3); c2d.fill();
+    c2d.fillStyle = "#fff"; c2d.fillText(tTxt, u, ty + u * 0.25);
+    ty += u * 1.6;
+  }
+  c2d.fillStyle = "#ff3b30"; c2d.beginPath(); c2d.arc(u * 1.1, ty + u * 0.55, u * 0.28, 0, Math.PI * 2); c2d.fill();
+  c2d.fillStyle = "#ff6b6b"; c2d.font = `700 ${u * 0.55}px -apple-system, sans-serif`;
+  c2d.fillText("REC", u * 1.6, ty + u * 0.25);
+
+  // 中央：速度
+  c2d.textAlign = "center";
+  c2d.shadowColor = "rgba(0,0,0,.85)"; c2d.shadowBlur = u * 0.5;
+  c2d.fillStyle = "#fff"; c2d.font = `900 ${u * 2.6}px -apple-system, sans-serif`;
+  c2d.fillText(hudState.speed, W / 2, H * 0.42);
+  c2d.font = `400 ${u * 0.7}px -apple-system, sans-serif`; c2d.fillStyle = "#c9d1d9";
+  c2d.fillText("km/h", W / 2, H * 0.42 + u * 2.7);
+  c2d.shadowBlur = 0;
+
+  recRAF = requestAnimationFrame(drawRecFrame);
+}
+
+function stopRec() {
+  if (!recording) return;
+  recording = false;
+  cancelAnimationFrame(recRAF);
+  try { mediaRecorder.stop(); } catch (_) {}
+  $("hudRec").textContent = "● REC"; $("hudRec").classList.remove("running");
+  $("hudRecDot").classList.remove("show");
+  $("hSub").textContent = "保存準備中…";
+}
+
+async function saveRec() {
+  recAudioStream?.getTracks().forEach(t => t.stop()); recAudioStream = null;
+  if (!recChunks.length) { $("hSub").textContent = "録画データなし"; return; }
+  const mime = mediaRecorder.mimeType || "video/mp4";
+  const ext = mime.includes("mp4") ? "mp4" : "webm";
+  const blob = new Blob(recChunks, { type: mime });
+  const d = new Date();
+  const name = `fresco_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}_${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}.${ext}`;
+  const file = new File([blob], name, { type: mime });
+  log(`録画完了（${(blob.size/1e6).toFixed(1)}MB）`);
+
+  // iOS: 共有シート経由で写真/ファイルに保存
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "フレスコボール球速" }); $("hSub").textContent = "共有/保存しました"; return; }
+    catch (_) { /* キャンセル時はダウンロードにフォールバック */ }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  $("hSub").textContent = "保存しました";
+}
+
+$("hudRec").addEventListener("click", () => { recording ? stopRec() : startRec(); });
 </script>
 </body>
 </html>
