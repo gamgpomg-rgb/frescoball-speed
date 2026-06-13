@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>フレスコボール球速メーター（プロトタイプ）</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Hiragino Sans", sans-serif;
+    background: #0d1117; color: #e6edf3;
+    min-height: 100vh; padding: 16px; text-align: center;
+  }
+  h1 { font-size: 16px; color: #8b949e; font-weight: 600; margin-bottom: 12px; }
+  #speed {
+    font-size: 96px; font-weight: 800; line-height: 1.1;
+    font-variant-numeric: tabular-nums; margin: 8px 0;
+  }
+  #speed small { font-size: 24px; color: #8b949e; font-weight: 400; }
+  #avg { color: #8b949e; font-size: 14px; margin-bottom: 12px; }
+  #status { font-size: 14px; color: #8b949e; min-height: 20px; margin: 8px 0; }
+  button {
+    font-size: 18px; font-weight: 700; border: none; border-radius: 12px;
+    padding: 14px 28px; margin: 6px; cursor: pointer;
+  }
+  #startBtn { background: #238636; color: #fff; }
+  #startBtn.running { background: #da3633; }
+  #beepTest { background: #21262d; color: #e6edf3; font-size: 14px; padding: 10px 16px; }
+  table { margin: 12px auto; border-collapse: collapse; font-size: 15px; }
+  td, th { padding: 4px 14px; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 600; }
+  #log {
+    margin-top: 12px; max-height: 160px; overflow-y: auto; font-size: 13px;
+    color: #8b949e; text-align: left; background: #161b22;
+    border-radius: 8px; padding: 8px 12px;
+  }
+  details { margin-top: 16px; text-align: left; max-width: 420px; margin-left: auto; margin-right: auto; }
+  summary { color: #8b949e; font-size: 14px; cursor: pointer; }
+  .setting { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
+  .setting input, .setting select {
+    width: 90px; font-size: 15px; background: #21262d; color: #e6edf3;
+    border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right;
+  }
+  .note { font-size: 12px; color: #6e7681; margin-top: 10px; line-height: 1.6; text-align: left; }
+</style>
+</head>
+<body>
+<h1>フレスコボール球速メーター β（A方式: 打音間隔→初速換算）</h1>
+
+<div id="speed">--<small> km/h</small></div>
+<div id="avg">初速換算（平均速×係数） / 平均速: --</div>
+
+<button id="startBtn">計測開始</button>
+<button id="beepTest">音テスト</button>
+<div id="status">「計測開始」を押すとマイク許可を求めます</div>
+
+<table>
+  <tr><th>閾値</th><th>回数</th><th>閾値</th><th>回数</th></tr>
+  <tbody id="counts"></tbody>
+</table>
+
+<div id="log"></div>
+
+<details>
+  <summary>設定</summary>
+  <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" value="7.0" step="0.5"></div>
+  <div class="setting"><label>マイク位置</label>
+    <select id="micPos"><option value="center">コート中央</option><option value="near">片側選手付近</option></select>
+  </div>
+  <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
+  <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
+  <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
+  <div class="note">
+    ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
+    ・打って約0.5秒後（相手のインパクト時）に1つ前の打球の判定音が鳴ります。<br>
+    ・係数1.070は理論値。スピードガン併走校正後に更新してください。<br>
+    ・マイク利用のためHTTPS（またはlocalhost）でのみ動作します。
+  </div>
+</details>
+
+<script>
+"use strict";
+// ===== 物理（fresco_physics.py と同一ロジック） =====
+const SOUND_SPEED = 343.0;
+const K_DRAG = 0.01914; // 1/m（直径5.7cm・40g・Cd0.5・空気1.2kg/m3）
+
+const THRESHOLDS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90];
+const counts = Object.fromEntries(THRESHOLDS.map(t => [t, 0]));
+
+const $ = id => document.getElementById(id);
+const speedEl = $("speed"), avgEl = $("avg"), statusEl = $("status"), logEl = $("log");
+
+function theoreticalFactor(L) { const kL = K_DRAG * L; return (Math.expm1(kL)) / kL; }
+
+function renderCounts() {
+  const tb = $("counts"); tb.innerHTML = "";
+  for (let i = 0; i < THRESHOLDS.length; i += 2) {
+    const a = THRESHOLDS[i], b = THRESHOLDS[i + 1];
+    tb.insertAdjacentHTML("beforeend",
+      `<tr><td>${a}+</td><td><b>${counts[a]}</b></td>` +
+      (b !== undefined ? `<td>${b}+</td><td><b>${counts[b]}</b></td>` : "<td></td><td></td>") + "</tr>");
+  }
+}
+renderCounts();
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString("ja-JP", { hour12: false });
+  logEl.insertAdjacentHTML("afterbegin", `<div>[${t}] ${msg}</div>`);
+}
+
+// ===== 音声処理 =====
+let ctx = null, stream = null, running = false;
+let lastOnset = null;        // 直前打音の時刻（AudioContext時間）
+let onsetIndex = 0;          // near配置の交互補正用
+let noiseFloor = 1e-4;
+let refractoryUntil = 0;     // 多重検出・自己ビープ抑止
+const REFRACTORY = 0.12;     // 同一打音の多重検出防止 [s]
+
+async function start() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  const src = ctx.createMediaStreamSource(stream);
+
+  // 1kHzハイパスで波音・風の低周波を抑制
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass"; hp.frequency.value = 1000; hp.Q.value = 0.7;
+
+  const proc = ctx.createScriptProcessor(1024, 1, 1);
+  src.connect(hp); hp.connect(proc); proc.connect(ctx.destination); // destination接続はiOS動作要件
+
+  proc.onaudioprocess = e => {
+    if (!running) return;
+    const buf = e.inputBuffer.getChannelData(0);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    const now = ctx.currentTime;
+
+    const sens = parseFloat($("sens").value) || 6;
+    if (rms > noiseFloor * sens && now > refractoryUntil) {
+      refractoryUntil = now + REFRACTORY;
+      onHit(now);
+    } else if (now > refractoryUntil) {
+      // 打音中以外でノイズフロアを緩やかに追従（中央値の代用としてEMA）
+      noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
+    }
+  };
+
+  try { await navigator.wakeLock?.request("screen"); } catch (_) {}
+  running = true;
+  statusEl.textContent = "計測中… 打音を待っています";
+  log(`計測開始（fs=${ctx.sampleRate}Hz）`);
+}
+
+function onHit(t) {
+  const L = parseFloat($("distance").value) || 7.0;
+  const micPos = $("micPos").value;
+
+  if (lastOnset !== null) {
+    let dt = t - lastOnset;
+    if (micPos === "near") {
+      // 片側配置: 遠い選手の打音は L/343 秒遅れて届く（交互に符号反転）
+      const d = L / SOUND_SPEED;
+      dt += (onsetIndex % 2 === 0) ? -d : +d;
+    }
+    if (dt >= 0.20 && dt <= 0.90) {
+      const vAvg = L / dt * 3.6;
+      const factor = parseFloat($("calib").value) || theoreticalFactor(L);
+      const v0 = vAvg * factor;
+      showSpeed(v0, vAvg, dt);
+    }
+  }
+  lastOnset = t;
+  onsetIndex++;
+}
+
+function showSpeed(v0, vAvg, dt) {
+  speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
+  avgEl.textContent = `平均速 ${vAvg.toFixed(1)} km/h ／ 飛行時間 ${dt.toFixed(3)} s`;
+  let tier = null;
+  for (const th of THRESHOLDS) if (v0 >= th) { counts[th]++; tier = th; }
+  renderCounts();
+  log(`初速換算 <b>${v0.toFixed(1)}</b> km/h（平均 ${vAvg.toFixed(1)}, Δt=${dt.toFixed(3)}s）`);
+
+  const minBeep = parseFloat($("minBeep").value) || 40;
+  if (tier !== null && tier >= minBeep) beep(tier);
+}
+
+// 閾値ごとに音程を変える（40→500Hz, 5km/h刻みで+120Hz）
+function beep(tier) {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  refractoryUntil = Math.max(refractoryUntil, now + 0.30); // 自己ビープの誤検出防止
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.frequency.value = 500 + ((tier - 40) / 5) * 120;
+  osc.type = "square";
+  gain.gain.setValueAtTime(0.25, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.25);
+}
+
+function stop() {
+  running = false;
+  stream?.getTracks().forEach(t => t.stop());
+  ctx?.close(); ctx = null; lastOnset = null;
+  statusEl.textContent = "停止しました";
+  log("計測停止");
+}
+
+$("startBtn").addEventListener("click", async () => {
+  const btn = $("startBtn");
+  if (!running) {
+    try {
+      await start();
+      btn.textContent = "停止"; btn.classList.add("running");
+    } catch (err) {
+      statusEl.textContent = "マイクを取得できません: " + err.message;
+    }
+  } else {
+    stop();
+    btn.textContent = "計測開始"; btn.classList.remove("running");
+  }
+});
+
+$("beepTest").addEventListener("click", () => {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  [50, 55, 60].forEach((t, i) => setTimeout(() => beep(t), i * 400));
+});
+</script>
+</body>
+</html>
