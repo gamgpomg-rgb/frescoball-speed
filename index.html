@@ -132,6 +132,7 @@
   summary { color: var(--ink); font-family: var(--num); font-size: 16px; letter-spacing: .04em; cursor: pointer; padding: 10px 0; }
   .setting { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 14px; color: var(--muted); }
   .setting input, .setting select { width: 120px; }
+  .setting input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--aqua); }
   .note { font-size: 12px; color: rgba(234,240,255,.5); margin: 8px 0 12px; line-height: 1.7; text-align: left; }
   .note b { color: var(--aqua); }
 
@@ -240,6 +241,9 @@
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
+    <div class="setting"><label>カウント音（毎秒チック）</label><input type="checkbox" id="sndTick" checked></div>
+    <div class="setting"><label>連続音（バックグラウンド）</label><input type="checkbox" id="sndDrone" checked></div>
+    <div class="setting"><label>音声アナウンス（毎分「あと◯分」）</label><input type="checkbox" id="sndVoice" checked></div>
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
     <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
     <div class="note">
@@ -338,6 +342,7 @@ let ctx = null, stream = null, running = false;
 let analyser = null, freqBuf = null;
 let lastOnset = null, lastHitTime = null, onsetIndex = 0;
 let noiseFloor = 1e-4, fastEnv = 1e-4, refractoryUntil = 0;
+let ttsActive = false, ttsTimer = null; // 音声アナウンス中は打音検出を一時停止
 const REFRACTORY = 0.12;
 
 function spectralFlatness() {
@@ -386,7 +391,7 @@ async function start() {
     fastEnv = fastEnv * 0.6 + rms * 0.4;
 
     const loudEnough = rms > noiseFloor * sens;
-    if (loudEnough && now > refractoryUntil) {
+    if (loudEnough && now > refractoryUntil && !ttsActive) {
       const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
       const attackRatio = rms / (prevFast + 1e-9);
       const needAttack = 1.6 + vc * 0.28;
@@ -479,6 +484,59 @@ function tone(freq, dur, when) {
   osc.start(when); osc.stop(when + dur);
 }
 
+// 毎秒チック（1.4kHzサイン＝検出HP2.5kHz以下なので打音検出に干渉しない）
+function tick() {
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.type = "sine"; osc.frequency.value = 1400;
+  g.gain.setValueAtTime(0.16, now);
+  g.gain.exponentialRampToValueAtTime(0.0008, now + 0.045);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.06);
+}
+// 連続音（中低域サイン＋ゆるい脈動。narrowbandなので検出されない）
+let droneOsc = null, droneGain = null;
+function startDrone() {
+  if (!ctx || droneOsc) return;
+  droneOsc = ctx.createOscillator(); droneGain = ctx.createGain();
+  const lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
+  droneOsc.type = "sine"; droneOsc.frequency.value = 432;
+  droneGain.gain.value = 0.035;
+  lfo.frequency.value = 0.5; lfoGain.gain.value = 0.018;
+  lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
+  droneOsc.connect(droneGain); droneGain.connect(ctx.destination);
+  droneOsc.start(); lfo.start(); droneOsc._lfo = lfo;
+}
+function stopDrone() {
+  if (!droneOsc) return;
+  try { droneOsc.stop(); } catch (_) {}
+  try { droneOsc._lfo && droneOsc._lfo.stop(); } catch (_) {}
+  droneOsc = null; droneGain = null;
+}
+// 音声アナウンス（iOS Safari対応。ボタン押下=ジェスチャ起点で解錠される）
+function speak(text) {
+  if (!("speechSynthesis" in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ja-JP"; u.rate = 1.05;
+    ttsActive = true;
+    clearTimeout(ttsTimer); ttsTimer = setTimeout(() => { ttsActive = false; }, 4000);
+    u.onend = () => { ttsActive = false; clearTimeout(ttsTimer); };
+    u.onerror = () => { ttsActive = false; clearTimeout(ttsTimer); };
+    speechSynthesis.speak(u);
+  } catch (_) { ttsActive = false; }
+}
+// カウントダウン中の秒チック＋毎分アナウンス
+function handleCountdownAudio() {
+  const sec = Math.ceil(mainRemain);
+  if (sec === lastTickSec) return;
+  lastTickSec = sec;
+  if (sec < 0) return;
+  if ($("sndTick").checked) tick();
+  if ($("sndVoice").checked && sec > 0 && sec % 60 === 0) speak(`あと${sec / 60}分`);
+}
+
 function stop() {
   running = false;
   stream?.getTracks().forEach(t => t.stop());
@@ -517,7 +575,7 @@ $("beepTest").addEventListener("click", () => {
 // ===== ゲーム（フリー / クラシック / トップ）＋休憩(タイム)＋セットサマリー =====
 let timerActive = false;            // ゲーム進行中（HUD・録画から参照）
 let mainRemain = 0, restActive = false, restRemain = 0, restUsed = 0;
-let gameInterval = null, lastTickMs = 0, lastHitWall = 0;
+let gameInterval = null, lastTickMs = 0, lastHitWall = 0, lastTickSec = -1;
 
 function fmtTime(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -547,8 +605,11 @@ function startGame() {
   $("setSummary").hidden = true;
   $("timerBtn").textContent = "ストップ"; $("timerBtn").classList.add("running");
   $("hudTimerDisp").classList.add("show");
-  lastTickMs = performance.now();
+  lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 開始秒は再アナウンスしない
+  if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
   if (ctx) tone(660, 0.12, ctx.currentTime);
+  if ($("sndDrone").checked) startDrone();
+  if ($("sndVoice").checked) speak(`スタート。${Math.round(min)}分です`);
   renderTimer();
   gameInterval = setInterval(gameTick, 200);
   log(`ゲーム開始（${ruleVal()} / ${min}分）`);
@@ -563,6 +624,7 @@ function takeRest() {
   restRemain = (parseFloat($("restMin").value) || 1) * 60;
   restActive = true;
   if (ctx) tone(520, 0.15, ctx.currentTime);
+  if ($("sndVoice").checked) speak("タイム。休憩します");
   log(`タイム（休憩）${restUsed}回目`);
   renderTimer();
 }
@@ -574,8 +636,8 @@ function gameTick() {
     restRemain -= dt;
     if (restRemain <= 0) { restActive = false; if (ctx) tone(660, 0.15, ctx.currentTime); }
   } else {
-    const tick = (ruleVal() === "top") ? rallyActiveNow() : true; // トップは実プレー中のみ進む
-    if (tick) mainRemain -= dt;
+    const adv = (ruleVal() === "top") ? rallyActiveNow() : true; // トップは実プレー中のみ進む
+    if (adv) { mainRemain -= dt; handleCountdownAudio(); }
   }
   renderTimer();
   if (mainRemain <= 0) endGame(true);
@@ -599,10 +661,12 @@ function endGame(reachedZero) {
   $("hudTimerDisp").classList.remove("show");
   $("timerDisp").textContent = "--:--";
   $("restBtn").classList.remove("running"); $("hudRest").classList.remove("running");
+  stopDrone();
   if (reachedZero && ctx) {
     const t0 = ctx.currentTime;
     tone(880, 0.2, t0); tone(880, 0.2, t0 + 0.28); tone(1175, 0.4, t0 + 0.56);
   }
+  if ($("sndVoice").checked) speak(reachedZero ? "セット終了です。お疲れさまでした" : "ストップしました");
   showSetSummary(reachedZero);
 }
 function showSetSummary(reachedZero) {
@@ -620,6 +684,7 @@ function showSetSummary(reachedZero) {
 // ===== リセット（カウンタ・タイマー初期化／マイク計測は維持） =====
 function resetAll() {
   if (timerActive || restActive) endGame(false);
+  stopDrone(); try { speechSynthesis.cancel(); } catch (_) {} ttsActive = false;
   rally.now = rally.max = rally.total = 0;
   for (const th of THRESHOLDS) counts[th] = 0;
   setStats.active = false; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
