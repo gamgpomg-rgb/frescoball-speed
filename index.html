@@ -178,6 +178,27 @@
   #hudRest { background: rgba(8,6,24,.5); color: var(--blue); border: 1px solid var(--blue); }
   #hudRest.running { background: var(--grad-cool); color: #06231F; border-color: transparent; }
   #hudReset { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
+  /* ===== 大画面オーバーレイ（カウントダウン／休憩中） ===== */
+  #bigOverlay {
+    position: fixed; inset: 0; z-index: 80; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    pointer-events: none; text-align: center;
+    background: radial-gradient(60% 60% at 50% 45%, rgba(28,12,61,.55), rgba(8,6,24,.72));
+    backdrop-filter: blur(3px);
+  }
+  #bigOverlay.show { display: flex; }
+  #bigOverlay .bigLabel { font-family: var(--num); font-size: clamp(30px, 9vw, 66px); letter-spacing: .14em; color: #fff; text-shadow: 0 3px 18px rgba(0,0,0,.7); }
+  #bigOverlay .bigNum {
+    font-family: var(--num); font-weight: 700; font-size: clamp(150px, 48vw, 360px); line-height: .88;
+    color: var(--yellow); text-shadow: 0 8px 50px rgba(0,0,0,.6), 0 0 44px rgba(255,210,63,.4);
+    animation: pop .4s ease-out;
+  }
+  #bigOverlay .bigNum:empty { display: none; }
+  #bigOverlay .bigTime {
+    font-family: var(--num); font-weight: 700; font-size: clamp(96px, 30vw, 220px); line-height: 1;
+    color: var(--aqua); text-shadow: 0 6px 30px rgba(0,0,0,.6);
+  }
+  #bigOverlay .bigTime:empty { display: none; }
 </style>
 </head>
 <body>
@@ -287,6 +308,13 @@
       <button id="hudReset">リセット</button>
     </div>
   </div>
+</div>
+
+<!-- ===== 大画面オーバーレイ（カウントダウン／休憩中） ===== -->
+<div id="bigOverlay">
+  <div class="bigLabel"></div>
+  <div class="bigNum"></div>
+  <div class="bigTime"></div>
 </div>
 
 <script>
@@ -578,6 +606,10 @@ $("beepTest").addEventListener("click", () => {
 let timerActive = false;            // ゲーム進行中（HUD・録画から参照）
 let mainRemain = 0, restActive = false, restRemain = 0, restUsed = 0;
 let gameInterval = null, lastTickMs = 0, lastHitWall = 0, lastTickSec = -1;
+// 開始/再開カウントダウン（5→1→GO）
+let cdActive = false, cdRemain = 0, cdThen = "start", cdLastInt = 0;
+let restWarned = false, ovLastNum = null;
+const CD_SECS = 5; // カウントダウン秒数
 
 function fmtTime(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -601,64 +633,125 @@ function startGame() {
   if (timerActive) { endGame(false); return; }
   const min = Math.max(0.1, parseFloat($("timerMin").value) || 5);
   mainRemain = min * 60;
-  restActive = false; restRemain = 0; restUsed = 0;
+  restActive = false; restRemain = 0; restUsed = 0; restWarned = false;
   timerActive = true;
   setStats.active = true; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
   $("setSummary").hidden = true;
   $("timerBtn").textContent = "ストップ"; $("timerBtn").classList.add("running");
   $("hudTimerDisp").classList.add("show");
-  lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 開始秒は再アナウンスしない
   if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
-  if (ctx) tone(660, 0.12, ctx.currentTime);
-  if ($("sndDrone").checked) startDrone();
-  if ($("sndVoice").checked) speak(`スタート。${Math.round(min)}分です`);
+  lastTickMs = performance.now();
+  beginCountdown("start");           // ★ いきなり開始せず 5→1→GO のカウントダウンから
   renderTimer();
   gameInterval = setInterval(gameTick, 200);
-  log(`ゲーム開始（${ruleVal()} / ${min}分）`);
+  log(`ゲーム開始（${ruleVal()} / ${min}分・カウントダウン）`);
 }
 function takeRest() {
-  if (!timerActive || restActive) return;
+  if (!timerActive || restActive || cdActive) return; // カウントダウン中は休憩不可
   if (ruleVal() === "classic") {
     const lim = parseInt($("classicTimeouts").value); // 0=無制限
     if (lim > 0 && restUsed >= lim) { flashSub(`タイムは${lim}回まで`); return; }
   }
   restUsed++;
   restRemain = (parseFloat($("restMin").value) || 1) * 60;
-  restActive = true;
+  restActive = true; restWarned = false;
+  stopDrone();                       // 休憩中は連続音を止める
   if (ctx) tone(520, 0.15, ctx.currentTime);
   if ($("sndVoice").checked) speak("タイム。休憩します");
   log(`タイム（休憩）${restUsed}回目`);
   renderTimer();
 }
+
+// ===== 開始/再開カウントダウン（5→1→GO） =====
+function beginCountdown(then) {
+  cdActive = true; cdThen = then; cdRemain = CD_SECS; cdLastInt = CD_SECS + 1; ovLastNum = null;
+  renderTimer();
+}
+function handleCdTick() {
+  const n = Math.ceil(cdRemain);
+  if (n !== cdLastInt) {
+    cdLastInt = n;
+    if (n >= 1 && ctx) tone(720, 0.12, ctx.currentTime);      // 1秒ごとのカウント音
+  }
+}
+function finishCountdown() {
+  cdActive = false;
+  if (ctx) tone(1175, 0.4, ctx.currentTime);                   // GO音（高め・長め）
+  lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 直近の分は再アナウンスしない
+  if ($("sndDrone").checked) startDrone();
+  if ($("sndVoice").checked) speak(cdThen === "resume" ? "再開します" : "スタート");
+  renderTimer();
+}
+function handleRestAudio() {
+  if (!restWarned && restRemain <= 30 && restRemain > 0) {
+    restWarned = true;
+    if ($("sndVoice").checked) speak("あと30秒で休憩が終わります");
+  }
+}
+
 function gameTick() {
   const now = performance.now();
   let dt = (now - lastTickMs) / 1000; lastTickMs = now;
   if (dt > 1) dt = 1; // バックグラウンド復帰時の暴走防止
-  if (restActive) {
+
+  if (cdActive) {                     // ① カウントダウン中（開始/再開）
+    cdRemain -= dt;
+    handleCdTick();
+    if (cdRemain <= 0) finishCountdown();
+  } else if (restActive) {            // ② 休憩中（メインは停止・1分間止まらない）
     restRemain -= dt;
-    if (restRemain <= 0) { restActive = false; if (ctx) tone(660, 0.15, ctx.currentTime); }
-  } else {
+    handleRestAudio();
+    if (restRemain <= 0) { restActive = false; beginCountdown("resume"); } // 終了→再カウントダウン→再開
+  } else {                            // ③ 本計測中
     const adv = (ruleVal() === "top") ? rallyActiveNow() : true; // トップは実プレー中のみ進む
     if (adv) { mainRemain -= dt; handleCountdownAudio(); }
   }
   renderTimer();
-  if (mainRemain <= 0) endGame(true);
+  if (!cdActive && !restActive && mainRemain <= 0) endGame(true);
 }
 function renderTimer() {
   let txt;
   if (restActive) txt = "休憩 " + fmtTime(restRemain);
   else {
-    const paused = (ruleVal() === "top") && !rallyActiveNow();
+    const paused = (ruleVal() === "top") && !rallyActiveNow() && !cdActive;
     txt = fmtTime(mainRemain) + (paused ? " ⏸" : "");
   }
   $("timerDisp").textContent = txt;
   $("hudTimerDisp").textContent = txt;
   $("restBtn").classList.toggle("running", restActive);
   $("hudRest").classList.toggle("running", restActive);
+  updateOverlay();
+}
+// 大画面オーバーレイ（カウントダウン数字／休憩中）
+function updateOverlay() {
+  const o = $("bigOverlay");
+  if (cdActive) {
+    const n = Math.ceil(cdRemain);
+    const numTxt = n >= 1 ? String(n) : "GO";
+    o.querySelector(".bigLabel").textContent = cdThen === "resume" ? "再開まで" : "スタートまで";
+    o.querySelector(".bigTime").textContent = "";
+    if (numTxt !== ovLastNum) {       // 数字が変わった時だけ再描画＝popアニメ再生
+      ovLastNum = numTxt;
+      const el = o.querySelector(".bigNum");
+      el.textContent = numTxt;
+      el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+    }
+    o.classList.add("show");
+  } else if (restActive) {
+    o.querySelector(".bigLabel").textContent = "休憩中";
+    o.querySelector(".bigNum").textContent = "";
+    o.querySelector(".bigTime").textContent = fmtTime(restRemain);
+    ovLastNum = null;
+    o.classList.add("show");
+  } else {
+    o.classList.remove("show");
+    ovLastNum = null;
+  }
 }
 function endGame(reachedZero) {
-  timerActive = false; restActive = false; setStats.active = false;
+  timerActive = false; restActive = false; cdActive = false; setStats.active = false;
   clearInterval(gameInterval); gameInterval = null;
+  $("bigOverlay").classList.remove("show");
   $("timerBtn").textContent = "開始"; $("timerBtn").classList.remove("running");
   $("hudTimerDisp").classList.remove("show");
   $("timerDisp").textContent = "--:--";
@@ -685,7 +778,8 @@ function showSetSummary(reachedZero) {
 
 // ===== リセット（カウンタ・タイマー初期化／マイク計測は維持） =====
 function resetAll() {
-  if (timerActive || restActive) endGame(false);
+  if (timerActive || restActive || cdActive) endGame(false);
+  cdActive = false; restActive = false; $("bigOverlay").classList.remove("show");
   stopDrone(); try { speechSynthesis.cancel(); } catch (_) {} ttsActive = false;
   rally.now = rally.max = rally.total = 0;
   for (const th of THRESHOLDS) counts[th] = 0;
@@ -852,6 +946,26 @@ function drawRecFrame() {
   c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 0.72}px ${FUI}`;
   c2d.fillText("km/h", W / 2, sy + u * 2.4);
   c2d.shadowBlur = 0; c2d.shadowOffsetY = 0;
+
+  // 中央：カウントダウン／休憩中（全面に焼き込み）
+  if (cdActive || restActive) {
+    c2d.fillStyle = "rgba(8,6,24,.5)"; c2d.fillRect(0, 0, W, H);
+    c2d.textAlign = "center";
+    c2d.shadowColor = "rgba(0,0,0,.85)"; c2d.shadowBlur = u * 0.8;
+    if (cdActive) {
+      const n = Math.ceil(cdRemain);
+      c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 1.0}px ${FNUM}`;
+      c2d.fillText(cdThen === "resume" ? "再開まで" : "スタートまで", W / 2, H * 0.30);
+      c2d.fillStyle = "#FFD23F"; c2d.font = `700 ${u * 5.0}px ${FNUM}`;
+      c2d.fillText(n >= 1 ? String(n) : "GO", W / 2, H * 0.40);
+    } else {
+      c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 1.6}px ${FNUM}`;
+      c2d.fillText("休憩中", W / 2, H * 0.34);
+      c2d.fillStyle = "#16E6C3"; c2d.font = `700 ${u * 3.2}px ${FNUM}`;
+      c2d.fillText(fmtTime(restRemain), W / 2, H * 0.50);
+    }
+    c2d.shadowBlur = 0;
+  }
 
   recRAF = requestAnimationFrame(drawRecFrame);
 }
