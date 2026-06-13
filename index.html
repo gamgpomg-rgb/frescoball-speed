@@ -197,7 +197,7 @@
 <!-- ===== 数値モード ===== -->
 <div id="numView">
   <div id="speed">--<small> km/h</small></div>
-  <div id="avg">初速換算（平均速×係数） / 平均速: --</div>
+  <div id="avg">平均速×係数 / 平均速: --</div>
 
   <div id="rally">
     <div class="item">現在ラリー<b id="rNow">0</b></div>
@@ -246,12 +246,13 @@
     <div class="setting"><label>連続音（バックグラウンド）</label><input type="checkbox" id="sndDrone" checked></div>
     <div class="setting"><label>音声アナウンス（毎分「あと◯分」）</label><input type="checkbox" id="sndVoice" checked></div>
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
-    <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
+    <div class="setting"><label>換算係数（1.0=平均速そのまま）</label><input type="number" id="calib" value="1.000" step="0.005"></div>
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
       ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
       ・<b>録画（HUD焼き込み）</b>はカメラモードの「● REC」。終了後にiOSの共有シートが開くので「写真／ファイルに保存」を選んでください。<br>
       ・録画は30/60fps。スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
+      ・<b>換算係数</b>＝1.000で「打音間の平均速」をそのまま表示（一番遅く・正直な値）。スピードガンより速ければ係数を下げる（例:0.95）。選手間距離も実測値に合わせると精度が上がります。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
   </details>
@@ -469,7 +470,7 @@ function beep(tier) {
   const osc = ctx.createOscillator(), gain = ctx.createGain();
   osc.frequency.value = 500 + ((tier - 40) / 5) * 120;
   osc.type = "square";
-  gain.gain.setValueAtTime(0.25, now);
+  gain.gain.setValueAtTime(0.38, now);
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
   osc.connect(gain); gain.connect(ctx.destination);
   osc.start(now); osc.stop(now + 0.25);
@@ -479,7 +480,7 @@ function tone(freq, dur, when) {
   if (!ctx) return;
   const osc = ctx.createOscillator(), gain = ctx.createGain();
   osc.frequency.value = freq; osc.type = "sine";
-  gain.gain.setValueAtTime(0.3, when);
+  gain.gain.setValueAtTime(0.5, when);
   gain.gain.exponentialRampToValueAtTime(0.001, when + dur);
   osc.connect(gain); gain.connect(ctx.destination);
   osc.start(when); osc.stop(when + dur);
@@ -491,8 +492,8 @@ function tick() {
   const now = ctx.currentTime;
   const osc = ctx.createOscillator(), g = ctx.createGain();
   osc.type = "sine"; osc.frequency.value = 1400;
-  g.gain.setValueAtTime(0.16, now);
-  g.gain.exponentialRampToValueAtTime(0.0008, now + 0.045);
+  g.gain.setValueAtTime(0.5, now);
+  g.gain.exponentialRampToValueAtTime(0.0008, now + 0.05);
   osc.connect(g); g.connect(ctx.destination);
   osc.start(now); osc.stop(now + 0.06);
 }
@@ -503,8 +504,8 @@ function startDrone() {
   droneOsc = ctx.createOscillator(); droneGain = ctx.createGain();
   const lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
   droneOsc.type = "sine"; droneOsc.frequency.value = 432;
-  droneGain.gain.value = 0.035;
-  lfo.frequency.value = 0.5; lfoGain.gain.value = 0.018;
+  droneGain.gain.value = 0.09;
+  lfo.frequency.value = 0.5; lfoGain.gain.value = 0.04;
   lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
   droneOsc.connect(droneGain); droneGain.connect(ctx.destination);
   droneOsc.start(); lfo.start(); droneOsc._lfo = lfo;
@@ -693,7 +694,7 @@ function resetAll() {
   hudState.speed = "--"; hudState.sub = "リセットしました";
   renderCounts(); renderRally();
   speedEl.innerHTML = `--<small> km/h</small>`;
-  avgEl.textContent = "初速換算（平均速×係数） / 平均速: --";
+  avgEl.textContent = "平均速×係数 / 平均速: --";
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
   statusEl.textContent = "リセットしました（計測は継続）";
