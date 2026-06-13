@@ -12,15 +12,28 @@
     font-family: -apple-system, "Hiragino Sans", sans-serif;
     background: #0d1117; color: #e6edf3;
     min-height: 100vh; padding: 16px; text-align: center;
+    overflow-x: hidden;
   }
-  h1 { font-size: 16px; color: #8b949e; font-weight: 600; margin-bottom: 12px; }
-  #speed {
-    font-size: 96px; font-weight: 800; line-height: 1.1;
-    font-variant-numeric: tabular-nums; margin: 8px 0;
+  h1 { font-size: 15px; color: #8b949e; font-weight: 600; margin-bottom: 10px; }
+
+  /* ===== モード切替タブ ===== */
+  #modeTabs { display: inline-flex; background: #161b22; border-radius: 10px; padding: 4px; margin-bottom: 12px; }
+  #modeTabs button {
+    font-size: 14px; font-weight: 700; border: none; border-radius: 7px;
+    padding: 8px 18px; margin: 0; background: transparent; color: #8b949e; cursor: pointer;
   }
-  #speed small { font-size: 24px; color: #8b949e; font-weight: 400; }
-  #avg { color: #8b949e; font-size: 14px; margin-bottom: 12px; }
-  #status { font-size: 14px; color: #8b949e; min-height: 20px; margin: 8px 0; }
+  #modeTabs button.active { background: #21262d; color: #e6edf3; }
+
+  #speed { font-size: 92px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; margin: 6px 0; }
+  #speed small { font-size: 22px; color: #8b949e; font-weight: 400; }
+  #avg { color: #8b949e; font-size: 13px; margin-bottom: 8px; }
+
+  /* ===== ラリー表示 ===== */
+  #rally { display: flex; justify-content: center; gap: 22px; margin: 4px 0 12px; }
+  #rally .item { font-size: 13px; color: #8b949e; }
+  #rally .item b { display: block; font-size: 26px; color: #e6edf3; font-variant-numeric: tabular-nums; }
+
+  #status { font-size: 13px; color: #8b949e; min-height: 18px; margin: 6px 0; }
   button {
     font-size: 18px; font-weight: 700; border: none; border-radius: 12px;
     padding: 14px 28px; margin: 6px; cursor: pointer;
@@ -32,53 +45,133 @@
   td, th { padding: 4px 14px; border-bottom: 1px solid #21262d; }
   th { color: #8b949e; font-weight: 600; }
   #log {
-    margin-top: 12px; max-height: 160px; overflow-y: auto; font-size: 13px;
+    margin-top: 12px; max-height: 140px; overflow-y: auto; font-size: 13px;
     color: #8b949e; text-align: left; background: #161b22;
     border-radius: 8px; padding: 8px 12px;
   }
-  details { margin-top: 16px; text-align: left; max-width: 420px; margin-left: auto; margin-right: auto; }
+  details { margin-top: 16px; text-align: left; max-width: 440px; margin-left: auto; margin-right: auto; }
   summary { color: #8b949e; font-size: 14px; cursor: pointer; }
   .setting { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 14px; }
   .setting input, .setting select {
-    width: 90px; font-size: 15px; background: #21262d; color: #e6edf3;
+    width: 110px; font-size: 15px; background: #21262d; color: #e6edf3;
     border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; text-align: right;
   }
   .note { font-size: 12px; color: #6e7681; margin-top: 10px; line-height: 1.6; text-align: left; }
+
+  /* ===== カメラHUDモード ===== */
+  #camWrap {
+    position: fixed; inset: 0; z-index: 50; background: #000; display: none;
+  }
+  #camWrap.show { display: block; }
+  #camVideo { width: 100%; height: 100%; object-fit: cover; }
+  #hud {
+    position: absolute; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px);
+  }
+  #hudTop { display: flex; justify-content: space-between; align-items: flex-start; }
+  #hudClose {
+    pointer-events: auto; background: rgba(0,0,0,.45); color: #fff; font-size: 14px;
+    border-radius: 10px; padding: 10px 16px; backdrop-filter: blur(4px);
+  }
+  #hudRally {
+    background: rgba(0,0,0,.45); border-radius: 12px; padding: 10px 16px;
+    text-align: right; backdrop-filter: blur(4px);
+  }
+  #hudRally .lbl { font-size: 11px; color: #c9d1d9; }
+  #hudRally .big { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #hudSpeed {
+    align-self: center; text-align: center;
+    text-shadow: 0 2px 18px rgba(0,0,0,.85);
+  }
+  #hudSpeed .v { font-size: 110px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  #hudSpeed .u { font-size: 28px; color: #c9d1d9; }
+  #hudSpeed .sub { font-size: 15px; color: #c9d1d9; margin-top: 6px; }
+  #hudBottom {
+    align-self: stretch; display: flex; justify-content: center; gap: 10px;
+  }
+  #hudBottom .pill {
+    background: rgba(0,0,0,.45); border-radius: 20px; padding: 8px 14px;
+    font-size: 14px; font-weight: 700; backdrop-filter: blur(4px);
+  }
+  #hudStart {
+    pointer-events: auto; background: #238636; color: #fff; border-radius: 24px;
+    padding: 14px 32px; font-size: 17px; font-weight: 800;
+  }
+  #hudStart.running { background: #da3633; }
 </style>
 </head>
 <body>
 <h1>フレスコボール球速メーター β（A方式: 打音間隔→初速換算）</h1>
 
-<div id="speed">--<small> km/h</small></div>
-<div id="avg">初速換算（平均速×係数） / 平均速: --</div>
+<div id="modeTabs">
+  <button id="tabNum" class="active">数値モード</button>
+  <button id="tabCam">カメラモード</button>
+</div>
 
-<button id="startBtn">計測開始</button>
-<button id="beepTest">音テスト</button>
-<div id="status">「計測開始」を押すとマイク許可を求めます</div>
+<!-- ===== 数値モード ===== -->
+<div id="numView">
+  <div id="speed">--<small> km/h</small></div>
+  <div id="avg">初速換算（平均速×係数） / 平均速: --</div>
 
-<table>
-  <tr><th>閾値</th><th>回数</th><th>閾値</th><th>回数</th></tr>
-  <tbody id="counts"></tbody>
-</table>
-
-<div id="log"></div>
-
-<details>
-  <summary>設定</summary>
-  <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" value="7.0" step="0.5"></div>
-  <div class="setting"><label>マイク位置</label>
-    <select id="micPos"><option value="center">コート中央</option><option value="near">片側選手付近</option></select>
+  <div id="rally">
+    <div class="item">現在ラリー<b id="rNow">0</b></div>
+    <div class="item">最長<b id="rMax">0</b></div>
+    <div class="item">総打数<b id="rTotal">0</b></div>
   </div>
-  <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
-  <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
-  <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
-  <div class="note">
-    ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
-    ・打って約0.5秒後（相手のインパクト時）に1つ前の打球の判定音が鳴ります。<br>
-    ・係数1.070は理論値。スピードガン併走校正後に更新してください。<br>
-    ・マイク利用のためHTTPS（またはlocalhost）でのみ動作します。
+
+  <button id="startBtn">計測開始</button>
+  <button id="beepTest">音テスト</button>
+  <div id="status">「計測開始」を押すとマイク許可を求めます</div>
+
+  <table>
+    <tr><th>閾値</th><th>回数</th><th>閾値</th><th>回数</th></tr>
+    <tbody id="counts"></tbody>
+  </table>
+
+  <div id="log"></div>
+
+  <details>
+    <summary>設定</summary>
+    <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" value="7.0" step="0.5"></div>
+    <div class="setting"><label>マイク位置</label>
+      <select id="micPos"><option value="center">コート中央</option><option value="near">片側選手付近</option></select>
+    </div>
+    <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
+    <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
+    <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
+    <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
+    <div class="setting"><label>初速換算係数</label><input type="number" id="calib" value="1.070" step="0.005"></div>
+    <div class="note">
+      ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
+      ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
+      ・打って約0.5秒後（相手のインパクト時）に1つ前の打球の判定音が鳴ります。<br>
+      ・係数1.070は理論値。スピードガン併走校正後に更新してください。<br>
+      ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
+    </div>
+  </details>
+</div>
+
+<!-- ===== カメラHUDモード ===== -->
+<div id="camWrap">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="hud">
+    <div id="hudTop">
+      <button id="hudClose">✕ 閉じる</button>
+      <div id="hudRally">
+        <div class="lbl">現在ラリー</div><div class="big" id="hRNow">0</div>
+        <div class="lbl" style="margin-top:4px">最長 <span id="hRMax">0</span> / 総 <span id="hRTotal">0</span></div>
+      </div>
+    </div>
+    <div id="hudSpeed">
+      <div><span class="v" id="hV">--</span><span class="u"> km/h</span></div>
+      <div class="sub" id="hSub">計測待機</div>
+    </div>
+    <div id="hudBottom">
+      <button id="hudStart">計測開始</button>
+    </div>
   </div>
-</details>
+</div>
 
 <script>
 "use strict";
@@ -110,13 +203,45 @@ function log(msg) {
   logEl.insertAdjacentHTML("afterbegin", `<div>[${t}] ${msg}</div>`);
 }
 
+// ===== ラリー集計 =====
+const rally = { now: 0, max: 0, total: 0 };
+function rallyOnHit(t) {
+  const gap = parseFloat($("rallyGap").value) || 2.5;
+  if (lastHitTime !== null && (t - lastHitTime) > gap) rally.now = 0; // 無音が続いたら新ラリー
+  rally.now++; rally.total++;
+  if (rally.now > rally.max) rally.max = rally.now;
+  renderRally();
+}
+function renderRally() {
+  $("rNow").textContent = rally.now; $("rMax").textContent = rally.max; $("rTotal").textContent = rally.total;
+  $("hRNow").textContent = rally.now; $("hRMax").textContent = rally.max; $("hRTotal").textContent = rally.total;
+}
+
 // ===== 音声処理 =====
 let ctx = null, stream = null, running = false;
-let lastOnset = null;        // 直前打音の時刻（AudioContext時間）
+let analyser = null, freqBuf = null;     // 声カット用スペクトル解析
+let lastOnset = null;        // 直前打音の時刻（飛行時間Δt用）
+let lastHitTime = null;      // 直前打音の時刻（ラリー区切り用）
 let onsetIndex = 0;          // near配置の交互補正用
-let noiseFloor = 1e-4;
+let noiseFloor = 1e-4;       // 背景ノイズEMA（緩い）
+let fastEnv = 1e-4;          // 直近エンベロープEMA（速い・アタック比用）
 let refractoryUntil = 0;     // 多重検出・自己ビープ抑止
 const REFRACTORY = 0.12;     // 同一打音の多重検出防止 [s]
+
+// 高域バンドのスペクトル平坦度（広帯域=打音1に近い / 倍音ピーク=声0に近い）
+function spectralFlatness() {
+  if (!analyser) return 1;
+  analyser.getFloatFrequencyData(freqBuf);           // dB
+  const nyq = ctx.sampleRate / 2, n = freqBuf.length;
+  const lo = Math.floor(2500 / nyq * n), hi = Math.floor(12000 / nyq * n);
+  let logSum = 0, linSum = 0, cnt = 0;
+  for (let i = lo; i < hi && i < n; i++) {
+    const p = Math.pow(10, freqBuf[i] / 10) + 1e-12;  // dB→パワー
+    logSum += Math.log(p); linSum += p; cnt++;
+  }
+  if (cnt === 0) return 1;
+  return Math.exp(logSum / cnt) / (linSum / cnt);     // 0(ピーキー)〜1(平坦)
+}
 
 async function start() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -125,12 +250,19 @@ async function start() {
   });
   const src = ctx.createMediaStreamSource(stream);
 
-  // 1kHzハイパスで波音・風の低周波を抑制
+  // 2.5kHzハイパス：声の基本周波数・波音・風を抑え、打球の衝撃音を残す
   const hp = ctx.createBiquadFilter();
-  hp.type = "highpass"; hp.frequency.value = 1000; hp.Q.value = 0.7;
+  hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
 
-  const proc = ctx.createScriptProcessor(1024, 1, 1);
-  src.connect(hp); hp.connect(proc); proc.connect(ctx.destination); // destination接続はiOS動作要件
+  // スペクトル解析（声カット判定用）
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0;
+  freqBuf = new Float32Array(analyser.frequencyBinCount);
+
+  const proc = ctx.createScriptProcessor(512, 1, 1);
+  src.connect(hp);
+  hp.connect(analyser);
+  hp.connect(proc); proc.connect(ctx.destination); // destination接続はiOS動作要件
 
   proc.onaudioprocess = e => {
     if (!running) return;
@@ -141,19 +273,38 @@ async function start() {
     const now = ctx.currentTime;
 
     const sens = parseFloat($("sens").value) || 6;
-    if (rms > noiseFloor * sens && now > refractoryUntil) {
-      refractoryUntil = now + REFRACTORY;
-      onHit(now);
-    } else if (now > refractoryUntil) {
-      // 打音中以外でノイズフロアを緩やかに追従（中央値の代用としてEMA）
+    const prevFast = fastEnv;
+    fastEnv = fastEnv * 0.6 + rms * 0.4; // 速いエンベロープ
+
+    const loudEnough = rms > noiseFloor * sens;
+    if (loudEnough && now > refractoryUntil) {
+      // --- 声カット判定 ---
+      const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
+      // ①アタック比：打音は直前比で急峻に立ち上がる（声はなだらか）
+      const attackRatio = rms / (prevFast + 1e-9);
+      const needAttack = 1.6 + vc * 0.28;       // vc=5 → 約3.0倍
+      // ②広帯域性：打音は平坦、声は倍音ピークで平坦度が低い
+      const flat = spectralFlatness();
+      const needFlat = 0.06 + vc * 0.022;        // vc=5 → 約0.17
+      const isImpact = attackRatio >= needAttack && flat >= needFlat;
+
+      if (isImpact) {
+        refractoryUntil = now + REFRACTORY;
+        onHit(now);
+      } else {
+        // 弾いた（声・環境音）— ノイズフロアは更新しない
+      }
+    } else if (now > refractoryUntil && !loudEnough) {
       noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
     }
   };
 
   try { await navigator.wakeLock?.request("screen"); } catch (_) {}
   running = true;
+  syncStartButtons(true);
   statusEl.textContent = "計測中… 打音を待っています";
-  log(`計測開始（fs=${ctx.sampleRate}Hz）`);
+  $("hSub").textContent = "計測中…";
+  log(`計測開始（fs=${ctx.sampleRate}Hz / 声カット有効）`);
 }
 
 function onHit(t) {
@@ -163,7 +314,6 @@ function onHit(t) {
   if (lastOnset !== null) {
     let dt = t - lastOnset;
     if (micPos === "near") {
-      // 片側配置: 遠い選手の打音は L/343 秒遅れて届く（交互に符号反転）
       const d = L / SOUND_SPEED;
       dt += (onsetIndex % 2 === 0) ? -d : +d;
     }
@@ -174,13 +324,17 @@ function onHit(t) {
       showSpeed(v0, vAvg, dt);
     }
   }
+  rallyOnHit(t);
   lastOnset = t;
+  lastHitTime = t;
   onsetIndex++;
 }
 
 function showSpeed(v0, vAvg, dt) {
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
   avgEl.textContent = `平均速 ${vAvg.toFixed(1)} km/h ／ 飛行時間 ${dt.toFixed(3)} s`;
+  $("hV").textContent = v0.toFixed(1);
+  $("hSub").textContent = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   let tier = null;
   for (const th of THRESHOLDS) if (v0 >= th) { counts[th]++; tier = th; }
   renderCounts();
@@ -207,30 +361,65 @@ function beep(tier) {
 function stop() {
   running = false;
   stream?.getTracks().forEach(t => t.stop());
-  ctx?.close(); ctx = null; lastOnset = null;
+  ctx?.close(); ctx = null; analyser = null;
+  lastOnset = null; lastHitTime = null;
+  syncStartButtons(false);
   statusEl.textContent = "停止しました";
+  $("hSub").textContent = "停止中";
   log("計測停止");
 }
 
-$("startBtn").addEventListener("click", async () => {
-  const btn = $("startBtn");
+function syncStartButtons(isRunning) {
+  const b1 = $("startBtn"), b2 = $("hudStart");
+  b1.textContent = isRunning ? "停止" : "計測開始";
+  b1.classList.toggle("running", isRunning);
+  b2.textContent = isRunning ? "停止" : "計測開始";
+  b2.classList.toggle("running", isRunning);
+}
+
+async function toggleMeasure() {
   if (!running) {
-    try {
-      await start();
-      btn.textContent = "停止"; btn.classList.add("running");
-    } catch (err) {
+    try { await start(); }
+    catch (err) {
       statusEl.textContent = "マイクを取得できません: " + err.message;
+      $("hSub").textContent = "マイク取得失敗";
     }
-  } else {
-    stop();
-    btn.textContent = "計測開始"; btn.classList.remove("running");
-  }
-});
+  } else { stop(); }
+}
+
+$("startBtn").addEventListener("click", toggleMeasure);
+$("hudStart").addEventListener("click", toggleMeasure);
 
 $("beepTest").addEventListener("click", () => {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   [50, 55, 60].forEach((t, i) => setTimeout(() => beep(t), i * 400));
 });
+
+// ===== モード切替 =====
+let camStream = null;
+async function enterCamera() {
+  $("tabCam").classList.add("active"); $("tabNum").classList.remove("active");
+  $("camWrap").classList.add("show");
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+    const v = $("camVideo"); v.srcObject = camStream; await v.play().catch(() => {});
+  } catch (err) {
+    $("hSub").textContent = "カメラ取得失敗: " + err.message;
+  }
+  renderRally();
+}
+function exitCamera() {
+  $("tabNum").classList.add("active"); $("tabCam").classList.remove("active");
+  $("camWrap").classList.remove("show");
+  camStream?.getTracks().forEach(t => t.stop()); camStream = null;
+  $("camVideo").srcObject = null;
+}
+$("tabCam").addEventListener("click", enterCamera);
+$("tabNum").addEventListener("click", exitCamera);
+$("hudClose").addEventListener("click", exitCamera);
 </script>
 </body>
 </html>
