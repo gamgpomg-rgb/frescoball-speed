@@ -263,8 +263,9 @@
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
-    <div class="setting"><label>カウント音（毎秒チック）</label><input type="checkbox" id="sndTick" checked></div>
-    <div class="setting"><label>連続音（バックグラウンド）</label><input type="checkbox" id="sndDrone" checked></div>
+    <div class="setting"><label>カウント音（毎秒チクタク）</label><input type="checkbox" id="sndTick" checked></div>
+    <div class="setting"><label>BGM音楽ファイル（mp3等）</label><input type="file" id="bgmFile" accept="audio/*"></div>
+    <div class="setting"><label>BGM音量</label><input type="range" id="bgmVol" min="0" max="1" step="0.05" value="0.5"></div>
     <div class="setting"><label>音声アナウンス（毎分「あと◯分」）</label><input type="checkbox" id="sndVoice" checked></div>
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
     <div class="setting"><label>換算係数（1.0=平均速そのまま）</label><input type="number" id="calib" value="1.000" step="0.005"></div>
@@ -274,6 +275,7 @@
       ・<b>録画（HUD焼き込み）</b>はカメラモードの「● REC」。終了後にiOSの共有シートが開くので「写真／ファイルに保存」を選んでください。<br>
       ・録画は30/60fps。スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
       ・<b>換算係数</b>＝1.000で「打音間の平均速」をそのまま表示（一番遅く・正直な値）。スピードガンより速ければ係数を下げる（例:0.95）。選手間距離も実測値に合わせると精度が上がります。<br>
+      ・<b>BGM</b>＝端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
   </details>
@@ -309,6 +311,8 @@
     </div>
   </div>
 </div>
+
+<audio id="bgm" loop playsinline></audio>
 
 <!-- ===== 大画面オーバーレイ（カウントダウン／休憩中） ===== -->
 <div id="bigOverlay">
@@ -514,36 +518,23 @@ function tone(freq, dur, when) {
   osc.start(when); osc.stop(when + dur);
 }
 
-// 毎秒チック（1.4kHzサイン＝検出HP2.5kHz以下なので打音検出に干渉しない）
-function tick() {
+// 毎秒チック（サイン＝検出HP2.5kHz以下なので打音検出に干渉しない）。freqを変えてチク・タク
+function tick(freq = 1400) {
   if (!ctx) return;
   const now = ctx.currentTime;
   const osc = ctx.createOscillator(), g = ctx.createGain();
-  osc.type = "sine"; osc.frequency.value = 1400;
+  osc.type = "sine"; osc.frequency.value = freq;
   g.gain.setValueAtTime(0.5, now);
   g.gain.exponentialRampToValueAtTime(0.0008, now + 0.05);
   osc.connect(g); g.connect(ctx.destination);
   osc.start(now); osc.stop(now + 0.06);
 }
-// 連続音（中低域サイン＋ゆるい脈動。narrowbandなので検出されない）
-let droneOsc = null, droneGain = null;
-function startDrone() {
-  if (!ctx || droneOsc) return;
-  droneOsc = ctx.createOscillator(); droneGain = ctx.createGain();
-  const lfo = ctx.createOscillator(), lfoGain = ctx.createGain();
-  droneOsc.type = "sine"; droneOsc.frequency.value = 432;
-  droneGain.gain.value = 0.09;
-  lfo.frequency.value = 0.5; lfoGain.gain.value = 0.04;
-  lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
-  droneOsc.connect(droneGain); droneGain.connect(ctx.destination);
-  droneOsc.start(); lfo.start(); droneOsc._lfo = lfo;
-}
-function stopDrone() {
-  if (!droneOsc) return;
-  try { droneOsc.stop(); } catch (_) {}
-  try { droneOsc._lfo && droneOsc._lfo.stop(); } catch (_) {}
-  droneOsc = null; droneGain = null;
-}
+// ===== BGM（端末内の音楽ファイルを再生。Suno等のAI生成mp3を選択可） =====
+const bgmEl = $("bgm");
+function bgmReady() { return bgmEl && bgmEl.src && bgmEl.src !== location.href; }
+function bgmPlay() { if (bgmReady()) bgmEl.play().catch(() => {}); }
+function bgmPause() { if (bgmReady()) bgmEl.pause(); }
+function bgmStop() { if (bgmReady()) { bgmEl.pause(); try { bgmEl.currentTime = 0; } catch (_) {} } }
 // 音声アナウンス（iOS Safari対応。ボタン押下=ジェスチャ起点で解錠される）
 function speak(text) {
   if (!("speechSynthesis" in window)) return;
@@ -563,7 +554,7 @@ function handleCountdownAudio() {
   if (sec === lastTickSec) return;
   lastTickSec = sec;
   if (sec < 0) return;
-  if ($("sndTick").checked) tick();
+  if ($("sndTick").checked) tick(sec % 2 === 0 ? 1400 : 1050); // チク・タク交互
   if ($("sndVoice").checked && sec > 0 && sec % 60 === 0) speak(`あと${sec / 60}分`);
 }
 
@@ -655,7 +646,7 @@ function takeRest() {
   restUsed++;
   restRemain = (parseFloat($("restMin").value) || 1) * 60;
   restActive = true; restWarned = false;
-  stopDrone();                       // 休憩中は連続音を止める
+  bgmPause();                        // 休憩中はBGMを一時停止
   if (ctx) tone(520, 0.15, ctx.currentTime);
   if ($("sndVoice").checked) speak("タイム。休憩します");
   log(`タイム（休憩）${restUsed}回目`);
@@ -678,7 +669,7 @@ function finishCountdown() {
   cdActive = false;
   if (ctx) tone(1175, 0.4, ctx.currentTime);                   // GO音（高め・長め）
   lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 直近の分は再アナウンスしない
-  if ($("sndDrone").checked) startDrone();
+  bgmPlay();                         // 本計測開始/再開でBGM再生
   if ($("sndVoice").checked) speak(cdThen === "resume" ? "再開します" : "スタート");
   renderTimer();
 }
@@ -756,7 +747,7 @@ function endGame(reachedZero) {
   $("hudTimerDisp").classList.remove("show");
   $("timerDisp").textContent = "--:--";
   $("restBtn").classList.remove("running"); $("hudRest").classList.remove("running");
-  stopDrone();
+  bgmStop();
   if (reachedZero && ctx) {
     const t0 = ctx.currentTime;
     tone(880, 0.2, t0); tone(880, 0.2, t0 + 0.28); tone(1175, 0.4, t0 + 0.56);
@@ -780,7 +771,7 @@ function showSetSummary(reachedZero) {
 function resetAll() {
   if (timerActive || restActive || cdActive) endGame(false);
   cdActive = false; restActive = false; $("bigOverlay").classList.remove("show");
-  stopDrone(); try { speechSynthesis.cancel(); } catch (_) {} ttsActive = false;
+  bgmStop(); try { speechSynthesis.cancel(); } catch (_) {} ttsActive = false;
   rally.now = rally.max = rally.total = 0;
   for (const th of THRESHOLDS) counts[th] = 0;
   setStats.active = false; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
@@ -803,6 +794,19 @@ $("hudRest").addEventListener("click", takeRest);
 $("resetBtn").addEventListener("click", resetAll);
 $("hudReset").addEventListener("click", resetAll);
 updateRestVisibility();
+
+// BGM: ファイル選択・音量
+if (bgmEl) bgmEl.volume = 0.5;
+$("bgmFile").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (bgmEl.src && bgmEl.src !== location.href) { try { URL.revokeObjectURL(bgmEl.src); } catch (_) {} }
+  bgmEl.src = URL.createObjectURL(f);
+  bgmEl.volume = parseFloat($("bgmVol").value) || 0.5;
+  log(`BGM設定: ${f.name}`);
+  flashSub("BGMを設定しました（計測開始で再生）");
+});
+$("bgmVol").addEventListener("input", () => { if (bgmEl) bgmEl.volume = parseFloat($("bgmVol").value) || 0; });
 
 // ===== モード切替 =====
 let camStream = null;
