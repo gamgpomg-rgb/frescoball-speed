@@ -253,7 +253,7 @@
       <option value="top">トップ</option>
     </select>
     <input type="number" id="timerMin" value="5" step="1" min="1"> 分
-    <button id="timerBtn">開始</button>
+    <button id="timerBtn">セット開始</button>
     <button id="restBtn" hidden>タイム</button>
     <button id="resetBtn">リセット</button>
     <span id="timerDisp">--:--</span>
@@ -331,7 +331,7 @@
     <div id="hudBottom">
       <button id="hudStart">計測開始</button>
       <button id="hudRec">● REC</button>
-      <button id="hudTimer">⏱ 開始</button>
+      <button id="hudTimer">⏱ セット開始</button>
       <button id="hudRest" hidden>タイム</button>
       <button id="hudSnd">🔔 音</button>
       <button id="hudReset">リセット</button>
@@ -618,7 +618,7 @@ function stop() {
 function syncStartButtons(isRunning) {
   for (const id of ["startBtn", "hudStart"]) {
     const b = $(id);
-    b.textContent = isRunning ? "停止" : "計測開始";
+    b.textContent = isRunning ? "計測停止" : "計測開始";
     b.classList.toggle("running", isRunning);
   }
 }
@@ -667,6 +667,13 @@ function updateRestVisibility() {
 }
 function flashSub(msg) { hudState.sub = msg; $("hSub").textContent = msg; statusEl.textContent = msg; }
 
+// セット（試合タイマー）ボタンを数値モード・HUDで同期。停止系の表記重複を防ぐ
+function setSetButtons(running) {
+  $("timerBtn").textContent = running ? "セット停止" : "セット開始";
+  $("timerBtn").classList.toggle("running", running);
+  $("hudTimer").textContent = running ? "⏱ セット停止" : "⏱ セット開始";
+  $("hudTimer").classList.toggle("running", running);
+}
 function startGame() {
   if (cdActive) return;                 // カウントダウン中の誤連打で止めない（リセットで中止可）
   if (timerActive) { endGame(false); return; }
@@ -676,7 +683,7 @@ function startGame() {
   timerActive = true;
   setStats.active = true; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
   $("setSummary").hidden = true;
-  $("timerBtn").textContent = "ストップ"; $("timerBtn").classList.add("running");
+  setSetButtons(true);
   $("hudTimerDisp").classList.add("show");
   if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
   lastTickMs = performance.now();
@@ -796,7 +803,7 @@ function endGame(reachedZero) {
   timerActive = false; restActive = false; cdActive = false; setStats.active = false;
   clearInterval(gameInterval); gameInterval = null;
   $("bigOverlay").classList.remove("show");
-  $("timerBtn").textContent = "開始"; $("timerBtn").classList.remove("running");
+  setSetButtons(false);
   $("hudTimerDisp").classList.remove("show");
   $("timerDisp").textContent = "--:--";
   $("restBtn").classList.remove("running"); $("hudRest").classList.remove("running");
@@ -983,7 +990,7 @@ async function startRec() {
   mediaRecorder.start(1000);
 
   recording = true;
-  $("hudRec").textContent = "■ 停止"; $("hudRec").classList.add("running");
+  $("hudRec").textContent = "■ 録画停止"; $("hudRec").classList.add("running");
   $("hudRecDot").classList.add("show");
   drawRecFrame();
   log("録画開始（" + (mime || "default") + ", " + w + "x" + h + "）");
