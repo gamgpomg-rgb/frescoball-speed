@@ -513,10 +513,28 @@ function tone(freq, dur, when) {
   if (!ctx) return;
   const osc = ctx.createOscillator(), gain = ctx.createGain();
   osc.frequency.value = freq; osc.type = "sine";
-  gain.gain.setValueAtTime(0.5, when);
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.exponentialRampToValueAtTime(0.5, when + 0.015);   // ソフトアタック
   gain.gain.exponentialRampToValueAtTime(0.001, when + dur);
   osc.connect(gain); gain.connect(ctx.destination);
   osc.start(when); osc.stop(when + dur);
+  refractoryUntil = Math.max(refractoryUntil, when + dur + 0.1); // 自己音を打音検出から除外
+}
+// GO音（伸ばす：約1.3秒の持続音、立ち上がり→ホールド→リリース）
+function goTone() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(720, t);
+  osc.frequency.exponentialRampToValueAtTime(960, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.55, t + 0.04);     // attack
+  g.gain.setValueAtTime(0.55, t + 0.9);                    // sustain（伸ばす）
+  g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);     // release
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(t); osc.stop(t + 1.35);
+  refractoryUntil = Math.max(refractoryUntil, t + 1.4);
 }
 
 // 毎秒チック（サイン＝検出HP2.5kHz以下なので打音検出に干渉しない）。freqを変えてチク・タク
@@ -525,10 +543,12 @@ function tick(freq = 1400) {
   const now = ctx.currentTime;
   const osc = ctx.createOscillator(), g = ctx.createGain();
   osc.type = "sine"; osc.frequency.value = freq;
-  g.gain.setValueAtTime(0.5, now);
-  g.gain.exponentialRampToValueAtTime(0.0008, now + 0.05);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.5, now + 0.012);   // ソフトアタックでクリック音を消す
+  g.gain.exponentialRampToValueAtTime(0.0008, now + 0.07);
   osc.connect(g); g.connect(ctx.destination);
-  osc.start(now); osc.stop(now + 0.06);
+  osc.start(now); osc.stop(now + 0.08);
+  refractoryUntil = Math.max(refractoryUntil, now + 0.09); // 自己音を打音検出から除外（短め＝打音取りこぼし最小）
 }
 // ===== BGM（端末内の音楽ファイルを再生。Suno等のAI生成mp3を選択可） =====
 const bgmEl = $("bgm");
@@ -537,11 +557,11 @@ function bgmPlay() { if ($("sndBgm").checked && bgmReady()) bgmEl.play().catch((
 function bgmPause() { if (bgmReady()) bgmEl.pause(); }
 function bgmStop() { if (bgmReady()) { bgmEl.pause(); try { bgmEl.currentTime = 0; } catch (_) {} } }
 // 音声アナウンス（iOS Safari対応。ボタン押下=ジェスチャ起点で解錠される）
-function speak(text, lang = "ja-JP") {
+function speak(text, lang = "ja-JP", rate) {
   if (!("speechSynthesis" in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang; u.rate = lang === "en-US" ? 1.0 : 1.05;
+    u.lang = lang; u.rate = rate != null ? rate : (lang === "en-US" ? 1.0 : 1.05);
     ttsActive = true;
     clearTimeout(ttsTimer); ttsTimer = setTimeout(() => { ttsActive = false; }, 4000);
     u.onend = () => { ttsActive = false; clearTimeout(ttsTimer); };
@@ -673,10 +693,10 @@ function handleCdTick() {
 }
 function finishCountdown() {
   cdActive = false;
-  if (ctx) tone(1175, 0.4, ctx.currentTime);                   // GO音（高め・長め）
+  if (ctx) goTone();                                           // GO音（約1.3秒・伸ばす）
   lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 直近の分は再アナウンスしない
   bgmPlay();                         // 本計測開始/再開でBGM再生
-  if ($("sndVoice").checked) speak("Go!", "en-US");            // ゴー！
+  if ($("sndVoice").checked) speak("Goooo!", "en-US", 0.5);    // ゴーーー！（ゆっくり伸ばす）
   renderTimer();
 }
 function handleRestAudio() {
