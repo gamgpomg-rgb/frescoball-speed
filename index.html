@@ -284,6 +284,7 @@
     <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
     <div class="setting"><label>開始カウントダウン [秒]（ソロは10等）</label><input type="number" id="cdSecs" value="3" min="1" max="20" step="1"></div>
+    <div class="setting"><label>録画の上限 [秒]（長尺クラッシュ防止）</label><input type="number" id="recMaxSec" value="90" min="15" max="600" step="15"></div>
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
     <div class="setting"><label>カウント音（毎秒チクタク）</label><input type="checkbox" id="sndTick" checked></div>
@@ -551,15 +552,15 @@ function goTone() {
   const t = ctx.currentTime;
   const osc = ctx.createOscillator(), g = ctx.createGain();
   osc.type = "sine";
-  osc.frequency.setValueAtTime(720, t);
-  osc.frequency.exponentialRampToValueAtTime(960, t + 0.12);
+  osc.frequency.setValueAtTime(660, t);
+  osc.frequency.exponentialRampToValueAtTime(990, t + 0.2);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.55, t + 0.04);     // attack
-  g.gain.setValueAtTime(0.55, t + 0.9);                    // sustain（伸ばす）
-  g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);     // release
+  g.gain.exponentialRampToValueAtTime(0.55, t + 0.05);     // attack
+  g.gain.setValueAtTime(0.55, t + 2.2);                    // 長いホールド＝ゴーーーーー
+  g.gain.exponentialRampToValueAtTime(0.001, t + 2.7);     // release
   osc.connect(g); g.connect(ctx.destination);
-  osc.start(t); osc.stop(t + 1.35);
-  refractoryUntil = Math.max(refractoryUntil, t + 1.4);
+  osc.start(t); osc.stop(t + 2.75);
+  refractoryUntil = Math.max(refractoryUntil, t + 0.8); // 鋭い立ち上がりだけ抑制（持続音は狭帯域で誤検出されない）
 }
 
 // 毎秒チック（サイン＝検出HP2.5kHz以下なので打音検出に干渉しない）。freqを変えてチク・タク
@@ -727,10 +728,10 @@ function handleCdTick() {
 }
 function finishCountdown() {
   cdActive = false;
-  if (ctx) goTone();                                           // GO音（約1.3秒・伸ばす）
+  if (ctx) goTone();                                           // GO音（約2.6秒・長く伸ばす）
   lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 直近の分は再アナウンスしない
   bgmPlay();                         // 本計測開始/再開でBGM再生
-  if ($("sndVoice").checked) speak("Goooo!", "en-US", 0.5);    // ゴーーー！（ゆっくり伸ばす）
+  if ($("sndVoice").checked) speak("Goooooo!", "en-US", 0.35); // ゴーーーーー！（さらにゆっくり）
   renderTimer();
 }
 function handleRestAudio() {
@@ -941,7 +942,7 @@ $("tabNum").addEventListener("click", exitCamera);
 $("hudClose").addEventListener("click", exitCamera);
 
 // ===== 録画（HUD焼き込み） =====
-let recording = false, mediaRecorder = null, recChunks = [], recRAF = 0, recAudioStream = null;
+let recording = false, mediaRecorder = null, recChunks = [], recRAF = 0, recAudioStream = null, recStopTimer = 0;
 const canvas = $("recCanvas"), c2d = canvas.getContext("2d");
 const FNUM = '"DIN Condensed","Oswald",sans-serif';
 const FUI  = '"DIN Alternate","Saira",-apple-system,sans-serif';
@@ -960,10 +961,11 @@ async function startRec() {
   // （object-fit:cover を再現し、縦横比を崩さず・録画＝見たままにする）
   const dispW = v.clientWidth || window.innerWidth;
   const dispH = v.clientHeight || window.innerHeight;
-  const targetLong = 1280; // 長辺の解像度（負荷とのバランス）
+  const targetLong = 720; // 長辺の解像度（メモリ/発熱を抑えてクラッシュ回避）
   let w, h;
   if (dispH >= dispW) { h = targetLong; w = Math.round(targetLong * dispW / dispH); } // 縦持ち
   else { w = targetLong; h = Math.round(targetLong * dispH / dispW); }                 // 横持ち
+  w -= (w % 2); h -= (h % 2); // 偶数化（エンコーダ要件）
   canvas.width = w; canvas.height = h;
 
   // 音声トラック確保（計測中ならそのマイクを再利用、なければ新規取得）
@@ -976,13 +978,18 @@ async function startRec() {
     } catch (_) { /* 音声なしで続行 */ }
   }
 
-  const canvasStream = canvas.captureStream(30);
+  const canvasStream = canvas.captureStream(24); // fpsを抑えて負荷軽減
   if (audioTrack) canvasStream.addTrack(audioTrack);
 
   const mime = pickMime();
+  const opts = { videoBitsPerSecond: 2500000 }; // ビットレート上限でメモリ増加を抑制
+  if (mime) opts.mimeType = mime;
   try {
-    mediaRecorder = mime ? new MediaRecorder(canvasStream, { mimeType: mime }) : new MediaRecorder(canvasStream);
-  } catch (err) { $("hSub").textContent = "録画非対応: " + err.message; return; }
+    mediaRecorder = new MediaRecorder(canvasStream, opts);
+  } catch (err) {
+    try { mediaRecorder = new MediaRecorder(canvasStream); } // optsが弾かれた場合のフォールバック
+    catch (e2) { $("hSub").textContent = "録画非対応: " + e2.message; return; }
+  }
 
   recChunks = [];
   mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
@@ -993,7 +1000,12 @@ async function startRec() {
   $("hudRec").textContent = "■ 録画停止"; $("hudRec").classList.add("running");
   $("hudRecDot").classList.add("show");
   drawRecFrame();
-  log("録画開始（" + (mime || "default") + ", " + w + "x" + h + "）");
+
+  // 上限秒数で自動停止（長尺によるメモリ枯渇＝クラッシュを防止）
+  const maxSec = Math.max(15, Math.min(600, parseInt($("recMaxSec").value) || 90));
+  clearTimeout(recStopTimer);
+  recStopTimer = setTimeout(() => { if (recording) { flashSub(`録画上限(${maxSec}秒)で自動保存します`); stopRec(); } }, maxSec * 1000);
+  log("録画開始（" + (mime || "default") + ", " + w + "x" + h + ", 上限" + maxSec + "s）");
 }
 
 function roundRect(x, y, w, h, r) {
@@ -1082,6 +1094,7 @@ function drawRecFrame() {
 function stopRec() {
   if (!recording) return;
   recording = false;
+  clearTimeout(recStopTimer);
   cancelAnimationFrame(recRAF);
   try { mediaRecorder.stop(); } catch (_) {}
   $("hudRec").textContent = "● REC"; $("hudRec").classList.remove("running");
