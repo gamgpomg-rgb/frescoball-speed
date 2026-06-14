@@ -178,6 +178,8 @@
   #hudRest { background: rgba(8,6,24,.5); color: var(--blue); border: 1px solid var(--blue); }
   #hudRest.running { background: var(--grad-cool); color: #06231F; border-color: transparent; }
   #hudReset { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
+  #hudSnd { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
+  button.sndoff { opacity: .5; }
   /* ===== 大画面オーバーレイ（カウントダウン／休憩中） ===== */
   #bigOverlay {
     position: fixed; inset: 0; z-index: 80; display: none;
@@ -242,6 +244,7 @@
   <div id="setSummary" hidden></div>
 
   <button id="startBtn">計測開始</button>
+  <button id="sndBtn" class="ghost">🔔 チクタク</button>
   <button id="beepTest">音テスト</button>
   <div id="status">「計測開始」を押すとマイク許可を求めます</div>
 
@@ -308,6 +311,7 @@
       <button id="hudRec">● REC</button>
       <button id="hudTimer">⏱ 開始</button>
       <button id="hudRest" hidden>タイム</button>
+      <button id="hudSnd">🔔 音</button>
       <button id="hudReset">リセット</button>
     </div>
   </div>
@@ -544,11 +548,11 @@ function tick(freq = 1400) {
   const osc = ctx.createOscillator(), g = ctx.createGain();
   osc.type = "sine"; osc.frequency.value = freq;
   g.gain.setValueAtTime(0.0001, now);
-  g.gain.exponentialRampToValueAtTime(0.5, now + 0.012);   // ソフトアタックでクリック音を消す
+  g.gain.exponentialRampToValueAtTime(0.32, now + 0.014);  // ソフトアタック＋控えめ音量でクリック/誤検出を抑制
   g.gain.exponentialRampToValueAtTime(0.0008, now + 0.07);
   osc.connect(g); g.connect(ctx.destination);
   osc.start(now); osc.stop(now + 0.08);
-  refractoryUntil = Math.max(refractoryUntil, now + 0.09); // 自己音を打音検出から除外（短め＝打音取りこぼし最小）
+  refractoryUntil = Math.max(refractoryUntil, now + 0.13); // 自己音を打音検出から除外
 }
 // ===== BGM（端末内の音楽ファイルを再生。Suno等のAI生成mp3を選択可） =====
 const bgmEl = $("bgm");
@@ -575,7 +579,7 @@ function handleCountdownAudio() {
   if (sec === lastTickSec) return;
   lastTickSec = sec;
   if (sec < 0) return;
-  if ($("sndTick").checked) tick(sec % 2 === 0 ? 1400 : 1050); // チク・タク交互
+  if ($("sndTick").checked) tick(sec % 2 === 0 ? 1000 : 700); // チク・タク交互（低めにして検出HPで減衰）
   if ($("sndVoice").checked && sec > 0 && sec % 60 === 0) speak(`あと${sec / 60}分`);
 }
 
@@ -837,6 +841,24 @@ $("sndBgm").addEventListener("change", () => {
   if (!$("sndBgm").checked) { bgmPause(); return; }
   if (timerActive && !restActive && !cdActive) bgmPlay(); // 計測中ならすぐ再生
 });
+
+// カウント音（チクタク）のワンタップ・オンオフ
+function renderSndBtn() {
+  const on = $("sndTick").checked;
+  $("sndBtn").textContent = on ? "🔔 チクタク" : "🔕 チクタク";
+  $("hudSnd").textContent = on ? "🔔 音" : "🔕 音";
+  $("sndBtn").classList.toggle("sndoff", !on);
+  $("hudSnd").classList.toggle("sndoff", !on);
+}
+function toggleSnd() {
+  $("sndTick").checked = !$("sndTick").checked;
+  renderSndBtn();
+  flashSub($("sndTick").checked ? "カウント音 ON" : "カウント音 OFF");
+}
+$("sndBtn").addEventListener("click", toggleSnd);
+$("hudSnd").addEventListener("click", toggleSnd);
+$("sndTick").addEventListener("change", renderSndBtn);
+renderSndBtn();
 
 // ===== モード切替 =====
 let camStream = null;
