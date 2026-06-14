@@ -36,15 +36,29 @@
   .wrap { max-width: 480px; margin: 0 auto; }
 
   /* ===== ブランドヘッダー ===== */
-  #brand { margin-bottom: 16px; }
-  #brand .tag {
+  #brand { margin-bottom: 18px; }
+  #brand .titleBar {
     display: inline-block; font-family: var(--num); font-weight: 700;
-    letter-spacing: .18em; font-size: 13px; padding: 5px 15px; border-radius: 999px;
-    color: #1A0633; background: var(--grad-hot); box-shadow: 0 6px 18px rgba(255,122,24,.4);
+    font-size: clamp(19px, 6.2vw, 30px); letter-spacing: .05em; white-space: nowrap;
+    color: #1A0633; background: var(--grad-hot);
+    padding: 11px 26px; border-radius: 16px; box-shadow: 0 8px 22px rgba(255,122,24,.4);
   }
-  #brand h1 { font-family: var(--num); font-weight: 700; font-size: 32px; letter-spacing: .02em; margin: 9px 0 2px; }
-  #brand h1 .beta { color: var(--aqua); font-size: 17px; margin-left: 6px; vertical-align: super; }
-  #brand .bsub { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  /* 設定ギア（右上）＋設定パネル */
+  #gearBtn {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 12px; z-index: 60;
+    width: 44px; height: 44px; padding: 0; margin: 0; border-radius: 50%;
+    background: rgba(255,255,255,.1); border: 1px solid var(--line); color: var(--ink);
+    font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  #settingsPanel { position: fixed; inset: 0; z-index: 95; display: none; background: rgba(8,6,24,.6); backdrop-filter: blur(3px); overflow-y: auto; }
+  #settingsPanel.show { display: block; }
+  #settingsPanel .panelCard { max-width: 460px; margin: 8vh auto 24px; background: #160E2E; border: 1px solid var(--line); border-radius: 18px; padding: 6px 18px 20px; text-align: left; }
+  #settingsPanel .panelHead { display: flex; justify-content: space-between; align-items: center; font-family: var(--num); font-size: 19px; padding: 12px 0; position: sticky; top: 0; background: #160E2E; }
+  #settingsPanel .panelHead button { background: rgba(255,255,255,.08); border: 1px solid var(--line); padding: 8px 14px; font-size: 15px; margin: 0; }
+  /* ルール・セグメント（現在のルールを一目で） */
+  #ruleTabs { display: inline-flex; background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin: 4px 0 8px; }
+  #ruleTabs button { font-family: var(--num); font-size: 15px; font-weight: 700; letter-spacing: .04em; border: none; border-radius: 999px; padding: 8px 18px; margin: 0; background: transparent; color: var(--muted); }
+  #ruleTabs button.active { background: var(--grad-hot); color: #1A0633; box-shadow: 0 5px 14px rgba(255,122,24,.32); }
 
   /* ===== モード切替タブ ===== */
   #modeTabs { display: inline-flex; background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 999px; padding: 5px; margin-bottom: 14px; }
@@ -57,7 +71,7 @@
   /* ===== ヒーロー速度 ===== */
   #speed {
     font-family: var(--num); font-weight: 700; font-size: clamp(104px, 36vw, 176px);
-    line-height: .9; letter-spacing: -1px; margin: 2px 0 0;
+    line-height: .9; letter-spacing: -1px; margin: 34px 0 4px;
     background: linear-gradient(180deg,#FFFFFF 0%, #FFE08A 46%, #FF7A18 100%);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
     filter: drop-shadow(0 8px 28px rgba(255,122,24,.5));
@@ -68,12 +82,12 @@
   #avg { color: var(--muted); font-size: 12.5px; margin-top: 6px; letter-spacing: .02em; }
 
   /* ===== ラリー（3スタッツカード） ===== */
-  #rally { display: flex; justify-content: center; gap: 10px; margin: 16px auto 8px; }
+  #rally { display: flex; justify-content: center; gap: 12px; margin: 20px auto 10px; }
   #rally .item {
-    flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    padding: 11px 6px 9px; font-size: 11px; color: var(--muted); letter-spacing: .05em;
+    flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    padding: 22px 10px 18px; font-size: 12px; color: var(--muted); letter-spacing: .05em;
   }
-  #rally .item b { display: block; font-family: var(--num); font-weight: 700; font-size: 40px; line-height: 1; margin-top: 2px; }
+  #rally .item b { display: block; font-family: var(--num); font-weight: 700; font-size: 48px; line-height: 1; margin-top: 8px; }
   #rally .item:nth-child(1) b { color: var(--aqua); }
   #rally .item:nth-child(2) b { color: var(--yellow); }
   #rally .item:nth-child(3) b { color: var(--pink); }
@@ -204,12 +218,11 @@
 </style>
 </head>
 <body>
+<button id="gearBtn" aria-label="設定">⚙</button>
 <div class="wrap">
 
 <header id="brand">
-  <span class="tag">FRESCOBALL · SPEED</span>
-  <h1>球速メーター<span class="beta">β</span></h1>
-  <span class="bsub">打音間隔 → 初速換算 ・ A方式</span>
+  <h1 class="titleBar">Frescoball Speed Meter</h1>
 </header>
 
 <div id="modeTabs">
@@ -220,7 +233,6 @@
 <!-- ===== 数値モード ===== -->
 <div id="numView">
   <div id="speed">--<small> km/h</small></div>
-  <div id="avg">平均速×係数 / 平均速: --</div>
 
   <div id="rally">
     <div class="item">現在ラリー<b id="rNow">0</b></div>
@@ -228,8 +240,14 @@
     <div class="item">総打数<b id="rTotal">0</b></div>
   </div>
 
+  <div id="ruleTabs">
+    <button type="button" data-rule="free" class="active">フリー</button>
+    <button type="button" data-rule="classic">クラシック</button>
+    <button type="button" data-rule="top">トップ</button>
+  </div>
+
   <div id="timerRow">
-    <select id="rule">
+    <select id="rule" hidden>
       <option value="free">フリー</option>
       <option value="classic">クラシック</option>
       <option value="top">トップ</option>
@@ -255,8 +273,9 @@
 
   <div id="log"></div>
 
-  <details>
-    <summary>設定</summary>
+  <div id="settingsPanel">
+    <div class="panelCard">
+    <div class="panelHead"><span>⚙ 設定</span><button id="gearClose">✕ 閉じる</button></div>
     <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" value="7.0" step="0.5"></div>
     <div class="setting"><label>マイク位置</label>
       <select id="micPos"><option value="center">コート中央</option><option value="near">片側選手付近</option></select>
@@ -282,7 +301,8 @@
       ・<b>BGM</b>＝「BGMを使う」をオンにして端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。既定はオフ。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
-  </details>
+    </div>
+  </div>
 </div>
 </div><!-- /.wrap -->
 
@@ -294,6 +314,7 @@
     <div id="hudTop">
       <div id="hudLeft">
         <button id="hudClose">✕ 閉じる</button>
+        <div id="hudRule" class="hudPill"></div>
         <div id="hudTimerDisp" class="hudPill">--:--</div>
         <div id="hudRecDot"><span class="dot"></span>REC</div>
       </div>
@@ -336,7 +357,7 @@ const THRESHOLDS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90];
 const counts = Object.fromEntries(THRESHOLDS.map(t => [t, 0]));
 
 const $ = id => document.getElementById(id);
-const speedEl = $("speed"), avgEl = $("avg"), statusEl = $("status"), logEl = $("log");
+const speedEl = $("speed"), statusEl = $("status"), logEl = $("log");
 
 function theoreticalFactor(L) { const kL = K_DRAG * L; return (Math.expm1(kL)) / kL; }
 
@@ -486,7 +507,6 @@ function showSpeed(v0, vAvg, dt) {
   hudState.sub = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
   popEl(speedEl);
-  avgEl.textContent = `平均速 ${vAvg.toFixed(1)} km/h ／ 飛行時間 ${dt.toFixed(3)} s`;
   $("hV").textContent = hudState.speed;
   $("hSub").textContent = hudState.sub;
   popEl($("hudSpeed"));
@@ -809,13 +829,32 @@ function resetAll() {
   hudState.speed = "--"; hudState.sub = "リセットしました";
   renderCounts(); renderRally();
   speedEl.innerHTML = `--<small> km/h</small>`;
-  avgEl.textContent = "平均速×係数 / 平均速: --";
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
   statusEl.textContent = "リセットしました（計測は継続）";
   log("リセット（カウンタ初期化）");
 }
 
+// ルール（フリー/クラシック/トップ）セグメント＋HUD表示
+function ruleName(r) { return r === "classic" ? "クラシック" : r === "top" ? "トップ" : "フリー"; }
+function updateRuleUI() {
+  const r = ruleVal();
+  document.querySelectorAll("#ruleTabs button").forEach(b => b.classList.toggle("active", b.dataset.rule === r));
+  $("hudRule").textContent = "ルール: " + ruleName(r);
+}
+document.querySelectorAll("#ruleTabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    $("rule").value = btn.dataset.rule;
+    $("rule").dispatchEvent(new Event("change"));
+  });
+});
+
+// 設定ギア（右上）開閉
+$("gearBtn").addEventListener("click", () => $("settingsPanel").classList.add("show"));
+$("gearClose").addEventListener("click", () => $("settingsPanel").classList.remove("show"));
+$("settingsPanel").addEventListener("click", e => { if (e.target === $("settingsPanel")) $("settingsPanel").classList.remove("show"); });
+
+$("rule").addEventListener("change", updateRuleUI);
 $("rule").addEventListener("change", updateRestVisibility);
 $("timerBtn").addEventListener("click", startGame);
 $("hudTimer").addEventListener("click", startGame);
@@ -824,6 +863,7 @@ $("hudRest").addEventListener("click", takeRest);
 $("resetBtn").addEventListener("click", resetAll);
 $("hudReset").addEventListener("click", resetAll);
 updateRestVisibility();
+updateRuleUI();
 
 // BGM: ファイル選択・音量
 if (bgmEl) bgmEl.volume = 0.5;
@@ -865,6 +905,8 @@ let camStream = null;
 async function enterCamera() {
   $("tabCam").classList.add("active"); $("tabNum").classList.remove("active");
   $("camWrap").classList.add("show");
+  $("gearBtn").style.display = "none";   // カメラ中は歯車を隠す
+  updateRuleUI();
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -880,6 +922,7 @@ function exitCamera() {
   if (recording) stopRec();
   $("tabNum").classList.add("active"); $("tabCam").classList.remove("active");
   $("camWrap").classList.remove("show");
+  $("gearBtn").style.display = "";       // 数値モードに戻ったら歯車を再表示
   camStream?.getTracks().forEach(t => t.stop()); camStream = null;
   $("camVideo").srcObject = null;
 }
