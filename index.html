@@ -264,6 +264,7 @@
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
     <div class="setting"><label>カウント音（毎秒チクタク）</label><input type="checkbox" id="sndTick" checked></div>
+    <div class="setting"><label>BGMを使う（オン/オフ）</label><input type="checkbox" id="sndBgm"></div>
     <div class="setting"><label>BGM音楽ファイル（mp3等）</label><input type="file" id="bgmFile" accept="audio/*"></div>
     <div class="setting"><label>BGM音量</label><input type="range" id="bgmVol" min="0" max="1" step="0.05" value="0.5"></div>
     <div class="setting"><label>音声アナウンス（毎分「あと◯分」）</label><input type="checkbox" id="sndVoice" checked></div>
@@ -275,7 +276,7 @@
       ・<b>録画（HUD焼き込み）</b>はカメラモードの「● REC」。終了後にiOSの共有シートが開くので「写真／ファイルに保存」を選んでください。<br>
       ・録画は30/60fps。スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
       ・<b>換算係数</b>＝1.000で「打音間の平均速」をそのまま表示（一番遅く・正直な値）。スピードガンより速ければ係数を下げる（例:0.95）。選手間距離も実測値に合わせると精度が上がります。<br>
-      ・<b>BGM</b>＝端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
+      ・<b>BGM</b>＝「BGMを使う」をオンにして端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。既定はオフ。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
   </details>
@@ -532,15 +533,15 @@ function tick(freq = 1400) {
 // ===== BGM（端末内の音楽ファイルを再生。Suno等のAI生成mp3を選択可） =====
 const bgmEl = $("bgm");
 function bgmReady() { return bgmEl && bgmEl.src && bgmEl.src !== location.href; }
-function bgmPlay() { if (bgmReady()) bgmEl.play().catch(() => {}); }
+function bgmPlay() { if ($("sndBgm").checked && bgmReady()) bgmEl.play().catch(() => {}); }
 function bgmPause() { if (bgmReady()) bgmEl.pause(); }
 function bgmStop() { if (bgmReady()) { bgmEl.pause(); try { bgmEl.currentTime = 0; } catch (_) {} } }
 // 音声アナウンス（iOS Safari対応。ボタン押下=ジェスチャ起点で解錠される）
-function speak(text) {
+function speak(text, lang = "ja-JP") {
   if (!("speechSynthesis" in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "ja-JP"; u.rate = 1.05;
+    u.lang = lang; u.rate = lang === "en-US" ? 1.0 : 1.05;
     ttsActive = true;
     clearTimeout(ttsTimer); ttsTimer = setTimeout(() => { ttsActive = false; }, 4000);
     u.onend = () => { ttsActive = false; clearTimeout(ttsTimer); };
@@ -600,7 +601,8 @@ let gameInterval = null, lastTickMs = 0, lastHitWall = 0, lastTickSec = -1;
 // 開始/再開カウントダウン（5→1→GO）
 let cdActive = false, cdRemain = 0, cdThen = "start", cdLastInt = 0;
 let restWarned = false, ovLastNum = null;
-const CD_SECS = 5; // カウントダウン秒数
+const CD_SECS = 3; // カウントダウン秒数（Three, Two, One, GO!）
+const CD_WORDS = { 3: "Three", 2: "Two", 1: "One" };
 
 function fmtTime(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -657,12 +659,16 @@ function takeRest() {
 function beginCountdown(then) {
   cdActive = true; cdThen = then; cdRemain = CD_SECS; cdLastInt = CD_SECS + 1; ovLastNum = null;
   renderTimer();
+  handleCdTick();   // 押した瞬間に最初の数字（Three）を即発話・表示
 }
 function handleCdTick() {
   const n = Math.ceil(cdRemain);
   if (n !== cdLastInt) {
     cdLastInt = n;
-    if (n >= 1 && ctx) tone(720, 0.12, ctx.currentTime);      // 1秒ごとのカウント音
+    if (n >= 1) {
+      if (ctx) tone(720, 0.1, ctx.currentTime);                // 軽いカウント音
+      if ($("sndVoice").checked) speak(CD_WORDS[n] || String(n), "en-US"); // Three / Two / One
+    }
   }
 }
 function finishCountdown() {
@@ -670,7 +676,7 @@ function finishCountdown() {
   if (ctx) tone(1175, 0.4, ctx.currentTime);                   // GO音（高め・長め）
   lastTickMs = performance.now(); lastTickSec = Math.ceil(mainRemain); // 直近の分は再アナウンスしない
   bgmPlay();                         // 本計測開始/再開でBGM再生
-  if ($("sndVoice").checked) speak(cdThen === "resume" ? "再開します" : "スタート");
+  if ($("sndVoice").checked) speak("Go!", "en-US");            // ゴー！
   renderTimer();
 }
 function handleRestAudio() {
@@ -807,6 +813,10 @@ $("bgmFile").addEventListener("change", e => {
   flashSub("BGMを設定しました（計測開始で再生）");
 });
 $("bgmVol").addEventListener("input", () => { if (bgmEl) bgmEl.volume = parseFloat($("bgmVol").value) || 0; });
+$("sndBgm").addEventListener("change", () => {
+  if (!$("sndBgm").checked) { bgmPause(); return; }
+  if (timerActive && !restActive && !cdActive) bgmPlay(); // 計測中ならすぐ再生
+});
 
 // ===== モード切替 =====
 let camStream = null;
