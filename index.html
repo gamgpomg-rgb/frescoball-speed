@@ -283,6 +283,7 @@
     <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
     <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
+    <div class="setting"><label>開始カウントダウン [秒]（ソロは10等）</label><input type="number" id="cdSecs" value="3" min="1" max="20" step="1"></div>
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
     <div class="setting"><label>カウント音（毎秒チクタク）</label><input type="checkbox" id="sndTick" checked></div>
@@ -645,8 +646,8 @@ let gameInterval = null, lastTickMs = 0, lastHitWall = 0, lastTickSec = -1;
 // 開始/再開カウントダウン（5→1→GO）
 let cdActive = false, cdRemain = 0, cdThen = "start", cdLastInt = 0;
 let restWarned = false, ovLastNum = null;
-const CD_SECS = 3; // カウントダウン秒数（Three, Two, One, GO!）
-const CD_WORDS = { 3: "Three", 2: "Two", 1: "One" };
+const CD_WORDS = { 3: "Three", 2: "Two", 1: "One" }; // 音声は3秒前から（それ以前はビープ＋数字のみ）
+function countdownSecs() { return Math.max(1, Math.min(20, parseInt($("cdSecs").value) || 3)); }
 
 function fmtTime(sec) {
   sec = Math.max(0, Math.ceil(sec));
@@ -667,6 +668,7 @@ function updateRestVisibility() {
 function flashSub(msg) { hudState.sub = msg; $("hSub").textContent = msg; statusEl.textContent = msg; }
 
 function startGame() {
+  if (cdActive) return;                 // カウントダウン中の誤連打で止めない（リセットで中止可）
   if (timerActive) { endGame(false); return; }
   const min = Math.max(0.1, parseFloat($("timerMin").value) || 5);
   mainRemain = min * 60;
@@ -701,9 +703,10 @@ function takeRest() {
 
 // ===== 開始/再開カウントダウン（5→1→GO） =====
 function beginCountdown(then) {
-  cdActive = true; cdThen = then; cdRemain = CD_SECS; cdLastInt = CD_SECS + 1; ovLastNum = null;
+  const cs = countdownSecs();
+  cdActive = true; cdThen = then; cdRemain = cs; cdLastInt = cs + 1; ovLastNum = null;
   renderTimer();
-  handleCdTick();   // 押した瞬間に最初の数字（Three）を即発話・表示
+  handleCdTick();   // 押した瞬間に最初の数字を即発話・表示
 }
 function handleCdTick() {
   const n = Math.ceil(cdRemain);
@@ -711,7 +714,7 @@ function handleCdTick() {
     cdLastInt = n;
     if (n >= 1) {
       if (ctx) tone(720, 0.1, ctx.currentTime);                // 軽いカウント音
-      if ($("sndVoice").checked) speak(CD_WORDS[n] || String(n), "en-US"); // Three / Two / One
+      if ($("sndVoice").checked && CD_WORDS[n]) speak(CD_WORDS[n], "en-US"); // 残り3秒からThree/Two/One
     }
   }
 }
