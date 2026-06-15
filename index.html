@@ -1175,15 +1175,32 @@ function ensureMp4box() {
   });
   return _mp4boxP;
 }
+// 診断情報（実機で失敗原因を画面に出すため）
+let wcDiag = {};
+// 記述子ツリーから DecoderSpecificInfo (tag 0x05 = AudioSpecificConfig) を再帰探索
+function findDSI(d) {
+  if (!d) return null;
+  if (d.tag === 0x05 && d.data) return d.data;
+  if (d.descs) for (const c of d.descs) { const r = findDSI(c); if (r) return r; }
+  if (d.oti !== undefined && d.data && !d.descs) return d.data;
+  return null;
+}
 // AACのデコーダ設定記述子（AudioSpecificConfig）を stsd から取り出す
 function getAudioDescription(mp4, trackId) {
-  const trak = mp4.getTrackById(trackId);
-  for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-    const esds = entry.esds; if (!esds || !esds.esd) continue;
-    const dcd = esds.esd.descs[0]; if (!dcd || !dcd.descs || !dcd.descs[0]) continue;
-    return dcd.descs[0].data; // Uint8Array
-  }
-  return undefined;
+  try {
+    const trak = mp4.getTrackById(trackId);
+    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+      if (entry.esds && entry.esds.esd) { const r = findDSI(entry.esds.esd); if (r) return r; }
+    }
+  } catch (_) {}
+  return null;
+}
+// AudioSpecificConfig を sampleRate/ch から合成（esdsから取れない時のSafari対策）
+function buildASC(sr, ch) {
+  const tbl = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  let fi = tbl.indexOf(sr); if (fi < 0) fi = 4;            // 既定44.1k
+  const aot = 2;                                           // AAC-LC
+  return new Uint8Array([(aot << 3) | (fi >> 1), ((fi & 1) << 7) | ((ch & 15) << 3)]);
 }
 // WebCodecs AudioDecoder出力(AudioData)→モノFloat32へ
 function audioDataToMono(ad) {
@@ -1203,25 +1220,38 @@ function audioDataToMono(ad) {
 // 巨大ファイルでも低メモリ：ファイルをチャンク読み→音声トラックのみデマックス→WebCodecsで復号
 async function decodeAudioWC(file, onProgress) {
   await ensureMp4box();
+  try { MP4Box.Log.setLogLevel(MP4Box.Log.error); } catch (_) {}
   return await new Promise((resolve, reject) => {
     const mp4 = MP4Box.createFile();
     let decoder = null, track = null, sampleRate = 0, channels = 1, nSamples = 1, decoded = 0;
+    let resolveReady; const readyP = new Promise(r => resolveReady = r); // デコーダ設定完了の同期点
     const chunks = [];
     mp4.onError = e => reject(new Error("mp4box: " + e));
-    mp4.onReady = info => {
-      track = (info.audioTracks && info.audioTracks[0]) || info.tracks.find(t => t.audio);
-      if (!track) { reject(new Error("音声トラックが見つかりません")); return; }
-      sampleRate = track.audio.sample_rate; channels = track.audio.channel_count; nSamples = track.nb_samples || 1;
-      decoder = new AudioDecoder({
-        output: ad => { chunks.push(audioDataToMono(ad)); decoded++; if (onProgress) onProgress(Math.min(0.99, decoded / nSamples)); ad.close(); },
-        error: e => reject(e)
-      });
-      let desc; try { desc = getAudioDescription(mp4, track.id); } catch (_) {}
-      const cfg = { codec: track.codec, sampleRate, numberOfChannels: channels };
-      if (desc) cfg.description = desc;
-      decoder.configure(cfg);
-      mp4.setExtractionOptions(track.id, null, { nbSamples: 2000 });
-      mp4.start();
+    mp4.onReady = async info => {
+      try {
+        track = (info.audioTracks && info.audioTracks[0]) || info.tracks.find(t => t.audio);
+        if (!track) { wcDiag.step = "no-audio-track"; reject(new Error("音声トラックが見つかりません")); return; }
+        sampleRate = track.audio.sample_rate; channels = track.audio.channel_count; nSamples = track.nb_samples || 1;
+        let codec = track.codec || "mp4a.40.2";
+        if (codec.indexOf("mp4a") === 0 && codec.length < 6) codec = "mp4a.40.2"; // 不完全表記を補正
+        let desc = getAudioDescription(mp4, track.id);
+        wcDiag.descFromEsds = !!desc;
+        if (!desc) desc = buildASC(sampleRate, channels);     // ★Safariは記述子必須→合成
+        const cfg = { codec, sampleRate, numberOfChannels: channels, description: desc };
+        wcDiag.codec = codec; wcDiag.sr = sampleRate; wcDiag.ch = channels;
+        let sup = { supported: true };
+        try { if (AudioDecoder.isConfigSupported) sup = await AudioDecoder.isConfigSupported(cfg); } catch (e) { wcDiag.supErr = String(e.message || e); }
+        wcDiag.supported = !!(sup && sup.supported);
+        if (!wcDiag.supported) { wcDiag.step = "config-unsupported"; reject(new Error("この端末のAudioDecoderが " + codec + " 非対応")); return; }
+        decoder = new AudioDecoder({
+          output: ad => { try { chunks.push(audioDataToMono(ad)); } catch (e) { wcDiag.outErr = String(e.message || e); } decoded++; if (onProgress) onProgress(Math.min(0.99, decoded / nSamples)); ad.close(); },
+          error: e => { wcDiag.step = "decoder-error"; reject(new Error("AudioDecoder: " + (e.message || e))); }
+        });
+        decoder.configure(cfg);
+        mp4.setExtractionOptions(track.id, null, { nbSamples: 2000 });
+        mp4.start();
+        resolveReady();   // ★読み込み完了側のflushはこの後で走る
+      } catch (e) { wcDiag.step = "onready-throw"; reject(new Error("設定失敗: " + (e.message || e))); }
     };
     mp4.onSamples = (id, user, samples) => {
       for (const s of samples) {
@@ -1238,12 +1268,16 @@ async function decodeAudioWC(file, onProgress) {
     const reader = new FileReader();
     const readNext = () => {
       if (offset >= file.size) {
-        mp4.flush();
-        decoder.flush().then(() => {
-          let total = 0; for (const c of chunks) total += c.length;
-          const buf = new Float32Array(total); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
-          if (!total) reject(new Error("音声を復号できませんでした")); else resolve({ buf, sampleRate });
-        }).catch(reject);
+        (async () => {
+          try {
+            await readyP;            // デコーダ生成・start完了を待ってからflush（null参照の競合を防ぐ）
+            mp4.flush();
+            await decoder.flush();
+            let total = 0; for (const c of chunks) total += c.length;
+            const buf = new Float32Array(total); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
+            if (!total) reject(new Error("音声を復号できませんでした")); else resolve({ buf, sampleRate });
+          } catch (e) { reject(e); }
+        })();
         return;
       }
       reader.onload = e => { const ab = e.target.result; ab.fileStart = offset; mp4.appendBuffer(ab); offset += CHUNK; if (onProgress) onProgress(Math.min(0.5, offset / file.size * 0.5)); readNext(); };
@@ -1278,12 +1312,20 @@ async function highpassMono(buf, sr) {
 }
 // --- ファイル→音声デコード（巨大対応）→ハイパス→検出 ---
 async function analyzeFile(file, onProgress) {
-  let mono = null, sr = 0;
-  if ("AudioDecoder" in window && "EncodedAudioChunk" in window) {
+  const LARGE = 250 * 1024 * 1024;            // これ超は全読みデコード不可（メモリ枯渇／クラッシュ回避）
+  wcDiag = { v: "wc3", size: file.size, hasWC: ("AudioDecoder" in window && "EncodedAudioChunk" in window) };
+  let mono = null, sr = 0, wcErr = null;
+  if (wcDiag.hasWC) {
     try { const r = await decodeAudioWC(file, p => onProgress && onProgress(p * 0.55)); mono = r.buf; sr = r.sampleRate; }
-    catch (e) { mono = null; /* WebCodecs不可／非対応コンテナ→フォールバック */ }
+    catch (e) { wcErr = e; wcDiag.err = String(e.message || e); }
   }
-  if (!mono) { const r = await decodeAudioFull(file); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55); }
+  if (!mono) {
+    if (file.size > LARGE) {
+      // 巨大ファイルで全読みに落とすとクラッシュするので、ここで明確に止める
+      throw new Error((wcDiag.hasWC ? "WebCodecs復号に失敗" : "この端末はWebCodecs非対応(iOS17以降が必要)") + " / 大容量のため全読み不可");
+    }
+    const r = await decodeAudioFull(file); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55);
+  }
   const filtered = await highpassMono(mono, sr);
   const onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * 0.45));
   return { onsets, sr, duration: mono.length / sr };
@@ -1374,7 +1416,9 @@ $("upFile").addEventListener("change", async e => {
     await saveRecord(f.name, $("upVideo").duration || 0);
     $("upProg").hidden = true;
   } catch (err) {
-    $("upProg").hidden = false; $("upProg").textContent = "解析できませんでした（音声トラック非対応の可能性）: " + err.message;
+    $("upProg").hidden = false;
+    $("upProg").innerHTML = "解析できませんでした: " + (err && err.message || err) +
+      '<br><span style="font-size:11px;color:var(--muted)">診断: ' + JSON.stringify(wcDiag) + '</span>';
   }
 });
 $("dSwap").addEventListener("click", () => { curFlip = !curFlip; renderDash(); syncLive(); });
