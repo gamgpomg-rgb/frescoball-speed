@@ -1162,28 +1162,131 @@ async function detectOnsets(buf, sr, onProgress) {
   return onsets;
 }
 
-// --- ファイル→音声デコード→ハイパス→検出 ---
-async function analyzeFile(file, onProgress) {
+// --- mp4box.js を必要時だけ読み込む（巨大動画の音声トラックだけをデマックスするため） ---
+let _mp4boxP = null;
+function ensureMp4box() {
+  if (window.MP4Box) return Promise.resolve();
+  if (_mp4boxP) return _mp4boxP;
+  _mp4boxP = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js";
+    s.onload = res; s.onerror = () => rej(new Error("mp4box読み込み失敗（初回はネット接続が必要）"));
+    document.head.appendChild(s);
+  });
+  return _mp4boxP;
+}
+// AACのデコーダ設定記述子（AudioSpecificConfig）を stsd から取り出す
+function getAudioDescription(mp4, trackId) {
+  const trak = mp4.getTrackById(trackId);
+  for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+    const esds = entry.esds; if (!esds || !esds.esd) continue;
+    const dcd = esds.esd.descs[0]; if (!dcd || !dcd.descs || !dcd.descs[0]) continue;
+    return dcd.descs[0].data; // Uint8Array
+  }
+  return undefined;
+}
+// WebCodecs AudioDecoder出力(AudioData)→モノFloat32へ
+function audioDataToMono(ad) {
+  const n = ad.numberOfFrames, ch = ad.numberOfChannels, fmt = ad.format || "f32-planar";
+  const out = new Float32Array(n);
+  const planar = fmt.includes("planar"), isF32 = fmt.startsWith("f32");
+  if (planar) {
+    const tmp = isF32 ? new Float32Array(n) : new Int16Array(n);
+    for (let c = 0; c < ch; c++) { ad.copyTo(tmp, { planeIndex: c }); for (let i = 0; i < n; i++) out[i] += isF32 ? tmp[i] / ch : tmp[i] / 32768 / ch; }
+  } else {
+    const tmp = isF32 ? new Float32Array(n * ch) : new Int16Array(n * ch);
+    ad.copyTo(tmp, { planeIndex: 0 });
+    for (let i = 0; i < n; i++) { let s = 0; for (let c = 0; c < ch; c++) s += tmp[i * ch + c]; out[i] = isF32 ? s / ch : s / 32768 / ch; }
+  }
+  return out;
+}
+// 巨大ファイルでも低メモリ：ファイルをチャンク読み→音声トラックのみデマックス→WebCodecsで復号
+async function decodeAudioWC(file, onProgress) {
+  await ensureMp4box();
+  return await new Promise((resolve, reject) => {
+    const mp4 = MP4Box.createFile();
+    let decoder = null, track = null, sampleRate = 0, channels = 1, nSamples = 1, decoded = 0;
+    const chunks = [];
+    mp4.onError = e => reject(new Error("mp4box: " + e));
+    mp4.onReady = info => {
+      track = (info.audioTracks && info.audioTracks[0]) || info.tracks.find(t => t.audio);
+      if (!track) { reject(new Error("音声トラックが見つかりません")); return; }
+      sampleRate = track.audio.sample_rate; channels = track.audio.channel_count; nSamples = track.nb_samples || 1;
+      decoder = new AudioDecoder({
+        output: ad => { chunks.push(audioDataToMono(ad)); decoded++; if (onProgress) onProgress(Math.min(0.99, decoded / nSamples)); ad.close(); },
+        error: e => reject(e)
+      });
+      let desc; try { desc = getAudioDescription(mp4, track.id); } catch (_) {}
+      const cfg = { codec: track.codec, sampleRate, numberOfChannels: channels };
+      if (desc) cfg.description = desc;
+      decoder.configure(cfg);
+      mp4.setExtractionOptions(track.id, null, { nbSamples: 2000 });
+      mp4.start();
+    };
+    mp4.onSamples = (id, user, samples) => {
+      for (const s of samples) {
+        decoder.decode(new EncodedAudioChunk({
+          type: s.is_sync ? "key" : "delta",
+          timestamp: 1e6 * s.cts / s.timescale,
+          duration: 1e6 * s.duration / s.timescale,
+          data: s.data
+        }));
+      }
+    };
+    // File を逐次 slice して読む（全体をメモリに載せない）
+    const CHUNK = 8 * 1024 * 1024; let offset = 0;
+    const reader = new FileReader();
+    const readNext = () => {
+      if (offset >= file.size) {
+        mp4.flush();
+        decoder.flush().then(() => {
+          let total = 0; for (const c of chunks) total += c.length;
+          const buf = new Float32Array(total); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
+          if (!total) reject(new Error("音声を復号できませんでした")); else resolve({ buf, sampleRate });
+        }).catch(reject);
+        return;
+      }
+      reader.onload = e => { const ab = e.target.result; ab.fileStart = offset; mp4.appendBuffer(ab); offset += CHUNK; if (onProgress) onProgress(Math.min(0.5, offset / file.size * 0.5)); readNext(); };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK));
+    };
+    readNext();
+  });
+}
+// 全ファイル読み込み式デコード（小さいファイル／WebCodecs非対応のフォールバック）
+async function decodeAudioFull(file) {
   const arr = await file.arrayBuffer();
   const AC = window.AudioContext || window.webkitAudioContext;
   const actx = new AC();
-  let audioBuf;
-  try { audioBuf = await actx.decodeAudioData(arr); } finally { try { actx.close(); } catch (_) {} }
-  const sr = audioBuf.sampleRate, len = audioBuf.length;
-  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const off = new OAC(1, len, sr);
+  let ab; try { ab = await actx.decodeAudioData(arr); } finally { try { actx.close(); } catch (_) {} }
+  const len = ab.length;
   let mono;
-  if (audioBuf.numberOfChannels === 1) mono = audioBuf;
-  else {
-    mono = off.createBuffer(1, len, sr); const o = mono.getChannelData(0), nc = audioBuf.numberOfChannels;
-    for (let c = 0; c < nc; c++) { const d = audioBuf.getChannelData(c); for (let i = 0; i < len; i++) o[i] += d[i] / nc; }
-  }
-  const src = off.createBufferSource(); src.buffer = mono;
+  if (ab.numberOfChannels === 1) mono = ab.getChannelData(0).slice();
+  else { mono = new Float32Array(len); const nc = ab.numberOfChannels; for (let c = 0; c < nc; c++) { const d = ab.getChannelData(c); for (let i = 0; i < len; i++) mono[i] += d[i] / nc; } }
+  return { buf: mono, sampleRate: ab.sampleRate };
+}
+// モノPCMに2.5kHzハイパス（ライブと同一フィルタ）を適用
+async function highpassMono(buf, sr) {
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const off = new OAC(1, buf.length, sr);
+  const ab = off.createBuffer(1, buf.length, sr); ab.getChannelData(0).set(buf);
+  const src = off.createBufferSource(); src.buffer = ab;
   const hp = off.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
   src.connect(hp); hp.connect(off.destination); src.start();
   const rendered = await off.startRendering();
-  const onsets = await detectOnsets(rendered.getChannelData(0), sr, onProgress);
-  return { onsets, sr, duration: audioBuf.duration };
+  return rendered.getChannelData(0);
+}
+// --- ファイル→音声デコード（巨大対応）→ハイパス→検出 ---
+async function analyzeFile(file, onProgress) {
+  let mono = null, sr = 0;
+  if ("AudioDecoder" in window && "EncodedAudioChunk" in window) {
+    try { const r = await decodeAudioWC(file, p => onProgress && onProgress(p * 0.55)); mono = r.buf; sr = r.sampleRate; }
+    catch (e) { mono = null; /* WebCodecs不可／非対応コンテナ→フォールバック */ }
+  }
+  if (!mono) { const r = await decodeAudioFull(file); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55); }
+  const filtered = await highpassMono(mono, sr);
+  const onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * 0.45));
+  return { onsets, sr, duration: mono.length / sr };
 }
 
 // --- オンセット列→打球タイムライン（ライブの onHit / rallyOnHit を再現） ---
