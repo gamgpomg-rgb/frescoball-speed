@@ -70,13 +70,13 @@
 
   /* ===== ヒーロー速度 ===== */
   #speed {
-    font-family: var(--num); font-weight: 700; font-size: clamp(104px, 36vw, 176px);
+    font-family: var(--num); font-weight: 700; font-size: clamp(36px, 12vw, 60px);
     line-height: .9; letter-spacing: -1px; margin: 34px 0 4px;
     background: linear-gradient(180deg,#FFFFFF 0%, #FFE08A 46%, #FF7A18 100%);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
     filter: drop-shadow(0 8px 28px rgba(255,122,24,.5));
   }
-  #speed small { font-family: var(--ui); font-size: 22px; font-weight: 700; -webkit-text-fill-color: var(--aqua); color: var(--aqua); letter-spacing: .04em; }
+  #speed small { font-family: var(--ui); font-size: 14px; font-weight: 700; -webkit-text-fill-color: var(--aqua); color: var(--aqua); letter-spacing: .04em; }
   #speed.pop { animation: pop .28s ease-out; }
   @keyframes pop { 0%{transform:scale(1)} 32%{transform:scale(1.07)} 100%{transform:scale(1)} }
   #avg { color: var(--muted); font-size: 12.5px; margin-top: 6px; letter-spacing: .02em; }
@@ -193,10 +193,10 @@
   #hudSpeed { position: absolute; left: 0; right: 0; bottom: 18%; text-align: center; }
   #hudSpeed.pop { animation: pop .28s ease-out; }
   #hudSpeed .v {
-    font-family: var(--num); font-weight: 700; font-size: clamp(76px, 21vw, 116px); line-height: 1;
+    font-family: var(--num); font-weight: 700; font-size: clamp(26px, 7vw, 40px); line-height: 1;
     color: var(--yellow); text-shadow: 0 3px 22px rgba(0,0,0,.9), 0 0 26px rgba(255,210,63,.3);
   }
-  #hudSpeed .u { font-family: var(--ui); font-weight: 700; font-size: 28px; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,.8); }
+  #hudSpeed .u { font-family: var(--ui); font-weight: 700; font-size: 16px; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,.8); }
   #hudSpeed .sub { font-size: 15px; color: #EAF0FF; margin-top: 6px; text-shadow: 0 2px 10px rgba(0,0,0,.85); }
   #hudBottom { align-self: stretch; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
   #hudBottom button { pointer-events: auto; border-radius: 999px; padding: 13px 20px; font-size: 15px; font-weight: 800; margin: 0; backdrop-filter: blur(6px); }
@@ -552,8 +552,8 @@ function rgbStr(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
 function applySpeedStyle(v0) {
   const t = Math.max(0, Math.min(1, (v0 - 30) / 50)); // 30→0, 80→1
   const vw = window.innerWidth || 375;
-  speedEl.style.fontSize = Math.round(vw * (0.26 + 0.16 * t)) + "px"; // 26vw〜42vw
-  $("hV").style.fontSize = Math.round(vw * (0.24 + 0.20 * t)) + "px"; // 24vw〜44vw
+  speedEl.style.fontSize = Math.round(vw * (0.087 + 0.053 * t)) + "px"; // 約1/3：8.7vw〜14vw
+  $("hV").style.fontSize = Math.round(vw * (0.08 + 0.067 * t)) + "px";  // 約1/3：8vw〜14.7vw
   const c = speedColor(t), c2 = speedColor(Math.min(1, t + 0.12));
   speedEl.style.backgroundImage = `linear-gradient(180deg, #ffffff 0%, ${rgbStr(c)} 58%, ${rgbStr(c2)} 100%)`;
   speedEl.style.filter = `drop-shadow(0 8px 26px rgba(${c[0]},${c[1]},${c[2]},.45))`;
