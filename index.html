@@ -315,6 +315,8 @@
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
     <div class="setting"><label>換算係数（1.0=平均速そのまま）</label><input type="number" id="calib" value="1.000" step="0.005"></div>
     <div class="setting"><label>解析: 信頼する上限速度 [km/h]（超は速度集計から除外）</label><input type="number" id="maxTrust" value="110" step="5"></div>
+    <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
+    <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
       ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
@@ -1311,6 +1313,58 @@ async function highpassMono(buf, sr) {
   const rendered = await off.startRendering();
   return rendered.getChannelData(0);
 }
+// --- C: YAMNet音響分類で「打撃音でない雑音オンセット」を除外（オプトイン・実験） ---
+let _yamP = null, _yam = null, _yamImpactIdx = null, _yamNoiseIdx = null;
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("読み込み失敗: " + src)); document.head.appendChild(s); }); }
+async function ensureYamnet() {
+  if (_yam) return;
+  if (_yamP) return _yamP;
+  _yamP = (async () => {
+    if (!window.tf) await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js");
+    await tf.ready();
+    const m = await tf.loadGraphModel("https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1", { fromTFHub: true });
+    // 521クラス名→打撃音らしいクラスの index 集合（木の打撃＝Chop/Wood/Whack等）
+    const csv = await (await fetch("https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv")).text();
+    const names = csv.trim().split("\n").slice(1).map(l => l.split(",").slice(2).join(",").replace(/["\r]/g, "").toLowerCase());
+    const idxOf = pats => names.map((n, i) => [n, i]).filter(([n]) => pats.some(p => n.includes(p))).map(([, i]) => i);
+    _yamImpactIdx = idxOf(["chop", "wood", "whack", "slap", "knock", "smash", "bang", "tools"]);
+    // 除外対象＝声/会話/音楽/風/環境ノイズ（これが高確信で支配的な時だけ弾く＝打音は守る）
+    _yamNoiseIdx = idxOf(["speech", "conversation", "narration", "shout", "music", "singing", "wind", "rustl", "vehicle", "engine"]);
+    _yam = m;
+  })();
+  return _yamP;
+}
+// 任意SR→16kHzモノへ線形リサンプル
+function resample16k(buf, sr) {
+  if (sr === 16000) return buf;
+  const ratio = sr / 16000, n = Math.floor(buf.length / ratio), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i * ratio, i0 = Math.floor(x), f = x - i0; out[i] = (buf[i0] || 0) * (1 - f) + (buf[i0 + 1] || 0) * f; }
+  return out;
+}
+// オンセット毎に0.96秒窓をYAMNetへ。声/風/音楽が高確信で支配的な時だけ除外（打音は守る＝保守的）
+async function yamnetFilter(mono, sr, onsets, onProgress) {
+  await ensureYamnet();
+  const wav = resample16k(mono, sr), N = 15360, thr = Math.max(0.1, Math.min(1, parseFloat($("aiThresh").value) || 0.5));
+  const kept = [];
+  for (let i = 0; i < onsets.length; i++) {
+    let start = Math.round(onsets[i] * 16000) - 4096; if (start < 0) start = 0;   // 打音をやや中央寄せ
+    if (start + N > wav.length) start = Math.max(0, wav.length - N);
+    const win = wav.subarray(start, start + N);
+    const ok = tf.tidy(() => {
+      const w = win.length === N ? win : (() => { const z = new Float32Array(N); z.set(win); return z; })();
+      const out = _yam.predict(tf.tensor1d(w));
+      const sc = (Array.isArray(out) ? out[0] : out).mean(0).arraySync();
+      let imp = 0, noise = 0;
+      for (const k of _yamImpactIdx) if (sc[k] > imp) imp = sc[k];
+      for (const k of _yamNoiseIdx) if (sc[k] > noise) noise = sc[k];
+      // 除外条件：雑音クラスが閾値以上 かつ 打撃音らしさより明確に優勢
+      return !(noise >= thr && noise > imp * 1.5);
+    });
+    if (ok) kept.push(onsets[i]);
+    if ((i & 15) === 0) { if (onProgress) onProgress(i / onsets.length); await new Promise(r => setTimeout(r)); }
+  }
+  return kept;
+}
 // --- ファイル→音声デコード（巨大対応）→ハイパス→検出 ---
 async function analyzeFile(file, onProgress) {
   const LARGE = 250 * 1024 * 1024;            // これ超は全読みデコード不可（メモリ枯渇／クラッシュ回避）
@@ -1328,8 +1382,14 @@ async function analyzeFile(file, onProgress) {
     const r = await decodeAudioFull(file); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55);
   }
   const filtered = await highpassMono(mono, sr);
-  const onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * 0.45));
-  return { onsets, sr, duration: mono.length / sr };
+  const aiOn = $("aiFilter") && $("aiFilter").checked;
+  let onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * (aiOn ? 0.30 : 0.45)));
+  let aiRejected = 0;
+  if (aiOn && onsets.length) {
+    try { const kept = await yamnetFilter(mono, sr, onsets, p => onProgress && onProgress(0.85 + p * 0.15)); aiRejected = onsets.length - kept.length; onsets = kept; }
+    catch (e) { wcDiag.aiErr = String(e.message || e); }   // 失敗時は除外せず全採用（fail open）
+  }
+  return { onsets, sr, duration: mono.length / sr, aiRejected };
 }
 
 // --- オンセット列→打球タイムライン（ライブの onHit / rallyOnHit を再現） ---
@@ -1394,7 +1454,8 @@ function renderDash() {
   const mx = Math.max(1, ...ag.hist.map(h => h.count));
   $("histo").innerHTML = ag.hist.map(h =>
     `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
-    + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${parseFloat($("maxTrust").value) || 110} km/h超）。打数には計上。</div>` : "");
+    + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${parseFloat($("maxTrust").value) || 110} km/h超）。打数には計上。</div>` : "")
+    + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "");
   return ag;
 }
 
@@ -1417,8 +1478,8 @@ $("upFile").addEventListener("change", async e => {
   $("upProg").hidden = false; $("upProg").innerHTML = '解析中… <span id="upPct">0</span>%'; $("upDash").hidden = true;
   try {
     $("upVideo").src = URL.createObjectURL(f); $("upStage").hidden = false;
-    const { onsets } = await analyzeFile(f, p => { const el = $("upPct"); if (el) el.textContent = Math.round(p * 100); });
-    curStats = buildStats(onsets); curFlip = false;
+    const { onsets, aiRejected } = await analyzeFile(f, p => { const el = $("upPct"); if (el) el.textContent = Math.round(p * 100); });
+    curStats = buildStats(onsets); curStats.aiRejected = aiRejected || 0; curFlip = false;
     renderDash(); $("upDash").hidden = false; syncLive();
     await saveRecord(f.name, $("upVideo").duration || 0);
     $("upProg").hidden = true;
@@ -1446,7 +1507,7 @@ async function saveRecord(fileName, duration) {
   const ag = aggregate(curStats.hits, curFlip);
   const rec = {
     id: Date.now(), dateISO: new Date().toISOString(), fileName, duration: Math.round(duration || 0),
-    total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies, drops: Math.max(0, curStats.rallies - 1), excluded: curStats.excluded || 0,
+    total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies, drops: Math.max(0, curStats.rallies - 1), excluded: curStats.excluded || 0, aiRejected: curStats.aiRejected || 0,
     pHits: ag.pHits, avgA: ag.avgA, avgB: ag.avgB, avgAll: ag.avgAll, maxSpeed: ag.maxSpeed, hist: ag.hist, flip: curFlip,
     hits: curStats.hits.map(h => ({ t: +h.t.toFixed(3), idx: h.idx, speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow }))
   };
@@ -1471,7 +1532,7 @@ async function loadHistory() {
   });
 }
 function openRecord(r) {
-  curStats = { hits: r.hits.map(h => ({ t: h.t, idx: h.idx, player: h.idx % 2 === 0 ? "a" : "b", speed: h.speed, rNow: h.rNow })), rMax: r.rMax, rallies: r.rallies, total: r.total, excluded: r.excluded || 0 };
+  curStats = { hits: r.hits.map(h => ({ t: h.t, idx: h.idx, player: h.idx % 2 === 0 ? "a" : "b", speed: h.speed, rNow: h.rNow })), rMax: r.rMax, rallies: r.rallies, total: r.total, excluded: r.excluded || 0, aiRejected: r.aiRejected || 0 };
   curFlip = r.flip || false; renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
 }
 async function deleteRecord(id) {
