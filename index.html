@@ -92,6 +92,21 @@
   #rally .item:nth-child(2) b { color: var(--yellow); }
   #rally .item:nth-child(3) b { color: var(--pink); }
 
+  /* ===== 選手別打数（交互割り当て） ===== */
+  #players { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 4px auto 6px; }
+  #players .pcard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 16px; font-size: 11px; color: var(--muted); letter-spacing: .04em; min-width: 96px; }
+  #players .pcard b { display: block; font-family: var(--num); font-weight: 700; font-size: 34px; line-height: 1; margin-top: 3px; }
+  #players .pcard.a b { color: var(--aqua); }
+  #players .pcard.b b { color: var(--pink); }
+  #swapBtn { background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 50%; width: 42px; height: 42px; padding: 0; margin: 0; font-size: 18px; color: var(--ink); }
+  /* HUD 左右の選手カウンター */
+  .hudPlayer { position: absolute; top: 40%; transform: translateY(-50%); text-align: center; background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; backdrop-filter: blur(6px); }
+  .hudPlayer.left { left: 10px; } .hudPlayer.right { right: 10px; }
+  .hudPlayer span { font-size: 11px; color: var(--muted); }
+  .hudPlayer b { display: block; font-family: var(--num); font-weight: 700; font-size: 42px; line-height: 1; text-shadow: 0 2px 14px rgba(0,0,0,.7); }
+  .hudPlayer.left b { color: var(--aqua); } .hudPlayer.right b { color: var(--pink); }
+  #hudSwap { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
+
   /* ===== タイマー行 ===== */
   #timerRow { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; font-size: 14px; color: var(--muted); }
   #timerRow input { width: 56px; }
@@ -233,6 +248,12 @@
     <div class="item">総打数<b id="rTotal">0</b></div>
   </div>
 
+  <div id="players">
+    <div class="pcard a">選手A 打数<b id="pA">0</b></div>
+    <button id="swapBtn" aria-label="A/B入れ替え">⇄</button>
+    <div class="pcard b">選手B 打数<b id="pB">0</b></div>
+  </div>
+
   <div id="ruleTabs">
     <button type="button" data-rule="free" class="active">フリー</button>
     <button type="button" data-rule="classic">クラシック</button>
@@ -315,6 +336,8 @@
         <div class="lbl" style="margin-top:4px">最長 <span id="hRMax">0</span> / 総 <span id="hRTotal">0</span></div>
       </div>
     </div>
+    <div id="hudPA" class="hudPlayer left"><span>選手A</span><b id="hPA">0</b></div>
+    <div id="hudPB" class="hudPlayer right"><span>選手B</span><b id="hPB">0</b></div>
     <div id="hudSpeed">
       <div><span class="v" id="hV">--</span><span class="u"> km/h</span></div>
       <div class="sub" id="hSub">計測待機</div>
@@ -323,6 +346,7 @@
       <button id="hudStart">計測開始</button>
       <button id="hudTimer">⏱ セット開始</button>
       <button id="hudRest" hidden>タイム</button>
+      <button id="hudSwap">⇄ A/B</button>
       <button id="hudSnd">🔔 音</button>
       <button id="hudReset">リセット</button>
     </div>
@@ -383,6 +407,19 @@ function rallyOnHit(t) {
 function renderRally() {
   $("rNow").textContent = rally.now; $("rMax").textContent = rally.max; $("rTotal").textContent = rally.total;
   $("hRNow").textContent = rally.now; $("hRMax").textContent = rally.max; $("hRTotal").textContent = rally.total;
+}
+
+// ===== 選手別打数（フレスコは交互に打つ＝打音を交互に割り当て） =====
+const pHits = { a: 0, b: 0 };
+let nextP = "a";
+function renderPlayers() {
+  $("pA").textContent = pHits.a; $("pB").textContent = pHits.b;
+  $("hPA").textContent = pHits.a; $("hPB").textContent = pHits.b;
+}
+function attributeHit() { pHits[nextP]++; nextP = nextP === "a" ? "b" : "a"; renderPlayers(); }
+function swapPlayers() { // A/Bの割り当てが逆なら1タップで補正
+  const t = pHits.a; pHits.a = pHits.b; pHits.b = t;
+  nextP = nextP === "a" ? "b" : "a"; renderPlayers();
 }
 
 // ===== セット集計（タイマー連動） =====
@@ -483,6 +520,7 @@ function onHit(t) {
     }
   }
   rallyOnHit(t);
+  attributeHit();        // 交互に選手A/Bへ割り当て
   if (setStats.active) {
     setStats.hits++;
     if (rally.now > setStats.maxRally) setStats.maxRally = rally.now;
@@ -825,9 +863,10 @@ function resetAll() {
   rally.now = rally.max = rally.total = 0;
   for (const th of THRESHOLDS) counts[th] = 0;
   setStats.active = false; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
+  pHits.a = 0; pHits.b = 0; nextP = "a";
   lastOnset = null; lastHitTime = null; onsetIndex = 0;
   hudState.speed = "--"; hudState.sub = "リセットしました";
-  renderCounts(); renderRally();
+  renderCounts(); renderRally(); renderPlayers();
   speedEl.innerHTML = `--<small> km/h</small>`;
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
@@ -862,8 +901,11 @@ $("restBtn").addEventListener("click", takeRest);
 $("hudRest").addEventListener("click", takeRest);
 $("resetBtn").addEventListener("click", resetAll);
 $("hudReset").addEventListener("click", resetAll);
+$("swapBtn").addEventListener("click", swapPlayers);
+$("hudSwap").addEventListener("click", swapPlayers);
 updateRestVisibility();
 updateRuleUI();
+renderPlayers();
 
 // BGM: ファイル選択・音量
 if (bgmEl) bgmEl.volume = 0.5;
