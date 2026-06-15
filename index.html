@@ -531,19 +531,35 @@ function onHit(t) {
 
 function popEl(el) { el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
 
-// 速度に応じて数字を拡大（30km/h=小 → 80km/h=大。font-size書き換えのみ＝超軽量）
-function applySpeedSize(v0) {
+// 速度に応じて数字の大きさ＋色を変える（30km/h=小・寒色 → 80km/h=大・暖色）。
+// style書き換えのみ＝超軽量・クラッシュ要因なし
+function lerpColor(a, b, u) { return [Math.round(a[0]+(b[0]-a[0])*u), Math.round(a[1]+(b[1]-a[1])*u), Math.round(a[2]+(b[2]-a[2])*u)]; }
+function speedColor(t) { // 0=寒色ブルー → 1=ホットなオレンジ/赤桃
+  const stops = [[0.0,[46,197,255]],[0.35,[22,230,195]],[0.6,[255,210,63]],[0.8,[255,122,24]],[1.0,[255,46,126]]];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [p0, c0] = stops[i], [p1, c1] = stops[i + 1];
+    if (t <= p1) { const u = Math.max(0, Math.min(1, (t - p0) / (p1 - p0 || 1))); return lerpColor(c0, c1, u); }
+  }
+  return stops[stops.length - 1][1];
+}
+function rgbStr(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+function applySpeedStyle(v0) {
   const t = Math.max(0, Math.min(1, (v0 - 30) / 50)); // 30→0, 80→1
   const vw = window.innerWidth || 375;
   speedEl.style.fontSize = Math.round(vw * (0.26 + 0.16 * t)) + "px"; // 26vw〜42vw
   $("hV").style.fontSize = Math.round(vw * (0.24 + 0.20 * t)) + "px"; // 24vw〜44vw
+  const c = speedColor(t), c2 = speedColor(Math.min(1, t + 0.12));
+  speedEl.style.backgroundImage = `linear-gradient(180deg, #ffffff 0%, ${rgbStr(c)} 58%, ${rgbStr(c2)} 100%)`;
+  speedEl.style.filter = `drop-shadow(0 8px 26px rgba(${c[0]},${c[1]},${c[2]},.45))`;
+  $("hV").style.color = rgbStr(c);
+  $("hV").style.textShadow = `0 3px 22px rgba(0,0,0,.9), 0 0 26px rgba(${c[0]},${c[1]},${c[2]},.4)`;
 }
 
 function showSpeed(v0, vAvg, dt) {
   hudState.speed = v0.toFixed(1);
   hudState.sub = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
-  applySpeedSize(v0);
+  applySpeedStyle(v0);
   popEl(speedEl);
   $("hV").textContent = hudState.speed;
   $("hSub").textContent = hudState.sub;
@@ -877,7 +893,8 @@ function resetAll() {
   hudState.speed = "--"; hudState.sub = "リセットしました";
   renderCounts(); renderRally(); renderPlayers();
   speedEl.innerHTML = `--<small> km/h</small>`;
-  speedEl.style.fontSize = ""; $("hV").style.fontSize = ""; // 文字サイズを既定へ
+  speedEl.style.fontSize = ""; speedEl.style.backgroundImage = ""; speedEl.style.filter = ""; // サイズ・色を既定へ
+  $("hV").style.fontSize = ""; $("hV").style.color = ""; $("hV").style.textShadow = "";
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
   statusEl.textContent = "リセットしました（計測は継続）";
