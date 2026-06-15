@@ -242,6 +242,7 @@
 <div id="modeTabs">
   <button id="tabNum" class="active">数値モード</button>
   <button id="tabCam">カメラモード</button>
+  <button id="tabUp">動画解析</button>
 </div>
 
 <!-- ===== 数値モード ===== -->
@@ -323,6 +324,79 @@
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
     </div>
+  </div>
+</div>
+
+<!-- ===== 動画解析モード ===== -->
+<style>
+#upView { display: none; text-align: left; }
+#upView.show { display: block; }
+.upHead { margin: 6px 0 12px; text-align: center; }
+#upPick { display: inline-block; background: var(--grad-cool); color: #06231F; font-weight: 800;
+  border-radius: 999px; padding: 13px 22px; font-size: 15px; cursor: pointer; box-shadow: 0 6px 16px rgba(22,230,195,.3); }
+#upProg { margin-top: 10px; color: var(--muted); font-size: 14px; }
+#upStage { position: relative; border-radius: 14px; overflow: hidden; background: #000; margin-bottom: 12px; }
+#upVideo { width: 100%; display: block; max-height: 60vh; }
+#upLive { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between;
+  align-items: flex-start; padding: 8px 12px; pointer-events: none; }
+#upLive .ul-spd { font-family: var(--num); font-weight: 800; line-height: 1; color: #16E6C3;
+  text-shadow: 0 2px 14px rgba(0,0,0,.85); }
+#upLive .ul-spd span { font-size: 40px; }
+#upLive .ul-spd small { font-size: 15px; margin-left: 2px; }
+#upLive .ul-meta { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 12px;
+  padding: 6px 10px; font-size: 13px; backdrop-filter: blur(6px); }
+#upLive .ul-meta b { font-family: var(--num); color: var(--yellow); font-size: 17px; }
+.dashGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.dashGrid .cell { background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 8px; text-align: center; }
+.dashGrid .cell .lbl { font-size: 11px; color: var(--muted); }
+.dashGrid .cell b { display: block; font-family: var(--num); font-size: 22px; color: var(--ink); margin-top: 2px; }
+.players2 { display: flex; align-items: stretch; gap: 8px; margin-bottom: 14px; }
+.players2 .pc { flex: 1; border-radius: 12px; padding: 10px; text-align: center; font-size: 12px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.05); }
+.players2 .pc.a { box-shadow: inset 0 0 0 1px rgba(46,197,255,.35); }
+.players2 .pc.b { box-shadow: inset 0 0 0 1px rgba(255,46,126,.35); }
+.players2 .pc b { display: block; font-family: var(--num); font-size: 26px; color: var(--ink); }
+.players2 .pc span { font-size: 12px; color: var(--muted); }
+.players2 #dSwap { background: rgba(255,255,255,.08); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 12px; padding: 0 14px; font-size: 18px; }
+#upView h4 { margin: 10px 0 6px; font-size: 14px; color: var(--muted); }
+#histo .bar { display: grid; grid-template-columns: 64px 1fr 34px; align-items: center; gap: 8px; margin: 3px 0; font-size: 12px; }
+#histo .bar .lab { color: var(--muted); text-align: right; }
+#histo .bar .track { background: rgba(255,255,255,.06); border-radius: 6px; height: 16px; overflow: hidden; }
+#histo .bar .fill { height: 100%; border-radius: 6px; background: var(--grad-cool); }
+#histo .bar .cnt { font-family: var(--num); color: var(--ink); text-align: right; }
+#histList .rec { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 4px 0; font-size: 13px; }
+#histList .rec .meta { color: var(--muted); font-size: 11px; }
+#histList .rec .open { background: rgba(22,230,195,.15); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 5px 10px; }
+#histList .rec .del { background: none; border: none; color: var(--muted); font-size: 16px; }
+</style>
+<div id="upView">
+  <div class="upHead">
+    <label id="upPick">🎬 動画を選んで解析<input type="file" id="upFile" accept="video/*" hidden></label>
+    <div id="upProg" hidden>解析中… <span id="upPct">0</span>%</div>
+  </div>
+  <div id="upStage" hidden>
+    <video id="upVideo" playsinline controls preload="metadata"></video>
+    <div id="upLive">
+      <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
+      <div class="ul-meta">ラリー <b id="ulR">0</b> ・ 打数 <b id="ulH">0</b></div>
+    </div>
+  </div>
+  <div id="upDash" hidden>
+    <div class="dashGrid" id="dashSummary"></div>
+    <div class="players2">
+      <div class="pc a"><span>選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
+      <button id="dSwap" aria-label="A/B入替">⇄</button>
+      <div class="pc b"><span>選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
+    </div>
+    <h4>速度分布</h4>
+    <div id="histo"></div>
+  </div>
+  <div id="upHistory">
+    <h4>過去の記録</h4>
+    <div id="histList"><div style="color:var(--muted);font-size:13px">まだ記録がありません</div></div>
   </div>
 </div>
 </div><!-- /.wrap -->
@@ -1001,9 +1075,256 @@ function exitCamera() {
   camStream?.getTracks().forEach(t => t.stop()); camStream = null;
   $("camVideo").srcObject = null;
 }
-$("tabCam").addEventListener("click", enterCamera);
-$("tabNum").addEventListener("click", exitCamera);
-$("hudClose").addEventListener("click", exitCamera);
+function exitUpload() { $("upView").classList.remove("show"); $("numView").style.display = ""; }
+function goNum() { exitUpload(); exitCamera(); $("tabUp").classList.remove("active"); }
+$("tabCam").addEventListener("click", () => { exitUpload(); $("tabUp").classList.remove("active"); enterCamera(); });
+$("tabNum").addEventListener("click", goNum);
+$("hudClose").addEventListener("click", goNum);
+$("tabUp").addEventListener("click", () => {
+  exitCamera();
+  $("numView").style.display = "none";
+  $("upView").classList.add("show");
+  $("tabUp").classList.add("active"); $("tabNum").classList.remove("active"); $("tabCam").classList.remove("active");
+});
+
+/* ============================================================================
+   動画解析モード：アップロード動画の音声トラックを“オフライン再解析”し、
+   ライブ計測と同一の打音検出ロジックでダッシュボード化。解析データはIndexedDBに蓄積。
+   （ライブの proc.onaudioprocess / onHit を非リアルタイムで忠実に再現） ============ */
+
+// --- 速度ヒストグラムのビン（≤30 / 30–40 / 40–50 / 50以降は5km/h刻み / 120+） ---
+const HBINS = (() => {
+  const b = [{ lo: -Infinity, hi: 30, label: "≤30" }, { lo: 30, hi: 40, label: "30–40" }, { lo: 40, hi: 50, label: "40–50" }];
+  for (let s = 50; s < 120; s += 5) b.push({ lo: s, hi: s + 5, label: `${s}–${s + 5}` });
+  b.push({ lo: 120, hi: Infinity, label: "120+" });
+  return b;
+})();
+function binIndex(v) { for (let i = 0; i < HBINS.length; i++) if (v >= HBINS[i].lo && v < HBINS[i].hi) return i; return HBINS.length - 1; }
+
+// --- 反復radix-2 FFT（in-place・複素） ---
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { const tr = re[i]; re[i] = re[j]; re[j] = tr; const ti = im[i]; im[i] = im[j]; im[j] = ti; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), half = len >> 1;
+    for (let i = 0; i < n; i += len) {
+      let cwr = 1, cwi = 0;
+      for (let k = 0; k < half; k++) {
+        const a = i + k, b = i + k + half;
+        const vr = re[b] * cwr - im[b] * cwi, vi = re[b] * cwi + im[b] * cwr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi; re[a] += vr; im[a] += vi;
+        const ncwr = cwr * wr - cwi * wi; cwi = cwr * wi + cwi * wr; cwr = ncwr;
+      }
+    }
+  }
+}
+// 2500–12000Hz帯のスペクトル平坦度（ライブの spectralFlatness と同等指標）
+function flatnessAt(buf, start, sr) {
+  const N = 1024;
+  if (start + N > buf.length) return 1;
+  const re = new Float32Array(N), im = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)); re[i] = buf[start + i] * w; }
+  fft(re, im);
+  const nyq = sr / 2, lo = Math.floor(2500 / nyq * (N / 2)), hi = Math.floor(12000 / nyq * (N / 2));
+  let logSum = 0, linSum = 0, cnt = 0;
+  for (let i = lo; i < hi && i < N / 2; i++) { const p = re[i] * re[i] + im[i] * im[i] + 1e-12; logSum += Math.log(p); linSum += p; cnt++; }
+  if (!cnt) return 1;
+  return Math.exp(logSum / cnt) / (linSum / cnt);
+}
+
+// --- 打音オンセット検出（ライブの onaudioprocess を 512サンプルホップで非リアルタイム再現） ---
+async function detectOnsets(buf, sr, onProgress) {
+  const HOP = 512;
+  const sens = parseFloat($("sens").value) || 6;
+  const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
+  const needAttack = 1.6 + vc * 0.28, needFlat = 0.06 + vc * 0.022;
+  let noiseFloor = 1e-4, fastEnv = 1e-4, refractoryUntil = -1;
+  const onsets = [], n = buf.length; let frame = 0;
+  for (let p = 0; p + HOP <= n; p += HOP) {
+    let sum = 0; for (let i = 0; i < HOP; i++) { const s = buf[p + i]; sum += s * s; }
+    const rms = Math.sqrt(sum / HOP), now = p / sr, prevFast = fastEnv;
+    fastEnv = fastEnv * 0.6 + rms * 0.4;
+    const loud = rms > noiseFloor * sens;
+    if (loud && now > refractoryUntil) {
+      const attackRatio = rms / (prevFast + 1e-9);
+      if (attackRatio >= needAttack && flatnessAt(buf, p, sr) >= needFlat) { refractoryUntil = now + REFRACTORY; onsets.push(now); }
+    } else if (now > refractoryUntil && !loud) {
+      noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
+    }
+    if ((++frame & 4095) === 0) { if (onProgress) onProgress(p / n); await new Promise(r => setTimeout(r)); }
+  }
+  if (onProgress) onProgress(1);
+  return onsets;
+}
+
+// --- ファイル→音声デコード→ハイパス→検出 ---
+async function analyzeFile(file, onProgress) {
+  const arr = await file.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const actx = new AC();
+  let audioBuf;
+  try { audioBuf = await actx.decodeAudioData(arr); } finally { try { actx.close(); } catch (_) {} }
+  const sr = audioBuf.sampleRate, len = audioBuf.length;
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const off = new OAC(1, len, sr);
+  let mono;
+  if (audioBuf.numberOfChannels === 1) mono = audioBuf;
+  else {
+    mono = off.createBuffer(1, len, sr); const o = mono.getChannelData(0), nc = audioBuf.numberOfChannels;
+    for (let c = 0; c < nc; c++) { const d = audioBuf.getChannelData(c); for (let i = 0; i < len; i++) o[i] += d[i] / nc; }
+  }
+  const src = off.createBufferSource(); src.buffer = mono;
+  const hp = off.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
+  src.connect(hp); hp.connect(off.destination); src.start();
+  const rendered = await off.startRendering();
+  const onsets = await detectOnsets(rendered.getChannelData(0), sr, onProgress);
+  return { onsets, sr, duration: audioBuf.duration };
+}
+
+// --- オンセット列→打球タイムライン（ライブの onHit / rallyOnHit を再現） ---
+function buildStats(onsets) {
+  const L = parseFloat($("distance").value) || 7.0;
+  const micPos = $("micPos").value;
+  const calib = parseFloat($("calib").value) || theoreticalFactor(L);
+  const gap = parseFloat($("rallyGap").value) || 2.5;
+  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0;
+  for (const t of onsets) {
+    let speed = null;
+    if (lastOnset !== null) {
+      let dt = t - lastOnset;
+      if (micPos === "near") { const d = L / SOUND_SPEED; dt += (idx % 2 === 0) ? -d : +d; }
+      if (dt >= 0.20 && dt <= 0.90) speed = (L / dt * 3.6) * calib;
+    }
+    if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
+    if (rNow === 0) rallies++;
+    rNow++; if (rNow > rMax) rMax = rNow;
+    hits.push({ t, idx, player: idx % 2 === 0 ? "a" : "b", speed, rNow });
+    lastOnset = t; lastHitTime = t; idx++;
+  }
+  return { hits, rMax, rallies, total: hits.length };
+}
+
+// --- 集計（flip=A/B割当の反転） ---
+function aggregate(hits, flip) {
+  const pHits = { a: 0, b: 0 }, pSpd = { a: [], b: [] }, all = [];
+  for (const h of hits) {
+    const pl = flip ? (h.player === "a" ? "b" : "a") : h.player;
+    pHits[pl]++;
+    if (h.speed != null) {
+      all.push(h.speed);
+      let lp = (h.idx - 1) % 2 === 0 ? "a" : "b"; if (flip) lp = lp === "a" ? "b" : "a"; // 打ち出した側に速度を帰属
+      pSpd[lp].push(h.speed);
+    }
+  }
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const hist = HBINS.map(b => ({ label: b.label, count: 0 }));
+  for (const v of all) hist[binIndex(v)].count++;
+  return { pHits, avgA: avg(pSpd.a), avgB: avg(pSpd.b), avgAll: avg(all), maxSpeed: all.length ? Math.max(...all) : 0, hist };
+}
+
+// --- ダッシュボード描画 ---
+let curStats = null, curFlip = false;
+function renderDash() {
+  if (!curStats) return null;
+  const ag = aggregate(curStats.hits, curFlip);
+  const drops = Math.max(0, curStats.rallies - 1);
+  $("dashSummary").innerHTML = [
+    ["総打数", curStats.total], ["最長ラリー", curStats.rMax], ["ラリー本数", curStats.rallies],
+    ["落球(区切り)", drops], ["最高速", ag.maxSpeed ? ag.maxSpeed.toFixed(1) : "--"], ["平均速", ag.avgAll ? ag.avgAll.toFixed(1) : "--"]
+  ].map(([l, v]) => `<div class="cell"><div class="lbl">${l}</div><b>${v}</b></div>`).join("");
+  $("dpA").textContent = ag.pHits.a; $("dpB").textContent = ag.pHits.b;
+  $("dsA").textContent = "平均 " + (ag.avgA ? ag.avgA.toFixed(1) : "--") + " km/h";
+  $("dsB").textContent = "平均 " + (ag.avgB ? ag.avgB.toFixed(1) : "--") + " km/h";
+  const mx = Math.max(1, ...ag.hist.map(h => h.count));
+  $("histo").innerHTML = ag.hist.map(h =>
+    `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("");
+  return ag;
+}
+
+// --- 再生に同期したライブ表示 ---
+function syncLive() {
+  if (!curStats) return;
+  const t = $("upVideo").currentTime;
+  let cur = null, hitsTo = 0, lastH = null;
+  for (const h of curStats.hits) {
+    if (h.t <= t) { hitsTo++; lastH = h; if (h.speed != null) cur = h; } else break;
+  }
+  $("ulV").textContent = (cur && (t - cur.t) < 1.2) ? cur.speed.toFixed(1) : "--";
+  $("ulR").textContent = lastH ? lastH.rNow : 0;
+  $("ulH").textContent = hitsTo;
+}
+
+// --- ファイル選択→解析 ---
+$("upFile").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  $("upProg").hidden = false; $("upProg").innerHTML = '解析中… <span id="upPct">0</span>%'; $("upDash").hidden = true;
+  try {
+    $("upVideo").src = URL.createObjectURL(f); $("upStage").hidden = false;
+    const { onsets } = await analyzeFile(f, p => { const el = $("upPct"); if (el) el.textContent = Math.round(p * 100); });
+    curStats = buildStats(onsets); curFlip = false;
+    renderDash(); $("upDash").hidden = false; syncLive();
+    await saveRecord(f.name, $("upVideo").duration || 0);
+    $("upProg").hidden = true;
+  } catch (err) {
+    $("upProg").hidden = false; $("upProg").textContent = "解析できませんでした（音声トラック非対応の可能性）: " + err.message;
+  }
+});
+$("dSwap").addEventListener("click", () => { curFlip = !curFlip; renderDash(); syncLive(); });
+$("upVideo").addEventListener("timeupdate", syncLive);
+
+// --- IndexedDB（記録の蓄積） ---
+let _db = null;
+function db() {
+  return new Promise((res, rej) => {
+    if (_db) return res(_db);
+    const r = indexedDB.open("frescoData", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("sessions", { keyPath: "id" });
+    r.onsuccess = () => { _db = r.result; res(_db); };
+    r.onerror = () => rej(r.error);
+  });
+}
+async function saveRecord(fileName, duration) {
+  const ag = aggregate(curStats.hits, curFlip);
+  const rec = {
+    id: Date.now(), dateISO: new Date().toISOString(), fileName, duration: Math.round(duration || 0),
+    total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies, drops: Math.max(0, curStats.rallies - 1),
+    pHits: ag.pHits, avgA: ag.avgA, avgB: ag.avgB, avgAll: ag.avgAll, maxSpeed: ag.maxSpeed, hist: ag.hist, flip: curFlip,
+    hits: curStats.hits.map(h => ({ t: +h.t.toFixed(3), idx: h.idx, speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow }))
+  };
+  try { const d = await db(); await new Promise((res, rej) => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); loadHistory(); }
+  catch (_) { /* 保存失敗時も解析結果は表示継続 */ }
+}
+async function loadHistory() {
+  let recs = [];
+  try { const d = await db(); recs = await new Promise((res, rej) => { const req = d.transaction("sessions", "readonly").objectStore("sessions").getAll(); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
+  catch (_) {}
+  recs.sort((a, b) => b.id - a.id);
+  const el = $("histList");
+  if (!recs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">まだ記録がありません</div>'; return; }
+  el.innerHTML = recs.map(r => {
+    const d = new Date(r.dateISO), ds = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}</div><div class="meta">A${r.pHits.a} B${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
+  }).join("");
+  el.querySelectorAll(".rec").forEach(div => {
+    const id = +div.dataset.id, r = recs.find(x => x.id === id);
+    div.querySelector(".open").addEventListener("click", () => openRecord(r));
+    div.querySelector(".del").addEventListener("click", () => deleteRecord(id));
+  });
+}
+function openRecord(r) {
+  curStats = { hits: r.hits.map(h => ({ t: h.t, idx: h.idx, player: h.idx % 2 === 0 ? "a" : "b", speed: h.speed, rNow: h.rNow })), rMax: r.rMax, rallies: r.rallies, total: r.total };
+  curFlip = r.flip || false; renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
+}
+async function deleteRecord(id) {
+  try { const d = await db(); await new Promise(res => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").delete(id); tx.oncomplete = res; }); } catch (_) {}
+  loadHistory();
+}
+loadHistory();
 
 </script>
 </body>
