@@ -154,7 +154,6 @@
   #camWrap { position: fixed; inset: 0; z-index: 50; background: #000; display: none; }
   #camWrap.show { display: block; }
   #camVideo { width: 100%; height: 100%; object-fit: cover; }
-  #recCanvas { display: none; }
   #hud {
     position: absolute; inset: 0; pointer-events: none;
     display: flex; flex-direction: column; justify-content: space-between;
@@ -166,10 +165,6 @@
   #hudClose { pointer-events: auto; font-family: var(--num); font-size: 15px; letter-spacing: .04em; }
   #hudTimerDisp { font-family: var(--num); font-size: 26px; font-weight: 700; display: none; color: var(--ink); }
   #hudTimerDisp.show { display: block; }
-  #hudRecDot { display: none; align-items: center; gap: 7px; font-family: var(--num); font-size: 15px; font-weight: 700; letter-spacing: .1em; color: #FF5A6E; }
-  #hudRecDot.show { display: flex; }
-  #hudRecDot .dot { width: 12px; height: 12px; border-radius: 50%; background: #FF3B30; animation: blink 1s infinite; }
-  @keyframes blink { 50% { opacity: .25; } }
   #hudRally { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 14px; padding: 10px 16px; text-align: right; backdrop-filter: blur(6px); }
   #hudRally .lbl { font-size: 11px; color: var(--muted); letter-spacing: .05em; }
   #hudRally .big { font-family: var(--num); font-size: 34px; font-weight: 700; color: var(--aqua); }
@@ -186,8 +181,6 @@
   #hudBottom button { pointer-events: auto; border-radius: 999px; padding: 13px 20px; font-size: 15px; font-weight: 800; margin: 0; backdrop-filter: blur(6px); }
   #hudStart { background: var(--grad-cool); color: #06231F; }
   #hudStart.running { background: var(--grad-hot); color: #1A0633; }
-  #hudRec { background: rgba(8,6,24,.5); color: #FF6B8A; border: 1px solid #FF6B8A; }
-  #hudRec.running { background: var(--grad-hot); color: #fff; border-color: transparent; }
   #hudTimer { background: rgba(8,6,24,.5); color: var(--ink); border: 1px solid var(--line); }
   #hudRest { background: rgba(8,6,24,.5); color: var(--blue); border: 1px solid var(--blue); }
   #hudRest.running { background: var(--grad-cool); color: #06231F; border-color: transparent; }
@@ -284,7 +277,6 @@
     <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
     <div class="setting"><label>開始カウントダウン [秒]（ソロは10等）</label><input type="number" id="cdSecs" value="3" min="1" max="20" step="1"></div>
-    <div class="setting"><label>録画の上限 [秒]（長尺クラッシュ防止）</label><input type="number" id="recMaxSec" value="90" min="15" max="600" step="15"></div>
     <div class="setting"><label>休憩(タイム)時間 [分]</label><input type="number" id="restMin" value="1" step="0.5"></div>
     <div class="setting"><label>クラシックのタイム回数(0=無制限)</label><input type="number" id="classicTimeouts" value="1" step="1" min="0"></div>
     <div class="setting"><label>カウント音（毎秒チクタク）</label><input type="checkbox" id="sndTick" checked></div>
@@ -297,8 +289,8 @@
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
       ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
-      ・<b>録画（HUD焼き込み）</b>はカメラモードの「● REC」。終了後にiOSの共有シートが開くので「写真／ファイルに保存」を選んでください。<br>
-      ・録画は30/60fps。スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
+      ・<b>動画を残したい時</b>はiPhoneの「画面収録」（コントロールセンター）を使うと、HUDごと録画でき、長時間でも安定して写真に保存されます。<br>
+      ・スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
       ・<b>換算係数</b>＝1.000で「打音間の平均速」をそのまま表示（一番遅く・正直な値）。スピードガンより速ければ係数を下げる（例:0.95）。選手間距離も実測値に合わせると精度が上がります。<br>
       ・<b>BGM</b>＝「BGMを使う」をオンにして端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。既定はオフ。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
@@ -311,14 +303,12 @@
 <!-- ===== カメラHUDモード ===== -->
 <div id="camWrap">
   <video id="camVideo" playsinline muted autoplay></video>
-  <canvas id="recCanvas"></canvas>
   <div id="hud">
     <div id="hudTop">
       <div id="hudLeft">
         <button id="hudClose">✕ 閉じる</button>
         <div id="hudRule" class="hudPill"></div>
         <div id="hudTimerDisp" class="hudPill">--:--</div>
-        <div id="hudRecDot"><span class="dot"></span>REC</div>
       </div>
       <div id="hudRally">
         <div class="lbl">現在ラリー</div><div class="big" id="hRNow">0</div>
@@ -331,7 +321,6 @@
     </div>
     <div id="hudBottom">
       <button id="hudStart">計測開始</button>
-      <button id="hudRec">● REC</button>
       <button id="hudTimer">⏱ セット開始</button>
       <button id="hudRest" hidden>タイム</button>
       <button id="hudSnd">🔔 音</button>
@@ -930,7 +919,6 @@ async function enterCamera() {
   renderRally();
 }
 function exitCamera() {
-  if (recording) stopRec();
   $("tabNum").classList.add("active"); $("tabCam").classList.remove("active");
   $("camWrap").classList.remove("show");
   $("gearBtn").style.display = "";       // 数値モードに戻ったら歯車を再表示
@@ -941,191 +929,6 @@ $("tabCam").addEventListener("click", enterCamera);
 $("tabNum").addEventListener("click", exitCamera);
 $("hudClose").addEventListener("click", exitCamera);
 
-// ===== 録画（HUD焼き込み） =====
-let recording = false, mediaRecorder = null, recChunks = [], recRAF = 0, recAudioStream = null, recStopTimer = 0;
-const canvas = $("recCanvas"), c2d = canvas.getContext("2d");
-const FNUM = '"DIN Condensed","Oswald",sans-serif';
-const FUI  = '"DIN Alternate","Saira",-apple-system,sans-serif';
-
-function pickMime() {
-  const types = ["video/mp4;codecs=h264,aac", "video/mp4", "video/webm;codecs=vp8,opus", "video/webm"];
-  for (const t of types) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t; }
-  return "";
-}
-
-async function startRec() {
-  const v = $("camVideo");
-  if (!camStream || v.readyState < 2) { $("hSub").textContent = "カメラ準備中…もう一度"; return; }
-
-  // canvasは「画面に表示されている見た目」に合わせる
-  // （object-fit:cover を再現し、縦横比を崩さず・録画＝見たままにする）
-  const dispW = v.clientWidth || window.innerWidth;
-  const dispH = v.clientHeight || window.innerHeight;
-  const targetLong = 720; // 長辺の解像度（メモリ/発熱を抑えてクラッシュ回避）
-  let w, h;
-  if (dispH >= dispW) { h = targetLong; w = Math.round(targetLong * dispW / dispH); } // 縦持ち
-  else { w = targetLong; h = Math.round(targetLong * dispH / dispW); }                 // 横持ち
-  w -= (w % 2); h -= (h % 2); // 偶数化（エンコーダ要件）
-  canvas.width = w; canvas.height = h;
-
-  // 音声トラック確保（計測中ならそのマイクを再利用、なければ新規取得）
-  let audioTrack = null;
-  if (stream && stream.getAudioTracks().length) audioTrack = stream.getAudioTracks()[0];
-  else {
-    try {
-      recAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioTrack = recAudioStream.getAudioTracks()[0];
-    } catch (_) { /* 音声なしで続行 */ }
-  }
-
-  const canvasStream = canvas.captureStream(24); // fpsを抑えて負荷軽減
-  if (audioTrack) canvasStream.addTrack(audioTrack);
-
-  const mime = pickMime();
-  const opts = { videoBitsPerSecond: 2500000 }; // ビットレート上限でメモリ増加を抑制
-  if (mime) opts.mimeType = mime;
-  try {
-    mediaRecorder = new MediaRecorder(canvasStream, opts);
-  } catch (err) {
-    try { mediaRecorder = new MediaRecorder(canvasStream); } // optsが弾かれた場合のフォールバック
-    catch (e2) { $("hSub").textContent = "録画非対応: " + e2.message; return; }
-  }
-
-  recChunks = [];
-  mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
-  mediaRecorder.onstop = saveRec;
-  mediaRecorder.start(1000);
-
-  recording = true;
-  $("hudRec").textContent = "■ 録画停止"; $("hudRec").classList.add("running");
-  $("hudRecDot").classList.add("show");
-  drawRecFrame();
-
-  // 上限秒数で自動停止（長尺によるメモリ枯渇＝クラッシュを防止）
-  const maxSec = Math.max(15, Math.min(600, parseInt($("recMaxSec").value) || 90));
-  clearTimeout(recStopTimer);
-  recStopTimer = setTimeout(() => { if (recording) { flashSub(`録画上限(${maxSec}秒)で自動保存します`); stopRec(); } }, maxSec * 1000);
-  log("録画開始（" + (mime || "default") + ", " + w + "x" + h + ", 上限" + maxSec + "s）");
-}
-
-function roundRect(x, y, w, h, r) {
-  c2d.beginPath();
-  c2d.moveTo(x + r, y); c2d.arcTo(x + w, y, x + w, y + h, r);
-  c2d.arcTo(x + w, y + h, x, y + h, r); c2d.arcTo(x, y + h, x, y, r);
-  c2d.arcTo(x, y, x + w, y, r); c2d.closePath();
-}
-
-// object-fit:cover と同じ「歪ませず中央クロップ」で映像を描画
-function drawVideoCover(video) {
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw || !vh) return;
-  const cw = canvas.width, ch = canvas.height;
-  const scale = Math.max(cw / vw, ch / vh);
-  const dw = vw * scale, dh = vh * scale;
-  c2d.drawImage(video, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
-}
-
-function drawRecFrame() {
-  if (!recording) return;
-  const v = $("camVideo");
-  if (v.readyState >= 2) drawVideoCover(v);
-
-  const W = canvas.width, H = canvas.height, u = W / 40; // 基準フォント
-  c2d.textBaseline = "top";
-
-  // 右上：ラリー
-  c2d.font = `700 ${u * 0.78}px ${FNUM}`;
-  const rTxt = `ラリー ${rally.now}`, rSub = `最長 ${rally.max} / 総 ${rally.total}`;
-  const boxW = Math.max(c2d.measureText(rTxt).width, c2d.measureText(rSub).width) + u;
-  c2d.fillStyle = "rgba(8,6,24,.5)"; roundRect(W - boxW - u * 0.6, u * 0.6, boxW, u * 2.3, u * 0.35); c2d.fill();
-  c2d.textAlign = "right";
-  c2d.fillStyle = "#16E6C3"; c2d.fillText(rTxt, W - u, u * 0.95);
-  c2d.font = `400 ${u * 0.45}px ${FUI}`;
-  c2d.fillStyle = "#EAF0FF"; c2d.fillText(rSub, W - u, u * 1.95);
-
-  // 左上：タイマー＋REC
-  c2d.textAlign = "left";
-  let ty = u * 0.6;
-  if (timerActive) {
-    c2d.font = `700 ${u * 0.9}px ${FNUM}`;
-    const tTxt = $("hudTimerDisp").textContent;
-    const tw = c2d.measureText(tTxt).width + u;
-    c2d.fillStyle = "rgba(8,6,24,.5)"; roundRect(u * 0.6, ty, tw, u * 1.35, u * 0.35); c2d.fill();
-    c2d.fillStyle = "#fff"; c2d.fillText(tTxt, u, ty + u * 0.22);
-    ty += u * 1.65;
-  }
-  c2d.fillStyle = "#FF3B30"; c2d.beginPath(); c2d.arc(u * 1.1, ty + u * 0.55, u * 0.28, 0, Math.PI * 2); c2d.fill();
-  c2d.fillStyle = "#FF6B8A"; c2d.font = `700 ${u * 0.58}px ${FNUM}`;
-  c2d.fillText("REC", u * 1.6, ty + u * 0.22);
-
-  // 下方：速度（ラリーの軌道を隠さないよう下げる。ビビッドイエロー＋強い影で視認性確保）
-  c2d.textAlign = "center";
-  c2d.shadowColor = "rgba(0,0,0,.9)"; c2d.shadowBlur = u * 0.7; c2d.shadowOffsetY = u * 0.06;
-  const sy = H * 0.70;
-  c2d.fillStyle = "#FFD23F"; c2d.font = `700 ${u * 2.4}px ${FNUM}`;
-  c2d.fillText(hudState.speed, W / 2, sy);
-  c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 0.72}px ${FUI}`;
-  c2d.fillText("km/h", W / 2, sy + u * 2.4);
-  c2d.shadowBlur = 0; c2d.shadowOffsetY = 0;
-
-  // 中央：カウントダウン／休憩中（全面に焼き込み）
-  if (cdActive || restActive) {
-    c2d.fillStyle = "rgba(8,6,24,.5)"; c2d.fillRect(0, 0, W, H);
-    c2d.textAlign = "center";
-    c2d.shadowColor = "rgba(0,0,0,.85)"; c2d.shadowBlur = u * 0.8;
-    if (cdActive) {
-      const n = Math.ceil(cdRemain);
-      c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 1.0}px ${FNUM}`;
-      c2d.fillText(cdThen === "resume" ? "再開まで" : "スタートまで", W / 2, H * 0.30);
-      c2d.fillStyle = "#FFD23F"; c2d.font = `700 ${u * 5.0}px ${FNUM}`;
-      c2d.fillText(n >= 1 ? String(n) : "GO", W / 2, H * 0.40);
-    } else {
-      c2d.fillStyle = "#fff"; c2d.font = `700 ${u * 1.6}px ${FNUM}`;
-      c2d.fillText("休憩中", W / 2, H * 0.34);
-      c2d.fillStyle = "#16E6C3"; c2d.font = `700 ${u * 3.2}px ${FNUM}`;
-      c2d.fillText(fmtTime(restRemain), W / 2, H * 0.50);
-    }
-    c2d.shadowBlur = 0;
-  }
-
-  recRAF = requestAnimationFrame(drawRecFrame);
-}
-
-function stopRec() {
-  if (!recording) return;
-  recording = false;
-  clearTimeout(recStopTimer);
-  cancelAnimationFrame(recRAF);
-  try { mediaRecorder.stop(); } catch (_) {}
-  $("hudRec").textContent = "● REC"; $("hudRec").classList.remove("running");
-  $("hudRecDot").classList.remove("show");
-  $("hSub").textContent = "保存準備中…";
-}
-
-async function saveRec() {
-  recAudioStream?.getTracks().forEach(t => t.stop()); recAudioStream = null;
-  if (!recChunks.length) { $("hSub").textContent = "録画データなし"; return; }
-  const mime = mediaRecorder.mimeType || "video/mp4";
-  const ext = mime.includes("mp4") ? "mp4" : "webm";
-  const blob = new Blob(recChunks, { type: mime });
-  const d = new Date();
-  const name = `fresco_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}_${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}.${ext}`;
-  const file = new File([blob], name, { type: mime });
-  log(`録画完了（${(blob.size/1e6).toFixed(1)}MB）`);
-
-  // iOS: 共有シート経由で写真/ファイルに保存
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: "フレスコボール球速" }); $("hSub").textContent = "共有/保存しました"; return; }
-    catch (_) { /* キャンセル時はダウンロードにフォールバック */ }
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-  $("hSub").textContent = "保存しました";
-}
-
-$("hudRec").addEventListener("click", () => { recording ? stopRec() : startRec(); });
 </script>
 </body>
 </html>
