@@ -531,10 +531,19 @@ function onHit(t) {
 
 function popEl(el) { el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
 
+// 速度に応じて数字を拡大（30km/h=小 → 80km/h=大。font-size書き換えのみ＝超軽量）
+function applySpeedSize(v0) {
+  const t = Math.max(0, Math.min(1, (v0 - 30) / 50)); // 30→0, 80→1
+  const vw = window.innerWidth || 375;
+  speedEl.style.fontSize = Math.round(vw * (0.26 + 0.16 * t)) + "px"; // 26vw〜42vw
+  $("hV").style.fontSize = Math.round(vw * (0.24 + 0.20 * t)) + "px"; // 24vw〜44vw
+}
+
 function showSpeed(v0, vAvg, dt) {
   hudState.speed = v0.toFixed(1);
   hudState.sub = `平均 ${vAvg.toFixed(1)} / Δt ${dt.toFixed(3)}s`;
   speedEl.innerHTML = `${v0.toFixed(1)}<small> km/h</small>`;
+  applySpeedSize(v0);
   popEl(speedEl);
   $("hV").textContent = hudState.speed;
   $("hSub").textContent = hudState.sub;
@@ -868,6 +877,7 @@ function resetAll() {
   hudState.speed = "--"; hudState.sub = "リセットしました";
   renderCounts(); renderRally(); renderPlayers();
   speedEl.innerHTML = `--<small> km/h</small>`;
+  speedEl.style.fontSize = ""; $("hV").style.fontSize = ""; // 文字サイズを既定へ
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
   statusEl.textContent = "リセットしました（計測は継続）";
