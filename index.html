@@ -193,7 +193,7 @@
   #hudSpeed { position: absolute; left: 0; right: 0; bottom: 18%; text-align: center; }
   #hudSpeed.pop { animation: pop .28s ease-out; }
   #hudSpeed .v {
-    font-family: var(--num); font-weight: 700; font-size: clamp(26px, 7vmin, 40px); line-height: 1;
+    font-family: var(--num); font-weight: 700; font-size: clamp(24px, 6vmin, 40px); line-height: 1.15; padding: 0.04em 0;
     color: var(--yellow); text-shadow: 0 3px 22px rgba(0,0,0,.9), 0 0 26px rgba(255,210,63,.3);
   }
   #hudSpeed .u { font-family: var(--ui); font-weight: 700; font-size: 16px; color: var(--ink); text-shadow: 0 2px 12px rgba(0,0,0,.8); }
@@ -553,7 +553,8 @@ function applySpeedStyle(v0) {
   const t = Math.max(0, Math.min(1, (v0 - 30) / 50)); // 30→0, 80→1
   const base = Math.min(window.innerWidth || 375, window.innerHeight || 667); // 短辺基準＝縦横で一定
   speedEl.style.fontSize = Math.round(base * (0.087 + 0.053 * t)) + "px"; // 約8.7〜14vmin
-  $("hV").style.fontSize = Math.round(base * (0.08 + 0.067 * t)) + "px";  // 約8〜14.7vmin
+  // HUD（カメラ・横向き主用途）は控えめ＋上限キャップで大きくなりすぎ＆上切れを防止
+  $("hV").style.fontSize = Math.round(Math.min(base * (0.06 + 0.05 * t), 46)) + "px";
   const c = speedColor(t), c2 = speedColor(Math.min(1, t + 0.12));
   speedEl.style.backgroundImage = `linear-gradient(180deg, #ffffff 0%, ${rgbStr(c)} 58%, ${rgbStr(c2)} 100%)`;
   speedEl.style.filter = `drop-shadow(0 8px 26px rgba(${c[0]},${c[1]},${c[2]},.45))`;
