@@ -394,6 +394,7 @@
       <button id="dSwap" aria-label="A/B入替">⇄</button>
       <div class="pc b"><span>選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
     </div>
+    <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
     <h4>速度分布</h4>
     <div id="histo"></div>
   </div>
@@ -1423,14 +1424,17 @@ function buildStats(onsets) {
 // --- 集計（flip=A/B割当の反転） ---
 function aggregate(hits, flip) {
   const pHits = { a: 0, b: 0 }, pSpd = { a: [], b: [] }, all = [];
+  let prevPlayer = null;
   for (const h of hits) {
     const pl = flip ? (h.player === "a" ? "b" : "a") : h.player;
     pHits[pl]++;
     if (h.speed != null) {
       all.push(h.speed);
-      let lp = (h.idx - 1) % 2 === 0 ? "a" : "b"; if (flip) lp = lp === "a" ? "b" : "a"; // 打ち出した側に速度を帰属
+      const lp0 = prevPlayer != null ? prevPlayer : (h.player === "a" ? "b" : "a"); // 速度は「直前の打者(打ち出した側)」へ帰属
+      const lp = flip ? (lp0 === "a" ? "b" : "a") : lp0;
       pSpd[lp].push(h.speed);
     }
+    prevPlayer = h.player;
   }
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const hist = HBINS.map(b => ({ label: b.label, count: 0 }));
@@ -1455,7 +1459,8 @@ function renderDash() {
   $("histo").innerHTML = ag.hist.map(h =>
     `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
     + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${parseFloat($("maxTrust").value) || 110} km/h超）。打数には計上。</div>` : "")
-    + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "");
+    + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
+    + (curStats.vidUsed ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">🎥 映像精査済み：隣の組ほか ${curStats.vidRejected || 0} 件を除外、A/Bは左右の動きで判定。</div>` : "");
   return ag;
 }
 
@@ -1480,7 +1485,7 @@ $("upFile").addEventListener("change", async e => {
     $("upVideo").src = URL.createObjectURL(f); $("upStage").hidden = false;
     const { onsets, aiRejected } = await analyzeFile(f, p => { const el = $("upPct"); if (el) el.textContent = Math.round(p * 100); });
     curStats = buildStats(onsets); curStats.aiRejected = aiRejected || 0; curFlip = false;
-    renderDash(); $("upDash").hidden = false; syncLive();
+    renderDash(); $("upDash").hidden = false; $("vidBtn").style.display = ""; syncLive();
     await saveRecord(f.name, $("upVideo").duration || 0);
     $("upProg").hidden = true;
   } catch (err) {
@@ -1491,6 +1496,111 @@ $("upFile").addEventListener("change", async e => {
 });
 $("dSwap").addEventListener("click", () => { curFlip = !curFlip; renderDash(); syncLive(); });
 $("upVideo").addEventListener("timeupdate", syncLive);
+
+// --- D: 映像モーション照合（隣の組の除外＋左右で打者判定） ---
+// 与えられた打音列（.t と .player を保持）から速度・ラリーを再計算（buildStatsの player固定版）
+function rebuildTimeline(hitsIn) {
+  const L = parseFloat($("distance").value) || 7.0, micPos = $("micPos").value;
+  const calib = parseFloat($("calib").value) || theoreticalFactor(L);
+  const gap = parseFloat($("rallyGap").value) || 2.5, cap = parseFloat($("maxTrust").value) || 110;
+  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0;
+  for (const h of hitsIn) {
+    const t = h.t; let speed = null;
+    if (lastOnset !== null) {
+      let dt = t - lastOnset;
+      if (micPos === "near") { const d = L / SOUND_SPEED; dt += (idx % 2 === 0) ? -d : +d; }
+      if (dt >= 0.20 && dt <= 0.90) { const v = (L / dt * 3.6) * calib; if (v > cap) excluded++; else speed = v; }
+    }
+    if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
+    if (rNow === 0) rallies++;
+    rNow++; if (rNow > rMax) rMax = rNow;
+    hits.push({ t, idx, player: h.player, speed, rNow });
+    lastOnset = t; lastHitTime = t; idx++;
+  }
+  return { hits, rMax, rallies, total: hits.length, excluded };
+}
+// 動画を再生しながら「列ごとのモーション時系列」を収集（iOS安全：一時停止seekは黒画になるため）
+// 列バケツ化＝背景(波/人)の定常モーションを後で差し引き、スイングのピーク位置を取り出すため
+const VID_COLS = 16;
+async function buildMotionTimeline(v, onProgress) {
+  const W = 160, H = 90, B = VID_COLS, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const cx = cv.getContext("2d", { willReadFrequently: true });
+  const samples = []; let prev = null;
+  v.muted = true; v.playsInline = true;
+  try { v.currentTime = 0; } catch (_) {}
+  try { v.playbackRate = 2; } catch (_) {}   // 2倍速で収集（iOSが無視しても等速で動作）
+  const useRVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+  await v.play();
+  await new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const onFrame = () => {
+      if (done) return;
+      cx.drawImage(v, 0, 0, W, H); const b = cx.getImageData(0, 0, W, H).data;
+      if (prev) {
+        const col = new Float64Array(B);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const o = (y * W + x) * 4, d = Math.abs(b[o] - prev[o]) + Math.abs(b[o + 1] - prev[o + 1]) + Math.abs(b[o + 2] - prev[o + 2]);
+          col[(x * B / W) | 0] += d;
+        }
+        samples.push({ t: v.currentTime, col });
+      }
+      prev = b;
+      if (onProgress) onProgress(Math.min(0.99, v.currentTime / v.duration));
+      if (v.ended || v.currentTime >= v.duration - 0.05) { finish(); return; }
+      if (useRVFC) v.requestVideoFrameCallback(onFrame);
+    };
+    if (useRVFC) v.requestVideoFrameCallback(onFrame);
+    else { const iv = setInterval(() => { if (done) { clearInterval(iv); return; } onFrame(); }, 60); }
+    v.addEventListener("ended", finish, { once: true });
+    setTimeout(finish, (v.duration / Math.max(1, v.playbackRate)) * 1000 + 4000); // 保険
+  });
+  try { v.pause(); v.playbackRate = 1; } catch (_) {}
+  return samples;
+}
+// 各打音±0.15秒で、背景差し引き後のピーク列＝打者の左右、超過モーション総量＝画角内動作の有無
+async function vidMotionPass(onProgress) {
+  const v = $("upVideo");
+  if (!curStats || !curStats.hits.length) throw new Error("先に動画を解析してください");
+  if (!v || !v.src || !v.duration || isNaN(v.duration)) throw new Error("この記録には動画がありません（再アップロードが必要）");
+  const B = VID_COLS, samples = await buildMotionTimeline(v, onProgress);
+  if (!samples.length) throw new Error("映像フレームを取得できませんでした");
+  const med = new Float64Array(B);                       // 列ごとの背景ベースライン（中央値）
+  for (let c = 0; c < B; c++) { const a = samples.map(s => s.col[c]).sort((x, y) => x - y); med[c] = a.length ? a[a.length >> 1] : 0; }
+  const win = 0.15;
+  const agg = curStats.hits.map(h => {
+    let excess = 0, bestEx = -Infinity, bestC = 0;
+    for (const s of samples) if (s.t >= h.t - win && s.t <= h.t + win) {
+      for (let c = 0; c < B; c++) { const ex = s.col[c] - med[c]; if (ex > 0) excess += ex; if (ex > bestEx) { bestEx = ex; bestC = c; } }
+    }
+    return { t: h.t, excess, bestC };
+  });
+  const tot = agg.map(m => m.excess).slice().sort((a, b) => a - b);
+  const median = tot.length ? tot[tot.length >> 1] : 0;
+  const thr = median * 0.2;     // 超過モーションが中央値の20%未満＝画角内に動きなし＝隣の組
+  const kept = []; let rejected = 0;
+  for (const m of agg) {
+    if (m.excess < thr) { rejected++; continue; }
+    kept.push({ t: m.t, player: m.bestC < B / 2 ? "a" : "b" });   // ピーク位置が左=A/右=B
+  }
+  return { kept, rejected, analyzed: agg.length };
+}
+$("vidBtn").addEventListener("click", async () => {
+  if (!curStats) return;
+  $("upProg").hidden = false; $("upProg").innerHTML = '映像で精査中… <span id="upPct2">0</span>%（重い処理です）';
+  $("vidBtn").disabled = true;
+  try {
+    const aiKeep = curStats.aiRejected || 0;
+    const { kept, rejected, analyzed } = await vidMotionPass(p => { const el = $("upPct2"); if (el) el.textContent = Math.round(p * 100); });
+    const s = rebuildTimeline(kept);
+    s.excluded = s.excluded; s.aiRejected = aiKeep; s.vidRejected = rejected; s.vidUsed = true;
+    curStats = s; curFlip = false;
+    renderDash(); syncLive();
+    $("upProg").hidden = true;
+  } catch (e) {
+    $("upProg").hidden = false; $("upProg").textContent = "映像精査に失敗: " + (e && e.message || e);
+  } finally { $("vidBtn").disabled = false; }
+});
 
 // --- IndexedDB（記録の蓄積） ---
 let _db = null;
@@ -1534,6 +1644,7 @@ async function loadHistory() {
 function openRecord(r) {
   curStats = { hits: r.hits.map(h => ({ t: h.t, idx: h.idx, player: h.idx % 2 === 0 ? "a" : "b", speed: h.speed, rNow: h.rNow })), rMax: r.rMax, rallies: r.rallies, total: r.total, excluded: r.excluded || 0, aiRejected: r.aiRejected || 0 };
   curFlip = r.flip || false; renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
+  $("vidBtn").style.display = "none";   // 過去記録は動画がないため映像精査は不可
 }
 async function deleteRecord(id) {
   try { const d = await db(); await new Promise(res => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").delete(id); tx.oncomplete = res; }); } catch (_) {}
