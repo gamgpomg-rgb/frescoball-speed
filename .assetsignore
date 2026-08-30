@@ -1,0 +1,11 @@
+.git
+.gitignore
+.assetsignore
+wrangler.jsonc
+AGENTS.md
+scripts
+tests
+.venv
+.wrangler
+node_modules
+.DS_Store

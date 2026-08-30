@@ -240,6 +240,23 @@
   <h1 class="titleBar">Frescoball Speed Meter</h1>
 </header>
 
+<div id="browserNotice" hidden style="margin:8px 0 12px;padding:10px 14px;border:1px solid #e0a000;background:#fff7e0;color:#5a4500;font-size:13px;line-height:1.7;border-radius:8px">
+  このアプリは <b>iPhone / iPad の Safari</b> での利用を前提にしています。いまのブラウザではマイク計測・動画解析が正しく動かない可能性があります。Safariでこのページを開き直してください（LINEやInstagram等のアプリ内ブラウザは不可）。
+</div>
+<script>
+// Safari以外（iOSのアプリ内ブラウザ・Chrome等）では注意書きを表示する。
+// 判定は表示だけに使い、機能はブロックしない（誤判定してもアプリは使える）。
+(function(){
+  var ua = navigator.userAgent;
+  var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var isSafari = /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Edg\/|OPR\/|Line\/|Instagram|FBAN|FBAV/.test(ua);
+  if (!isSafari || (!isIOS && !/Macintosh/.test(ua))) {
+    var el = document.getElementById("browserNotice");
+    if (el) el.hidden = false;
+  }
+})();
+</script>
+
 <div id="modeTabs">
   <button id="tabNum" class="active">数値モード</button>
   <button id="tabCam">カメラモード</button>

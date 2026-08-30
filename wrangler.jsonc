@@ -1,0 +1,9 @@
+// speed.giftn.co.jp での静的配信（Cloudflare Workers assets-only）。
+// デプロイ: npx wrangler deploy
+// GitHub Pages（gamgpomg-rgb.github.io/frescoball-speed）と同一内容の別ミラー。
+{
+  "name": "frescoball-speed",
+  "compatibility_date": "2026-08-01",
+  "assets": { "directory": "." },
+  "routes": [{ "pattern": "speed.giftn.co.jp", "custom_domain": true }]
+}
