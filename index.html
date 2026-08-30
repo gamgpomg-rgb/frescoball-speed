@@ -298,7 +298,18 @@
     <span id="timerDisp">--:--</span>
   </div>
 
+  <div id="topNote" hidden style="margin:6px 0 2px;font-size:12px;color:var(--muted);line-height:1.6">TOPは練習用・非公式です。落球（無音）で時計は自動停止し、次の打音で自動再開します。停止確定時に区切り分の時間は戻します。</div>
+
   <div id="setSummary" hidden></div>
+
+  <div id="resultCardWrap" hidden style="margin:14px 0">
+    <canvas id="resultCanvas" width="1200" height="675" style="width:100%;height:auto;border-radius:14px;display:block"></canvas>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="resultShareBtn" style="flex:1;margin:0">画像をシェア</button>
+      <button id="resultSaveBtn" class="ghost" style="flex:1;margin:0">画像を保存</button>
+      <button id="resultCloseBtn" class="ghost" style="margin:0">閉じる</button>
+    </div>
+  </div>
 
   <button id="startBtn">計測開始</button>
   <button id="resumeBtn" class="ghost" hidden>前回の集計を再開</button>
@@ -423,6 +434,8 @@
     <div style="display:flex;gap:8px;margin:2px 0 10px">
       <button id="exportJsonBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">JSON出力</button>
       <button id="exportCsvBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">CSV出力</button>
+      <button id="jfbaCsvBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">公式帯CSV</button>
+      <button id="resultCardBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">リザルトカード</button>
     </div>
     <h4>速度分布</h4>
     <div id="histo"></div>
@@ -477,11 +490,14 @@
 
 <script src="measurement-spec.js"></script>
 <script src="detection-engine.js"></script>
+<script src="result-utils.js"></script>
 <script>
 "use strict";
 // ===== 計算仕様（measurement-spec.json を正本に、生成済みJSを読み込む） =====
 if (!window.FrescoMeasurement) throw new Error("計測仕様を読み込めませんでした。measurement-spec.js を確認してください。");
 if (!window.FrescoDetection) throw new Error("打音検出器を読み込めませんでした。detection-engine.js を確認してください。");
+if (!window.FrescoResult) throw new Error("リザルト集計を読み込めませんでした。result-utils.js を確認してください。");
+const RESULT = window.FrescoResult;
 const MEASUREMENT = window.FrescoMeasurement;
 const MEASUREMENT_SPEC = MEASUREMENT.spec;
 const QUALITY_GATE = MEASUREMENT_SPEC.qualityGate;
@@ -584,6 +600,9 @@ function swapPlayers() { // A/Bの割り当てが逆なら1タップで補正
 // ===== セット集計（タイマー連動） =====
 const setStats = { active: false, maxSpeed: 0, hits: 0, maxRally: 0 };
 let qualityRejects = 0;
+// ライブ計測の打球単位ログ（保存の堅牢化・事後再計算用）。停止時に記録として保存し、30日で自動削除。
+let liveHits = [];
+let liveStartedAtMs = null;
 let liveSessionTouched = false;
 
 // ===== 端末内の設定・ライブセッション保存（音声/動画ファイルは保存しない） =====
@@ -631,12 +650,22 @@ function liveSessionSnapshot() {
     settings: currentSettings(),
     rally: { ...rally }, pHits: { ...pHits }, nextP, counts: { ...counts },
     setStats: { active: false, maxSpeed: setStats.maxSpeed, hits: setStats.hits, maxRally: setStats.maxRally },
-    qualityRejects
+    qualityRejects,
+    liveHits, liveStartedAtMs
   };
 }
+let liveSaveFailWarnedAt = 0;
 function saveLiveSession() {
   if (!liveSessionTouched) return;
-  try { localStorage.setItem(LIVE_SESSION_STORAGE_KEY, JSON.stringify(liveSessionSnapshot())); } catch (_) {}
+  try { localStorage.setItem(LIVE_SESSION_STORAGE_KEY, JSON.stringify(liveSessionSnapshot())); }
+  catch (_) {
+    // 容量不足等。無通知の記録喪失を避けるため、1分に1回だけ画面へ知らせる。
+    const now = Date.now();
+    if (now - liveSaveFailWarnedAt > 60000) {
+      liveSaveFailWarnedAt = now;
+      flashSub("⚠ 端末への自動保存に失敗しています（容量不足の可能性）。停止時のJSON出力を推奨");
+    }
+  }
 }
 function readLiveSession() {
   try {
@@ -663,6 +692,8 @@ function restoreLiveSession(saved = readLiveSession()) {
   Object.assign(setStats, saved.setStats || {}); setStats.active = false;
   nextP = saved.nextP === "b" ? "b" : "a";
   qualityRejects = Number(saved.qualityRejects) || 0;
+  liveHits = Array.isArray(saved.liveHits) ? saved.liveHits : [];
+  liveStartedAtMs = Number(saved.liveStartedAtMs) || null;
   renderCounts(); renderRally(); renderPlayers();
   $("resumeBtn").hidden = true;
   statusEl.textContent = "前回のライブ集計を再開しました（計測は停止中）";
@@ -783,21 +814,37 @@ async function start() {
 
 function onHit(t) {
   liveSessionTouched = true;
+  if (liveStartedAtMs === null) liveStartedAtMs = Date.now();
+  let hitSpeed = null, hitAccepted = true, hitReason = "";
   if (lastOnset !== null) {
     const observedDt = t - lastOnset;
     // onsetIndex is the index of this new onset; the pair starts at the prior one.
     const result = measureObservedInterval(observedDt, onsetIndex - 1);
     if (result.accepted) {
+      hitSpeed = result.initialSpeedKmh;
       showSpeed(result.initialSpeedKmh, result.averageSpeedKmh, result.flightSeconds);
     } else {
       qualityRejects++;
-      const detail = result.reason === "initial_speed_above_trust_limit" ? "初速上限超過" : "飛行時間範囲外";
+      hitAccepted = false; hitReason = result.reason;
+      // 110km/h超は破棄せず「要確認」として速度値ごと保持する（帯集計からは除外）。
+      if (result.reason === "initial_speed_above_trust_limit" && Number.isFinite(result.initialSpeedKmh)) {
+        hitSpeed = result.initialSpeedKmh;
+      }
+      const detail = result.reason === "initial_speed_above_trust_limit" ? "初速上限超過（要確認として記録）" : "飛行時間範囲外";
       flashSub(`品質ゲート: ${detail}（観測Δt ${observedDt.toFixed(3)}s）`);
       log(`品質ゲートで除外: ${detail}（観測Δt=${observedDt.toFixed(3)}s / 補正後=${result.flightSeconds.toFixed(3)}s）`);
     }
   }
   rallyOnHit(t);
   attributeHit();        // 交互に選手A/Bへ割り当て
+  // 打球単位ログ。attributeHit で nextP が反転済みなので、この打球の割当は反転前の値。
+  liveHits.push({
+    t: +t.toFixed(3), idx: onsetIndex,
+    player: nextP === "a" ? "b" : "a",
+    speed: hitAccepted && hitSpeed != null ? +hitSpeed.toFixed(1) : null,
+    flaggedSpeed: !hitAccepted && hitSpeed != null ? +hitSpeed.toFixed(1) : null,
+    accepted: hitAccepted, reason: hitReason || undefined, rNow: rally.now
+  });
   if (setStats.active) {
     setStats.hits++;
     if (rally.now > setStats.maxRally) setStats.maxRally = rally.now;
@@ -952,6 +999,7 @@ function stop() {
   hudState.sub = "停止中"; $("hSub").textContent = hudState.sub;
   log("計測停止");
   saveLiveSession();
+  if (liveHits.length >= 2) saveLiveRecordAndShow();
 }
 
 function syncStartButtons(isRunning) {
@@ -991,6 +1039,7 @@ let gameInterval = null, lastTickMs = 0, lastHitWall = 0, lastTickSec = -1;
 // 開始/再開カウントダウン（5→1→GO）
 let cdActive = false, cdRemain = 0, cdThen = "start", cdLastInt = 0;
 let restWarned = false, ovLastNum = null;
+let topRallyWasActive = false; // TOPの時計返却（落球停止の補正）用
 const CD_WORDS = { 3: "Three", 2: "Two", 1: "One" }; // 音声は3秒前から（それ以前はビープ＋数字のみ）
 function countdownSecs() { return Math.max(1, Math.min(20, parseInt($("cdSecs").value) || 3)); }
 
@@ -1099,8 +1148,22 @@ function gameTick() {
     handleRestAudio();
     if (restRemain <= 0) { restActive = false; beginCountdown("resume"); } // 終了→再カウントダウン→再開
   } else {                            // ③ 本計測中
-    const adv = (ruleVal() === "top") ? rallyActiveNow() : true; // トップは実プレー中のみ進む
+    const topRule = ruleVal() === "top";
+    const rallyLive = rallyActiveNow();
+    const adv = topRule ? rallyLive : true; // トップは実プレー中のみ進む
     if (adv) { mainRemain -= dt; handleCountdownAudio(); }
+    // 公式TOPは「落球ごとに時計停止」。打音ではラリー途切れは rallyGap 経過後に確定するため、
+    // 確定した瞬間に gap 分を時計へ返す＝実質「最後の打音の瞬間に停止した」ことになる。
+    // 再開は次の打音で自動（rallyActiveNow が true に戻る）。
+    if (topRule) {
+      if (topRallyWasActive && !rallyLive) {
+        const gap = parseFloat($("rallyGap").value) || 2.5;
+        mainRemain += gap;
+      }
+      topRallyWasActive = rallyLive;
+    } else {
+      topRallyWasActive = false;
+    }
   }
   renderTimer();
   if (!cdActive && !restActive && mainRemain <= 0) endGame(true);
@@ -1181,6 +1244,7 @@ function resetAll() {
   for (const th of THRESHOLDS) counts[th] = 0;
   setStats.active = false; setStats.maxSpeed = 0; setStats.hits = 0; setStats.maxRally = 0;
   pHits.a = 0; pHits.b = 0; nextP = "a";
+  liveHits = []; liveStartedAtMs = null;
   lastOnset = null; lastHitTime = null; onsetIndex = 0;
   hudState.speed = "--"; hudState.sub = "リセットしました";
   renderCounts(); renderRally(); renderPlayers();
@@ -1202,6 +1266,7 @@ function updateRuleUI() {
   const r = ruleVal();
   document.querySelectorAll("#ruleTabs button").forEach(b => b.classList.toggle("active", b.dataset.rule === r));
   $("hudRule").textContent = "ルール: " + ruleName(r);
+  $("topNote").hidden = r !== "top";
 }
 document.querySelectorAll("#ruleTabs button").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -2033,7 +2098,15 @@ async function saveRecord(fileName, duration, recordId = null, dateISO = null) {
       tx.objectStore("sessions").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error);
     });
     loadHistory();
-  } catch (_) { /* 保存失敗時も解析結果とエクスポートは継続 */ }
+  } catch (err) {
+    // 無通知の記録喪失を避ける: 画面に知らせ、その場でJSONへ退避する。
+    console.warn("record save failed", err);
+    flashSub("⚠ 端末への記録保存に失敗しました。JSONを書き出します");
+    try {
+      const stamp = (rec.dateISO || new Date().toISOString()).replace(/[:.]/g, "-");
+      downloadText(`frescoball-backup-${stamp}.json`, JSON.stringify(rec, null, 2), "application/json");
+    } catch (_) {}
+  }
   return rec;
 }
 async function saveCurrentRecord() {
@@ -2054,6 +2127,19 @@ async function loadHistory() {
     });
   } catch (_) {}
   recs = recs.map(normalizeRecord).sort((a, b) => b.id - a.id);
+  // ライブ計測ログは30日で自動削除（動画解析の記録は残す）。
+  const liveCutoff = RESULT.retentionCutoffISO(Date.now(), 30);
+  const expired = recs.filter(r => r.type === "live" && String(r.dateISO || "") < liveCutoff);
+  if (expired.length) {
+    recs = recs.filter(r => !expired.includes(r));
+    (async () => {
+      try {
+        const d = await db();
+        const tx = d.transaction("sessions", "readwrite");
+        for (const r of expired) tx.objectStore("sessions").delete(r.id);
+      } catch (_) {}
+    })();
+  }
   const el = $("histList");
   if (!recs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">まだ記録がありません</div>'; return; }
   el.innerHTML = recs.map(r => {
@@ -2116,6 +2202,11 @@ function exportCurrent(kind) {
     downloadText(`frescoball-${stamp}.json`, JSON.stringify(record, null, 2), "application/json");
     return;
   }
+  if (kind === "jfba") {
+    const rows = RESULT.jfbaSummaryRows(record);
+    downloadText(`frescoball-jfba-${stamp}.csv`, "\uFEFF" + rows.map(row => row.map(csvValue).join(",")).join("\n"), "text/csv");
+    return;
+  }
   const header = ["record_id", "date", "file", "measurement_spec", "review_version", "time_s", "onset_index", "player", "player_name", "initial_kmh", "rally"];
   const rows = record.hits.map(hit => [
     record.id, record.dateISO, record.fileName, record.measurementSpecVersion,
@@ -2126,6 +2217,159 @@ function exportCurrent(kind) {
 }
 $("exportJsonBtn").addEventListener("click", () => exportCurrent("json"));
 $("exportCsvBtn").addEventListener("click", () => exportCurrent("csv"));
+$("jfbaCsvBtn").addEventListener("click", () => exportCurrent("jfba"));
+$("resultCardBtn").addEventListener("click", () => {
+  const record = makeRecord(currentRecordMeta);
+  if (!record) { flashSub("先に動画を解析するか、記録を開いてください"); return; }
+  showResultCard(record);
+});
+
+// ===== ライブ計測の記録化 =====
+function buildLiveRecord() {
+  if (liveHits.length < 2) return null;
+  const durationSec = liveStartedAtMs ? Math.max(1, Math.round((Date.now() - liveStartedAtMs) / 1000)) : 0;
+  return normalizeRecord({
+    id: Date.now(), dateISO: new Date().toISOString(),
+    fileName: "ライブ計測", type: "live", duration: durationSec,
+    schemaVersion: RECORD_SCHEMA_VERSION, measurementSpecVersion: MEASUREMENT_SPEC.version,
+    settings: currentSettings(),
+    playerLabels: { a: playerName("a"), b: playerName("b") },
+    total: liveHits.length, rMax: rally.max, rallies: rally.total,
+    drops: Math.max(0, rally.total - 1),
+    qualityRejected: qualityRejects, excluded: 0, aiRejected: 0, flip: false,
+    hits: liveHits.map(h => ({ t: h.t, idx: h.idx, player: h.player, speed: h.speed, rNow: h.rNow,
+      flaggedSpeed: h.flaggedSpeed ?? null, reason: h.reason }))
+  });
+}
+async function saveLiveRecordAndShow() {
+  const rec = buildLiveRecord();
+  if (!rec) return;
+  try {
+    const d = await db();
+    await new Promise((res, rej) => {
+      const tx = d.transaction("sessions", "readwrite");
+      tx.objectStore("sessions").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+    loadHistory();
+    log(`ライブ計測を記録に保存しました（打${rec.total}・${fmtTime(rec.duration)}）`);
+  } catch (err) {
+    console.warn("live record save failed", err);
+    flashSub("⚠ ライブ記録の保存に失敗しました。JSONを書き出します");
+    try {
+      const stamp = rec.dateISO.replace(/[:.]/g, "-");
+      downloadText(`frescoball-live-${stamp}.json`, JSON.stringify(rec, null, 2), "application/json");
+    } catch (_) {}
+  }
+  showResultCard(rec);
+}
+
+// ===== リザルトカード（スコアボード風・SNSシェア用） =====
+function fmtKmh(value) { return value == null ? "--" : value.toFixed(0); }
+function drawResultCard(record) {
+  const stats = RESULT.resultCardStats(record);
+  const canvas = $("resultCanvas");
+  const ctx2 = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  // 背景
+  const bg = ctx2.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#7d8fd0"); bg.addColorStop(1, "#8ea0da");
+  ctx2.fillStyle = bg; ctx2.fillRect(0, 0, W, H);
+  // ヘッダー帯
+  const head = ctx2.createLinearGradient(0, 0, W, 0);
+  head.addColorStop(0, "#101a5c"); head.addColorStop(1, "#2438a8");
+  ctx2.fillStyle = head; ctx2.fillRect(0, 0, W, 76);
+  ctx2.fillStyle = "#fff"; ctx2.textAlign = "center"; ctx2.textBaseline = "middle";
+  ctx2.font = "700 34px -apple-system, 'Hiragino Sans', sans-serif";
+  ctx2.fillText("FRESCOBALL SPEED METER — Practice", W / 2, 38);
+  ctx2.font = "600 16px -apple-system, 'Hiragino Sans', sans-serif";
+  ctx2.fillStyle = "#c9d4ff";
+  ctx2.fillText("非公式・参考計測", W / 2, 64);
+  // 中央: タイマー風の時間
+  ctx2.fillStyle = "#000"; ctx2.fillRect(W / 2 - 170, 100, 340, 110);
+  ctx2.strokeStyle = "#fff"; ctx2.lineWidth = 4; ctx2.strokeRect(W / 2 - 170, 100, 340, 110);
+  ctx2.fillStyle = "#fff";
+  ctx2.font = "800 76px 'Helvetica Neue', -apple-system, sans-serif";
+  ctx2.fillText(fmtTime(stats.durationSec), W / 2, 157);
+  // 中央: 総打数（大きい黄色）と Over50
+  ctx2.fillStyle = "#ffe93d";
+  ctx2.font = "900 120px 'Helvetica Neue', -apple-system, sans-serif";
+  ctx2.fillText(String(stats.totalHits), W / 2, 320);
+  ctx2.font = "800 30px -apple-system, 'Hiragino Sans', sans-serif";
+  ctx2.fillText("打", W / 2 + ctx2.measureText(String(stats.totalHits)).width + 70, 342);
+  ctx2.fillStyle = "#e6e9f5";
+  ctx2.font = "700 30px -apple-system, 'Hiragino Sans', sans-serif";
+  ctx2.fillText(`Over50  ${stats.over50}球`, W / 2, 396);
+  // 選手パネル（左=Player2相当は使わず、A左・B右で表示）
+  const panel = (x, align, side, title) => {
+    ctx2.textAlign = align;
+    ctx2.fillStyle = "#16246e";
+    ctx2.font = "800 30px -apple-system, 'Hiragino Sans', sans-serif";
+    ctx2.fillText(title, x, 130);
+    const rows = [
+      ["Max", `${fmtKmh(side.max)} km/h`],
+      ["Ave", `${fmtKmh(side.avg)} km/h`],
+      ["Over50", `${side.over50}`],
+      ["Combo Peak", `${side.comboPeak}`]
+    ];
+    let y = 185;
+    for (const [label, value] of rows) {
+      ctx2.fillStyle = "#dfe5fb"; ctx2.font = "700 20px -apple-system, 'Hiragino Sans', sans-serif";
+      ctx2.fillText(label, x, y);
+      ctx2.fillStyle = "#fff"; ctx2.font = "800 40px 'Helvetica Neue', -apple-system, sans-serif";
+      ctx2.fillText(value, x, y + 40);
+      y += 92;
+    }
+  };
+  panel(70, "left", stats.a, stats.a.name);
+  panel(W - 70, "right", stats.b, stats.b.name);
+  // 下段の黒帯: Max / Drop / 最長Rally
+  ctx2.textAlign = "center";
+  ctx2.fillStyle = "#000"; ctx2.fillRect(0, H - 120, W, 120);
+  const bottom = [
+    ["最高速", `${fmtKmh(stats.maxSpeed)} km/h`],
+    ["Drop", String(stats.drops)],
+    ["最長Rally", String(stats.maxRally)],
+    ["Combo Peak", String(stats.comboPeak)]
+  ];
+  bottom.forEach(([label, value], index) => {
+    const x = W * (index + 0.5) / bottom.length;
+    ctx2.fillStyle = "#9aa3b5"; ctx2.font = "700 18px -apple-system, 'Hiragino Sans', sans-serif";
+    ctx2.fillText(label, x, H - 88);
+    ctx2.fillStyle = "#fff"; ctx2.font = "800 44px 'Helvetica Neue', -apple-system, sans-serif";
+    ctx2.fillText(value, x, H - 42);
+  });
+  // フッター
+  ctx2.fillStyle = "#3a466e";
+  ctx2.font = "600 16px -apple-system, 'Hiragino Sans', sans-serif";
+  const day = new Date(record.dateISO || Date.now());
+  ctx2.fillText(`${day.getFullYear()}/${day.getMonth() + 1}/${day.getDate()}  speed.giftn.co.jp`, W / 2, H - 132);
+}
+function showResultCard(record) {
+  try { drawResultCard(record); } catch (err) { console.warn("result card", err); return; }
+  $("resultCardWrap").hidden = false;
+  $("resultCardWrap").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+async function resultCardBlob() {
+  return new Promise(res => $("resultCanvas").toBlob(res, "image/png"));
+}
+$("resultSaveBtn").addEventListener("click", async () => {
+  const blob = await resultCardBlob();
+  if (!blob) return;
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = `frescoball-result-${Date.now()}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+});
+$("resultShareBtn").addEventListener("click", async () => {
+  const blob = await resultCardBlob();
+  if (!blob) return;
+  const file = new File([blob], "frescoball-result.png", { type: "image/png" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Frescoball Speed Meter" }); return; } catch (_) {}
+  }
+  flashSub("この環境は共有シートに未対応のため「画像を保存」を使ってください");
+});
+$("resultCloseBtn").addEventListener("click", () => { $("resultCardWrap").hidden = true; });
 loadHistory();
 
 // PWAのアプリシェルを保存。計測に必要な外部モデルは初回解析時に別途取得する。
