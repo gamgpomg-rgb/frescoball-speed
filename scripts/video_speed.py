@@ -25,7 +25,10 @@ import sys
 
 import cv2
 
-from fresco_physics import flight_time_to_speeds, format_report
+from fresco_physics import COURT_LENGTH_M, SPEC, SPEC_VERSION, format_report, measure_observed_interval
+
+
+DEFAULT_GATE = SPEC["qualityGate"]
 
 
 def main():
@@ -33,8 +36,14 @@ def main():
     ap.add_argument("video", help="解析する動画ファイル（240fpsスロー推奨）")
     ap.add_argument("--fps", type=float, default=None,
                     help="実撮影fps（省略時はメタデータから取得）")
-    ap.add_argument("--distance", type=float, default=7.0, help="選手間距離 [m]")
+    ap.add_argument("--distance", type=float, default=COURT_LENGTH_M, help="選手間距離 [m]")
     ap.add_argument("--scale", type=float, default=0.5, help="表示縮小率")
+    ap.add_argument("--min-dt", type=float, default=float(DEFAULT_GATE["minFlightSeconds"]), help="信頼する最小飛行時間 [s]")
+    ap.add_argument("--max-dt", type=float, default=float(DEFAULT_GATE["maxFlightSeconds"]), help="信頼する最大飛行時間 [s]")
+    ap.add_argument("--max-initial-kmh", type=float, default=float(DEFAULT_GATE["maxInitialSpeedKmh"]),
+                    help="信頼する初速の上限 [km/h]。超過値は集計から除外")
+    ap.add_argument("--calibration-factor", type=float, default=None,
+                    help="明示的な平均速→初速係数。省略時は物理モデル")
     args = ap.parse_args()
 
     cap = cv2.VideoCapture(args.video)
@@ -96,13 +105,24 @@ def main():
     # ===== 集計 =====
     marks.sort()
     speeds = []
-    print("\n===== 打球ごとの結果 =====")
-    for a, b in zip(marks, marks[1:]):
+    print(f"\n===== 打球ごとの結果（計算仕様 {SPEC_VERSION}） =====")
+    for i, (a, b) in enumerate(zip(marks, marks[1:])):
         dt = (b - a) / fps
-        if not (0.15 <= dt <= 1.2):
-            print(f"frame {a}->{b}: Δt={dt:.3f}s は飛行時間として範囲外、スキップ")
+        result = measure_observed_interval(
+            dt,
+            pair_start_index=i,
+            mic_position="center",  # フレーム時刻は音の伝搬遅延を含まない
+            length_m=args.distance,
+            calibration_factor=args.calibration_factor,
+            min_flight_s=args.min_dt,
+            max_flight_s=args.max_dt,
+            max_initial_kmh=args.max_initial_kmh,
+        )
+        if not result["accepted"]:
+            print(f"frame {a}->{b}: Δt={dt:.3f}s {result['reason']}、スキップ")
             continue
-        v_avg, v0 = flight_time_to_speeds(dt, args.distance)
+        v_avg = float(result["average_kmh"])
+        v0 = float(result["initial_kmh"])
         speeds.append(v0)
         print(f"frame {a}->{b}: Δt={dt:.3f}s  平均 {v_avg:.1f} km/h  初速換算 {v0:.1f} km/h")
 

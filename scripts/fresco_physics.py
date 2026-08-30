@@ -1,55 +1,173 @@
-"""フレスコボール球速計算の共通物理モジュール。
+"""Canonical Frescoball speed calculations shared by the CLI tools.
 
-平均速度→初速の換算（空気抵抗補正）と閾値カウントを提供する。
-パラメータは実測で更新すること（レポート§3「要実測項目」参照）。
+The values live in ``../measurement-spec.json``.  The PWA consumes a generated
+browser copy of that same file, and tests exercise known intervals in both
+languages.  A calibration factor is always an explicit optional input; the
+default is the documented physical drag model, not an unverified field value.
 """
+from __future__ import annotations
+
+import json
 import math
+from pathlib import Path
+from typing import Any, Mapping
 
-# ===== ボール・環境パラメータ（要実測で更新） =====
-BALL_DIAMETER_M = 0.057   # 直径 [m]（市販フレスコボール球 2.25in ベース）
-BALL_MASS_KG = 0.040      # 質量 [kg]
-DRAG_CD = 0.5             # 抗力係数（滑らかな球, Re~1e5）
-AIR_DENSITY = 1.2         # 空気密度 [kg/m^3]
-COURT_LENGTH_M = 7.0      # ペア間距離 [m]
-SOUND_SPEED = 343.0       # 音速 [m/s]
 
-# スピードガン併走校正後はこちらを直接上書きしてもよい（None=物理モデルから算出）
-CALIBRATED_V0_FACTOR = None
+_ROOT = Path(__file__).resolve().parent.parent
+_SPEC_PATH = _ROOT / "measurement-spec.json"
+SPEC: Mapping[str, Any] = json.loads(_SPEC_PATH.read_text(encoding="utf-8"))
+SPEC_VERSION = str(SPEC["version"])
 
+# Compatibility exports for existing scripts and notebooks.
+BALL_DIAMETER_M = float(SPEC["ballDiameterM"])
+BALL_MASS_KG = float(SPEC["ballMassKg"])
+DRAG_CD = float(SPEC["dragCoefficient"])
+AIR_DENSITY = float(SPEC["airDensityKgM3"])
+COURT_LENGTH_M = float(SPEC["defaultCourtLengthM"])
+SOUND_SPEED = float(SPEC["soundSpeedMps"])
 SPEED_THRESHOLDS_KMH = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90]
+
+def _positive(value: float, name: str) -> float:
+    value = float(value)
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a positive finite number")
+    return value
 
 
 def drag_k() -> float:
-    """二次抗力の距離減衰率 k [1/m]。 v(x) = v0 * exp(-k x)"""
+    """Quadratic-drag distance coefficient ``k`` in 1/m."""
     area = math.pi * (BALL_DIAMETER_M / 2) ** 2
     return AIR_DENSITY * DRAG_CD * area / (2 * BALL_MASS_KG)
 
 
-def v0_factor(length_m: float = COURT_LENGTH_M) -> float:
-    """平均速度→初速の換算係数。 v0 = factor * v_avg
+def theoretical_v0_factor(length_m: float = COURT_LENGTH_M) -> float:
+    """Physical-model average-speed -> launch-speed factor.
 
-    導出: v(x)=v0 e^{-kx} より飛行時間 T=(e^{kL}-1)/(k v0)
-          v_avg = L/T = k L v0 / (e^{kL}-1)
+    With ``v(x) = v0 * exp(-k*x)``, the factor is
+    ``(exp(kL)-1)/(kL)``.  It is not a field calibration result.
     """
-    if CALIBRATED_V0_FACTOR is not None:
-        return CALIBRATED_V0_FACTOR
-    kL = drag_k() * length_m
-    return (math.exp(kL) - 1) / kL
+    length_m = _positive(length_m, "length_m")
+    k_l = drag_k() * length_m
+    return math.expm1(k_l) / k_l
 
 
-def avg_to_initial_kmh(v_avg_kmh: float, length_m: float = COURT_LENGTH_M) -> float:
-    """7m平均速度[km/h]を打球初速[km/h]に換算する。"""
-    return v_avg_kmh * v0_factor(length_m)
+def v0_factor(length_m: float = COURT_LENGTH_M) -> float:
+    """Backward-compatible name for the theoretical factor."""
+    return theoretical_v0_factor(length_m)
 
 
-def flight_time_to_speeds(dt_s: float, length_m: float = COURT_LENGTH_M):
-    """飛行時間[s] -> (平均速 km/h, 初速換算 km/h)"""
+def resolve_v0_factor(
+    length_m: float = COURT_LENGTH_M, calibration_factor: float | None = None
+) -> float:
+    """Return an explicit calibration factor, otherwise the physical model."""
+    if calibration_factor is None:
+        return theoretical_v0_factor(length_m)
+    return _positive(calibration_factor, "calibration_factor")
+
+
+def avg_to_initial_kmh(
+    v_avg_kmh: float,
+    length_m: float = COURT_LENGTH_M,
+    calibration_factor: float | None = None,
+) -> float:
+    """Convert average speed [km/h] to initial speed [km/h]."""
+    return _positive(v_avg_kmh, "v_avg_kmh") * resolve_v0_factor(length_m, calibration_factor)
+
+
+def flight_time_to_speeds(
+    dt_s: float,
+    length_m: float = COURT_LENGTH_M,
+    calibration_factor: float | None = None,
+) -> tuple[float, float]:
+    """Actual flight time [s] -> (average km/h, initial km/h)."""
+    dt_s = _positive(dt_s, "dt_s")
+    length_m = _positive(length_m, "length_m")
     v_avg = length_m / dt_s * 3.6
-    return v_avg, avg_to_initial_kmh(v_avg, length_m)
+    return v_avg, avg_to_initial_kmh(v_avg, length_m, calibration_factor)
+
+
+def corrected_flight_time_s(
+    observed_dt_s: float,
+    pair_start_index: int,
+    mic_position: str = "center",
+    first_onset_side: str = "near",
+    length_m: float = COURT_LENGTH_M,
+) -> float:
+    """Correct an observed onset interval for microphone propagation delay.
+
+    ``pair_start_index`` is the index of the first onset in the pair.  If the
+    microphone is near one player, a near->far interval includes ``L/c`` and
+    therefore subtracts it; a far->near interval omits ``L/c`` and adds it.
+    ``first_onset_side`` makes the otherwise ambiguous first pair explicit.
+    """
+    observed_dt_s = _positive(observed_dt_s, "observed_dt_s")
+    if mic_position == "center":
+        return observed_dt_s
+    if mic_position != "near":
+        raise ValueError("mic_position must be 'center' or 'near'")
+    if not isinstance(pair_start_index, int) or pair_start_index < 0:
+        raise ValueError("pair_start_index must be a non-negative integer")
+    if first_onset_side not in {"near", "far"}:
+        raise ValueError("first_onset_side must be 'near' or 'far'")
+    length_m = _positive(length_m, "length_m")
+    starts_near = (pair_start_index % 2 == 0 and first_onset_side == "near") or (
+        pair_start_index % 2 == 1 and first_onset_side == "far"
+    )
+    propagation_delay = length_m / SOUND_SPEED
+    return observed_dt_s - propagation_delay if starts_near else observed_dt_s + propagation_delay
+
+
+def measure_observed_interval(
+    observed_dt_s: float,
+    *,
+    pair_start_index: int = 0,
+    mic_position: str = "center",
+    first_onset_side: str = "near",
+    length_m: float = COURT_LENGTH_M,
+    calibration_factor: float | None = None,
+    min_flight_s: float | None = None,
+    max_flight_s: float | None = None,
+    max_initial_kmh: float | None = None,
+) -> dict[str, float | str | bool]:
+    """Pure quality-gated interval calculation used by audio analysis.
+
+    The result always contains the corrected flight time.  Rejected readings
+    include a stable ``reason`` so callers can report rather than silently
+    count an acoustic echo or an implausible value.
+    """
+    q = SPEC["qualityGate"]
+    min_flight_s = _positive(q["minFlightSeconds"] if min_flight_s is None else min_flight_s, "min_flight_s")
+    max_flight_s = _positive(q["maxFlightSeconds"] if max_flight_s is None else max_flight_s, "max_flight_s")
+    max_initial_kmh = _positive(q["maxInitialSpeedKmh"] if max_initial_kmh is None else max_initial_kmh, "max_initial_kmh")
+    if min_flight_s > max_flight_s:
+        raise ValueError("min_flight_s must not exceed max_flight_s")
+    flight_s = corrected_flight_time_s(
+        observed_dt_s,
+        pair_start_index,
+        mic_position,
+        first_onset_side,
+        length_m,
+    )
+    result: dict[str, float | str | bool] = {
+        "accepted": False,
+        "observed_seconds": float(observed_dt_s),
+        "flight_seconds": flight_s,
+        "propagation_correction_seconds": flight_s - float(observed_dt_s),
+    }
+    if flight_s < min_flight_s or flight_s > max_flight_s:
+        result["reason"] = "flight_time_out_of_range"
+        return result
+    average_kmh, initial_kmh = flight_time_to_speeds(flight_s, length_m, calibration_factor)
+    result.update(average_kmh=average_kmh, initial_kmh=initial_kmh)
+    if initial_kmh > max_initial_kmh:
+        result["reason"] = "initial_speed_above_trust_limit"
+        return result
+    result["accepted"] = True
+    return result
 
 
 def threshold_counts(initial_speeds_kmh, thresholds=SPEED_THRESHOLDS_KMH):
-    """初速リストから「各閾値を超えた打球数」を集計する。"""
+    """Count speeds at or above every threshold."""
     return {th: sum(1 for v in initial_speeds_kmh if v >= th) for th in thresholds}
 
 
@@ -63,15 +181,15 @@ def format_report(initial_speeds_kmh) -> str:
         "",
         "閾値超えカウント（初速換算ベース）:",
     ]
-    counts = threshold_counts(initial_speeds_kmh)
-    for th, n in counts.items():
-        if n > 0:
-            lines.append(f"  {th} km/h 以上: {n} 回")
+    for threshold, count in threshold_counts(initial_speeds_kmh).items():
+        if count > 0:
+            lines.append(f"  {threshold} km/h 以上: {count} 回")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    print(f"k = {drag_k():.5f} /m, v0換算係数(7m) = {v0_factor():.4f}")
+    print(f"仕様バージョン = {SPEC_VERSION}")
+    print(f"k = {drag_k():.5f} /m, 理論v0換算係数(7m) = {theoretical_v0_factor():.4f}")
     for dt in (0.30, 0.40, 0.54):
-        va, v0 = flight_time_to_speeds(dt)
-        print(f"飛行時間 {dt:.2f}s -> 平均 {va:.1f} km/h, 初速換算 {v0:.1f} km/h")
+        average, initial = flight_time_to_speeds(dt)
+        print(f"飛行時間 {dt:.2f}s -> 平均 {average:.1f} km/h, 初速換算 {initial:.1f} km/h")

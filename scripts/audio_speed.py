@@ -12,7 +12,9 @@
 マイク位置補正 (--mic-pos):
     center : スマホがコート中央側面（両選手から等距離）→ 補正なし（推奨配置）
     near   : スマホが片方の選手の近く → 遠い選手の打音に 7m/343m/s≈20.4ms の
-             伝搬遅延が乗るため、交互に +/-20.4ms を補正する
+             伝搬遅延が乗るため、--first-onset-side を基準に交互に補正する。
+
+計算仕様は ../measurement-spec.json を唯一の正本とし、Web PWA と共有する。
 """
 import argparse
 import os
@@ -24,7 +26,10 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import butter, sosfilt
 
-from fresco_physics import SOUND_SPEED, flight_time_to_speeds, format_report
+from fresco_physics import COURT_LENGTH_M, SPEC, SPEC_VERSION, format_report, measure_observed_interval
+
+
+DEFAULT_GATE = SPEC["qualityGate"]
 
 
 def extract_audio(video_path: str, sr: int = 48000) -> str:
@@ -76,11 +81,17 @@ def detect_onsets(wav_path: str, min_gap_s: float = 0.12, threshold_ratio: float
 def main():
     ap = argparse.ArgumentParser(description="フレスコボール球速 音声解析（打音時間差方式）")
     ap.add_argument("media", help="動画(.mov/.mp4)または音声(.wav)ファイル")
-    ap.add_argument("--distance", type=float, default=7.0, help="選手間距離 [m]")
+    ap.add_argument("--distance", type=float, default=COURT_LENGTH_M, help="選手間距離 [m]")
     ap.add_argument("--mic-pos", choices=["center", "near"], default="center",
                     help="マイク位置（center=コート中央側面/near=片側選手付近）")
-    ap.add_argument("--min-dt", type=float, default=0.20, help="飛行時間とみなす最小間隔 [s]")
-    ap.add_argument("--max-dt", type=float, default=0.90, help="飛行時間とみなす最大間隔 [s]")
+    ap.add_argument("--first-onset-side", choices=["near", "far"], default="near",
+                    help="near時のみ: 0番目の打音がマイク近側か遠側か（既定near）")
+    ap.add_argument("--min-dt", type=float, default=float(DEFAULT_GATE["minFlightSeconds"]), help="飛行時間とみなす最小間隔 [s]")
+    ap.add_argument("--max-dt", type=float, default=float(DEFAULT_GATE["maxFlightSeconds"]), help="飛行時間とみなす最大間隔 [s]")
+    ap.add_argument("--max-initial-kmh", type=float, default=float(DEFAULT_GATE["maxInitialSpeedKmh"]),
+                    help="信頼する初速の上限 [km/h]。超過値は集計から除外")
+    ap.add_argument("--calibration-factor", type=float, default=None,
+                    help="スピードガン等で得た明示的な平均速→初速係数。省略時は物理モデル")
     ap.add_argument("--threshold", type=float, default=6.0, help="ノイズフロア比の検出閾値")
     args = ap.parse_args()
 
@@ -100,24 +111,35 @@ def main():
     if len(onsets) < 2:
         sys.exit("打音が2つ以上検出できませんでした。--threshold を下げて再試行してください。")
 
-    # 伝搬遅延補正: nearの場合、遠い選手の打音は distance/c 遅れて届く。
-    # 打球は交互なので、奇数番目（0始まりで1,3,5...）を遠側と仮定して補正する。
-    # ※どちらが先打か不明な場合は両仮定で実行して妥当な方を採用すること。
-    prop_delay = args.distance / SOUND_SPEED if args.mic_pos == "near" else 0.0
-
     speeds = []
-    print("\n===== 打音ペアごとの結果 =====")
+    print(f"\n===== 打音ペアごとの結果（計算仕様 {SPEC_VERSION}） =====")
     for i, (t0, t1) in enumerate(zip(onsets, onsets[1:])):
-        dt = t1 - t0
-        # near配置: 偶数→奇数は遠側着音が遅れる(-delay)、奇数→偶数は早まる(+delay)
-        if prop_delay:
-            dt = dt - prop_delay if i % 2 == 0 else dt + prop_delay
-        if not (args.min_dt <= dt <= args.max_dt):
-            print(f"t={t0:7.3f}s -> {t1:7.3f}s: Δt={dt:.3f}s 範囲外、スキップ")
+        observed_dt = t1 - t0
+        result = measure_observed_interval(
+            observed_dt,
+            pair_start_index=i,
+            mic_position=args.mic_pos,
+            first_onset_side=args.first_onset_side,
+            length_m=args.distance,
+            calibration_factor=args.calibration_factor,
+            min_flight_s=args.min_dt,
+            max_flight_s=args.max_dt,
+            max_initial_kmh=args.max_initial_kmh,
+        )
+        dt = float(result["flight_seconds"])
+        if not result["accepted"]:
+            print(
+                f"t={t0:7.3f}s -> {t1:7.3f}s: 観測Δt={observed_dt:.3f}s "
+                f"補正後={dt:.3f}s {result['reason']}、スキップ"
+            )
             continue
-        v_avg, v0 = flight_time_to_speeds(dt, args.distance)
+        v_avg = float(result["average_kmh"])
+        v0 = float(result["initial_kmh"])
         speeds.append(v0)
-        print(f"t={t0:7.3f}s -> {t1:7.3f}s: Δt={dt:.3f}s  平均 {v_avg:.1f} km/h  初速換算 {v0:.1f} km/h")
+        print(
+            f"t={t0:7.3f}s -> {t1:7.3f}s: 観測Δt={observed_dt:.3f}s "
+            f"補正後={dt:.3f}s  平均 {v_avg:.1f} km/h  初速換算 {v0:.1f} km/h"
+        )
 
     print("\n===== サマリ =====")
     print(format_report(speeds))

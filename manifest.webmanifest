@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Frescoball Speed Meter",
+  "short_name": "Fresco Speed",
+  "description": "フレスコボールの打音・動画から球速を記録するローカル計測PWA",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#120A2E",
+  "theme_color": "#120A2E",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

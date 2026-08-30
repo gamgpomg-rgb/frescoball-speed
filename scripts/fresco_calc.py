@@ -1,12 +1,21 @@
 import numpy as np
 
-# ===== パラメータ（フレスコボール想定） =====
-d = 0.057      # ボール直径 m（2.25in≈5.7cm）
-m = 0.040      # 質量 kg（40g, 中空ゴム）
-rho = 1.2      # 空気密度
-Cd = 0.5       # 球の抗力係数（Re~5e4域）
+from fresco_physics import (
+    AIR_DENSITY,
+    BALL_DIAMETER_M,
+    BALL_MASS_KG,
+    COURT_LENGTH_M,
+    DRAG_CD,
+    SOUND_SPEED,
+)
+
+# ===== パラメータ（measurement-spec.json を fresco_physics 経由で共有） =====
+d = BALL_DIAMETER_M
+m = BALL_MASS_KG
+rho = AIR_DENSITY
+Cd = DRAG_CD
 A = np.pi*(d/2)**2
-L = 7.0        # 飛行距離
+L = COURT_LENGTH_M
 g = 9.81
 
 nu = 1.5e-5
@@ -50,7 +59,7 @@ for vk in [50, 90]:
 
 # ===== 音声方式の誤差 =====
 print("\n===== 打音時間差方式 =====")
-c = 343.0
+c = SOUND_SPEED
 for vk in [50, 90]:
     v0, vf, t, va, Re = simulate(vk)
     # マイクが自分側にある場合：自打音は即到達、相手打音は7m伝搬遅延

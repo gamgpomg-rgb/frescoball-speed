@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#120A2E">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon.svg">
 <title>フレスコボール球速メーター（プロトタイプ）</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Saira:wght@500;600;700;800&family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: dark;
@@ -256,9 +257,9 @@
   </div>
 
   <div id="players">
-    <div class="pcard a">選手A 打数<b id="pA">0</b></div>
+    <div class="pcard a"><span id="pALabel">選手A</span> 打数<b id="pA">0</b></div>
     <button id="swapBtn" aria-label="A/B入れ替え">⇄</button>
-    <div class="pcard b">選手B 打数<b id="pB">0</b></div>
+    <div class="pcard b"><span id="pBLabel">選手B</span> 打数<b id="pB">0</b></div>
   </div>
 
   <div id="ruleTabs">
@@ -283,6 +284,7 @@
   <div id="setSummary" hidden></div>
 
   <button id="startBtn">計測開始</button>
+  <button id="resumeBtn" class="ghost" hidden>前回の集計を再開</button>
   <button id="sndBtn" class="ghost">🔔 チクタク</button>
   <button id="beepTest">音テスト</button>
   <div id="status">「計測開始」を押すとマイク許可を求めます</div>
@@ -297,10 +299,15 @@
   <div id="settingsPanel">
     <div class="panelCard">
     <div class="panelHead"><span>⚙ 設定</span><button id="gearClose">✕ 閉じる</button></div>
-    <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" value="7.0" step="0.5"></div>
+    <div class="setting"><label>選手間距離 [m]</label><input type="number" id="distance" placeholder="既定" step="0.5" min="0.1"></div>
     <div class="setting"><label>マイク位置</label>
       <select id="micPos"><option value="center">コート中央</option><option value="near">片側選手付近</option></select>
     </div>
+    <div class="setting"><label>片側配置: 最初の打音の側</label>
+      <select id="firstOnsetSide"><option value="near">マイク近側</option><option value="far">マイク遠側</option></select>
+    </div>
+    <div class="setting"><label>選手A名（記録に保存）</label><input type="text" id="playerAName" value="選手A" maxlength="30"></div>
+    <div class="setting"><label>選手B名（記録に保存）</label><input type="text" id="playerBName" value="選手B" maxlength="30"></div>
     <div class="setting"><label>検出感度（ノイズ比）</label><input type="number" id="sens" value="6" step="1"></div>
     <div class="setting"><label>声カット強度（1弱〜10強）</label><input type="number" id="voiceCut" value="5" step="1" min="0" max="10"></div>
     <div class="setting"><label>ラリー区切り無音 [s]</label><input type="number" id="rallyGap" value="2.5" step="0.5"></div>
@@ -313,8 +320,8 @@
     <div class="setting"><label>BGM音量</label><input type="range" id="bgmVol" min="0" max="1" step="0.05" value="0.5"></div>
     <div class="setting"><label>音声アナウンス（毎分「あと◯分」）</label><input type="checkbox" id="sndVoice" checked></div>
     <div class="setting"><label>通知する最低速度 [km/h]</label><input type="number" id="minBeep" value="40" step="5"></div>
-    <div class="setting"><label>換算係数（1.0=平均速そのまま）</label><input type="number" id="calib" value="1.000" step="0.005"></div>
-    <div class="setting"><label>解析: 信頼する上限速度 [km/h]（超は速度集計から除外）</label><input type="number" id="maxTrust" value="110" step="5"></div>
+    <div class="setting"><label>実測校正係数（空欄=物理モデル）</label><input type="number" id="calib" placeholder="自動" step="0.005" min="0.001"></div>
+    <div class="setting"><label>ライブ/解析: 信頼する初速上限 [km/h]（超は集計から除外）</label><input type="number" id="maxTrust" placeholder="既定" step="5" min="1"></div>
     <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
     <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
@@ -322,7 +329,8 @@
       ・<b>声カット</b>＝打球音の「立ち上がりの鋭さ＋広帯域さ」で人の声を弾きます。話し声を拾うなら数値を上げる。打音まで落ちるなら下げる。<br>
       ・<b>動画を残したい時</b>はiPhoneの「画面収録」（コントロールセンター）を使うと、HUDごと録画でき、長時間でも安定して写真に保存されます。<br>
       ・スピードガン校正用の240fpsスローは標準カメラアプリで別撮りを。<br>
-      ・<b>換算係数</b>＝1.000で「打音間の平均速」をそのまま表示（一番遅く・正直な値）。スピードガンより速ければ係数を下げる（例:0.95）。選手間距離も実測値に合わせると精度が上がります。<br>
+      ・<b>片側マイク</b>では「最初の打音の側」を合わせてください。近側→遠側の観測間隔からは音の伝搬分を引き、遠側→近側では足します。中央配置が最も誤りにくいです。<br>
+      ・<b>実測校正係数</b>は空欄ならボール寸法・抗力の物理モデルを使います。スピードガン併走などの実測値がある時だけ入力してください。未校正の値を固定していません。<br>
       ・<b>BGM</b>＝「BGMを使う」をオンにして端末内の音楽ファイル（Suno等のmp3）を選ぶと計測中に再生。既定はオフ。休憩中は自動で一時停止。スピーカー再生だと音楽の打撃音を誤検出する場合があるので、精密計測時はイヤホン/別スピーカー or BGM音量控えめを推奨。<br>
       ・マイク/カメラ利用のためHTTPS（またはlocalhost）でのみ動作します。
     </div>
@@ -390,11 +398,15 @@
   <div id="upDash" hidden>
     <div class="dashGrid" id="dashSummary"></div>
     <div class="players2">
-      <div class="pc a"><span>選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
+      <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
       <button id="dSwap" aria-label="A/B入替">⇄</button>
-      <div class="pc b"><span>選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
+      <div class="pc b"><span id="dpBLabel">選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
     </div>
     <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
+    <div style="display:flex;gap:8px;margin:2px 0 10px">
+      <button id="exportJsonBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">JSON出力</button>
+      <button id="exportCsvBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">CSV出力</button>
+    </div>
     <h4>速度分布</h4>
     <div id="histo"></div>
   </div>
@@ -420,8 +432,8 @@
         <div class="lbl" style="margin-top:4px">最長 <span id="hRMax">0</span> / 総 <span id="hRTotal">0</span></div>
       </div>
     </div>
-    <div id="hudPA" class="hudPlayer left"><span>選手A</span><b id="hPA">0</b></div>
-    <div id="hudPB" class="hudPlayer right"><span>選手B</span><b id="hPB">0</b></div>
+    <div id="hudPA" class="hudPlayer left"><span id="hPALabel">選手A</span><b id="hPA">0</b></div>
+    <div id="hudPB" class="hudPlayer right"><span id="hPBLabel">選手B</span><b id="hPB">0</b></div>
     <div id="hudSpeed">
       <div><span class="v" id="hV">--</span><span class="u"> km/h</span></div>
       <div class="sub" id="hSub">計測待機</div>
@@ -446,11 +458,17 @@
   <div class="bigTime"></div>
 </div>
 
+<script src="measurement-spec.js"></script>
+<script src="detection-engine.js"></script>
 <script>
 "use strict";
-// ===== 物理（fresco_physics.py と同一ロジック） =====
-const SOUND_SPEED = 343.0;
-const K_DRAG = 0.01914;
+// ===== 計算仕様（measurement-spec.json を正本に、生成済みJSを読み込む） =====
+if (!window.FrescoMeasurement) throw new Error("計測仕様を読み込めませんでした。measurement-spec.js を確認してください。");
+if (!window.FrescoDetection) throw new Error("打音検出器を読み込めませんでした。detection-engine.js を確認してください。");
+const MEASUREMENT = window.FrescoMeasurement;
+const MEASUREMENT_SPEC = MEASUREMENT.spec;
+const QUALITY_GATE = MEASUREMENT_SPEC.qualityGate;
+const DETECTION = window.FrescoDetection;
 
 const THRESHOLDS = [40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90];
 const counts = Object.fromEntries(THRESHOLDS.map(t => [t, 0]));
@@ -458,7 +476,33 @@ const counts = Object.fromEntries(THRESHOLDS.map(t => [t, 0]));
 const $ = id => document.getElementById(id);
 const speedEl = $("speed"), statusEl = $("status"), logEl = $("log");
 
-function theoreticalFactor(L) { const kL = K_DRAG * L; return (Math.expm1(kL)) / kL; }
+function selectedCalibrationFactor() {
+  const raw = $("calib").value.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+function currentQualityOptions() {
+  const rawMax = Number($("maxTrust").value);
+  return {
+    minFlightSeconds: QUALITY_GATE.minFlightSeconds,
+    maxFlightSeconds: QUALITY_GATE.maxFlightSeconds,
+    maxInitialSpeedKmh: Number.isFinite(rawMax) && rawMax > 0 ? rawMax : QUALITY_GATE.maxInitialSpeedKmh
+  };
+}
+function measureObservedInterval(observedSeconds, pairStartIndex) {
+  const configuredLength = Number($("distance").value);
+  const L = Number.isFinite(configuredLength) && configuredLength > 0 ? configuredLength : MEASUREMENT_SPEC.defaultCourtLengthM;
+  return MEASUREMENT.measureInterval({
+    observedSeconds,
+    pairStartIndex,
+    micPosition: $("micPos").value,
+    firstOnsetSide: $("firstOnsetSide").value,
+    lengthM: L,
+    calibrationFactor: selectedCalibrationFactor(),
+    ...currentQualityOptions()
+  });
+}
 
 function renderCounts() {
   const tb = $("counts"); tb.innerHTML = "";
@@ -473,7 +517,9 @@ renderCounts();
 
 function log(msg) {
   const t = new Date().toLocaleTimeString("ja-JP", { hour12: false });
-  logEl.insertAdjacentHTML("afterbegin", `<div>[${t}] ${msg}</div>`);
+  const line = document.createElement("div");
+  line.textContent = `[${t}] ${msg}`;
+  logEl.prepend(line);
 }
 
 // HUD/録画用に最新値を保持
@@ -496,29 +542,138 @@ function renderRally() {
 // ===== 選手別打数（フレスコは交互に打つ＝打音を交互に割り当て） =====
 const pHits = { a: 0, b: 0 };
 let nextP = "a";
+function playerName(side) {
+  const input = $(side === "a" ? "playerAName" : "playerBName");
+  const fallback = side === "a" ? "選手A" : "選手B";
+  return (input && input.value.trim()) || fallback;
+}
+function renderPlayerLabels() {
+  const a = playerName("a"), b = playerName("b");
+  $("pALabel").textContent = a; $("pBLabel").textContent = b;
+  $("hPALabel").textContent = a; $("hPBLabel").textContent = b;
+  $("dpALabel").textContent = a + " 打数"; $("dpBLabel").textContent = b + " 打数";
+}
 function renderPlayers() {
   $("pA").textContent = pHits.a; $("pB").textContent = pHits.b;
   $("hPA").textContent = pHits.a; $("hPB").textContent = pHits.b;
+  renderPlayerLabels();
 }
 function attributeHit() { pHits[nextP]++; nextP = nextP === "a" ? "b" : "a"; renderPlayers(); }
 function swapPlayers() { // A/Bの割り当てが逆なら1タップで補正
   const t = pHits.a; pHits.a = pHits.b; pHits.b = t;
-  nextP = nextP === "a" ? "b" : "a"; renderPlayers();
+  nextP = nextP === "a" ? "b" : "a"; renderPlayers(); liveSessionTouched = true; saveLiveSession();
 }
 
 // ===== セット集計（タイマー連動） =====
 const setStats = { active: false, maxSpeed: 0, hits: 0, maxRally: 0 };
+let qualityRejects = 0;
+let liveSessionTouched = false;
+
+// ===== 端末内の設定・ライブセッション保存（音声/動画ファイルは保存しない） =====
+const SETTINGS_STORAGE_KEY = "frescoball-speed.settings.v2";
+const LIVE_SESSION_STORAGE_KEY = "frescoball-speed.live-session.v1";
+const PERSISTED_SETTING_IDS = [
+  "distance", "micPos", "firstOnsetSide", "playerAName", "playerBName", "sens", "voiceCut", "rallyGap",
+  "cdSecs", "restMin", "classicTimeouts", "sndTick", "sndBgm", "bgmVol", "sndVoice", "minBeep",
+  "calib", "maxTrust", "aiFilter", "aiThresh", "timerMin", "rule"
+];
+function currentSettings() {
+  const values = {};
+  for (const id of PERSISTED_SETTING_IDS) {
+    const el = $(id);
+    if (el) values[id] = el.type === "checkbox" ? el.checked : el.value;
+  }
+  return { schemaVersion: 1, measurementSpecVersion: MEASUREMENT_SPEC.version, values };
+}
+function applySettings(settings) {
+  const values = settings && (settings.values || settings);
+  if (!values || typeof values !== "object") return;
+  for (const id of PERSISTED_SETTING_IDS) {
+    if (!(id in values)) continue;
+    const el = $(id);
+    if (!el) continue;
+    if (el.type === "checkbox") el.checked = Boolean(values[id]);
+    else el.value = String(values[id]);
+  }
+  if (typeof bgmEl !== "undefined" && bgmEl) bgmEl.volume = Number($("bgmVol").value) || 0;
+  renderSndBtn(); renderPlayers(); updateRuleUI(); updateRestVisibility();
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(currentSettings())); } catch (_) {}
+}
+function restoreSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (raw) applySettings(JSON.parse(raw));
+  } catch (_) {}
+}
+function liveSessionSnapshot() {
+  return {
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    settings: currentSettings(),
+    rally: { ...rally }, pHits: { ...pHits }, nextP, counts: { ...counts },
+    setStats: { active: false, maxSpeed: setStats.maxSpeed, hits: setStats.hits, maxRally: setStats.maxRally },
+    qualityRejects
+  };
+}
+function saveLiveSession() {
+  if (!liveSessionTouched) return;
+  try { localStorage.setItem(LIVE_SESSION_STORAGE_KEY, JSON.stringify(liveSessionSnapshot())); } catch (_) {}
+}
+function readLiveSession() {
+  try {
+    const raw = localStorage.getItem(LIVE_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    return saved && saved.schemaVersion === 1 ? saved : null;
+  } catch (_) { return null; }
+}
+function hasLiveSessionData(saved) {
+  return Boolean(saved && (
+    Number(saved.rally && saved.rally.total) > 0 ||
+    Number(saved.pHits && saved.pHits.a) > 0 ||
+    Number(saved.pHits && saved.pHits.b) > 0 ||
+    THRESHOLDS.some(th => Number(saved.counts && saved.counts[th]) > 0)
+  ));
+}
+function restoreLiveSession(saved = readLiveSession()) {
+  if (!hasLiveSessionData(saved)) return false;
+  liveSessionTouched = true;
+  if (saved.settings) applySettings(saved.settings);
+  Object.assign(rally, saved.rally || {}); Object.assign(pHits, saved.pHits || {});
+  for (const th of THRESHOLDS) counts[th] = Number((saved.counts || {})[th]) || 0;
+  Object.assign(setStats, saved.setStats || {}); setStats.active = false;
+  nextP = saved.nextP === "b" ? "b" : "a";
+  qualityRejects = Number(saved.qualityRejects) || 0;
+  renderCounts(); renderRally(); renderPlayers();
+  $("resumeBtn").hidden = true;
+  statusEl.textContent = "前回のライブ集計を再開しました（計測は停止中）";
+  return true;
+}
+function showLiveResumeOption() {
+  const available = hasLiveSessionData(readLiveSession());
+  $("resumeBtn").hidden = !available;
+  if (available) statusEl.textContent = "新規計測は0から開始します。必要なら前回の集計を再開できます";
+}
 
 // ===== 音声処理 =====
 let ctx = null, stream = null, running = false;
+let sourceNode = null, highPassNode = null, processorNode = null, silentSinkNode = null;
+let wakeLock = null;
 let analyser = null, freqBuf = null;
 let lastOnset = null, lastHitTime = null, onsetIndex = 0;
-let noiseFloor = 1e-4, fastEnv = 1e-4, refractoryUntil = 0;
+let startingMeasurement = false;
 let ttsActive = false, ttsTimer = null; // 音声アナウンス中は打音検出を一時停止
 const REFRACTORY = 0.12;
+const liveDetector = DETECTION.createOnsetDetector({
+  refractorySeconds: REFRACTORY,
+  warmupSeconds: DETECTION.DEFAULTS.liveWarmupSeconds
+});
+let detectorWarmupTimer = null;
 
 function spectralFlatness() {
-  if (!analyser) return 1;
+  if (!analyser) return 0;
   analyser.getFloatFrequencyData(freqBuf);
   const nyq = ctx.sampleRate / 2, n = freqBuf.length;
   const lo = Math.floor(2500 / nyq * n), hi = Math.floor(12000 / nyq * n);
@@ -527,30 +682,56 @@ function spectralFlatness() {
     const p = Math.pow(10, freqBuf[i] / 10) + 1e-12;
     logSum += Math.log(p); linSum += p; cnt++;
   }
-  if (cnt === 0) return 1;
+  if (cnt === 0) return 0;
   return Math.exp(logSum / cnt) / (linSum / cnt);
 }
 
+function beginLiveDetectorWarmup(label = "マイク") {
+  if (!ctx) return;
+  lastOnset = null; onsetIndex = 0;
+  liveDetector.reset(ctx.currentTime);
+  const warmup = DETECTION.DEFAULTS.liveWarmupSeconds;
+  statusEl.textContent = `${label}調整中（${warmup.toFixed(2)}秒）… この間は打数に入りません`;
+  hudState.sub = `${label}調整中…`; $("hSub").textContent = hudState.sub;
+  clearTimeout(detectorWarmupTimer);
+  detectorWarmupTimer = setTimeout(() => {
+    if (!running) return;
+    statusEl.textContent = "計測中… 打音を待っています（マイク音はスピーカーへ出ません）";
+    hudState.sub = "計測中…"; $("hSub").textContent = hudState.sub;
+  }, warmup * 1000);
+}
+
 async function start() {
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  });
-  const src = ctx.createMediaStreamSource(stream);
+  if (ctx) { try { await ctx.close(); } catch (_) {} ctx = null; }
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    sourceNode = ctx.createMediaStreamSource(stream);
+    highPassNode = ctx.createBiquadFilter();
+    highPassNode.type = "highpass"; highPassNode.frequency.value = 2500; highPassNode.Q.value = 0.7;
 
-  const hp = ctx.createBiquadFilter();
-  hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0;
+    freqBuf = new Float32Array(analyser.frequencyBinCount);
 
-  analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0;
-  freqBuf = new Float32Array(analyser.frequencyBinCount);
+    processorNode = ctx.createScriptProcessor(512, 1, 1);
+    // ScriptProcessor must stay connected on older Safari, but routing through
+    // a zero-gain sink guarantees microphone audio never reaches the speaker.
+    silentSinkNode = ctx.createGain(); silentSinkNode.gain.value = 0;
+    sourceNode.connect(highPassNode);
+    highPassNode.connect(analyser);
+    highPassNode.connect(processorNode);
+    processorNode.connect(silentSinkNode); silentSinkNode.connect(ctx.destination);
+  } catch (err) {
+    stream?.getTracks().forEach(track => track.stop()); stream = null;
+    try { await ctx?.close(); } catch (_) {}
+    ctx = null; sourceNode = highPassNode = processorNode = silentSinkNode = null;
+    throw err;
+  }
 
-  const proc = ctx.createScriptProcessor(512, 1, 1);
-  src.connect(hp);
-  hp.connect(analyser);
-  hp.connect(proc); proc.connect(ctx.destination);
-
-  proc.onaudioprocess = e => {
+  processorNode.onaudioprocess = e => {
     if (!running) return;
     const buf = e.inputBuffer.getChannelData(0);
     let sum = 0;
@@ -559,48 +740,43 @@ async function start() {
     const now = ctx.currentTime;
 
     const sens = parseFloat($("sens").value) || 6;
-    const prevFast = fastEnv;
-    fastEnv = fastEnv * 0.6 + rms * 0.4;
-
-    const loudEnough = rms > noiseFloor * sens;
-    if (loudEnough && now > refractoryUntil && !ttsActive) {
-      const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
-      const attackRatio = rms / (prevFast + 1e-9);
-      const needAttack = 1.6 + vc * 0.28;
-      const flat = spectralFlatness();
-      const needFlat = 0.06 + vc * 0.022;
-      if (attackRatio >= needAttack && flat >= needFlat) {
-        refractoryUntil = now + REFRACTORY;
-        onHit(now);
-      }
-    } else if (now > refractoryUntil && !loudEnough) {
-      noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
-    }
+    const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
+    const detection = liveDetector.process({
+      rms,
+      now,
+      sensitivity: sens,
+      attackThreshold: 1.6 + vc * 0.28,
+      flatnessThreshold: 0.06 + vc * 0.022,
+      flatness: spectralFlatness,
+      enabled: !ttsActive
+    });
+    if (detection.detected) onHit(now);
   };
 
-  try { await navigator.wakeLock?.request("screen"); } catch (_) {}
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (_) {}
+  try { await ctx.resume(); } catch (_) {}
+  lastOnset = null; lastHitTime = null; onsetIndex = 0;
   running = true;
+  liveSessionTouched = true;
   syncStartButtons(true);
-  statusEl.textContent = "計測中… 打音を待っています";
-  hudState.sub = "計測中…"; $("hSub").textContent = hudState.sub;
-  log(`計測開始（fs=${ctx.sampleRate}Hz / 声カット有効）`);
+  $("resumeBtn").hidden = true;
+  beginLiveDetectorWarmup("マイク");
+  log(`計測開始（fs=${ctx.sampleRate}Hz / 初期調整=${DETECTION.DEFAULTS.liveWarmupSeconds.toFixed(2)}s / 声カット有効）`);
 }
 
 function onHit(t) {
-  const L = parseFloat($("distance").value) || 7.0;
-  const micPos = $("micPos").value;
-
+  liveSessionTouched = true;
   if (lastOnset !== null) {
-    let dt = t - lastOnset;
-    if (micPos === "near") {
-      const d = L / SOUND_SPEED;
-      dt += (onsetIndex % 2 === 0) ? -d : +d;
-    }
-    if (dt >= 0.20 && dt <= 0.90) {
-      const vAvg = L / dt * 3.6;
-      const factor = parseFloat($("calib").value) || theoreticalFactor(L);
-      const v0 = vAvg * factor;
-      showSpeed(v0, vAvg, dt);
+    const observedDt = t - lastOnset;
+    // onsetIndex is the index of this new onset; the pair starts at the prior one.
+    const result = measureObservedInterval(observedDt, onsetIndex - 1);
+    if (result.accepted) {
+      showSpeed(result.initialSpeedKmh, result.averageSpeedKmh, result.flightSeconds);
+    } else {
+      qualityRejects++;
+      const detail = result.reason === "initial_speed_above_trust_limit" ? "初速上限超過" : "飛行時間範囲外";
+      flashSub(`品質ゲート: ${detail}（観測Δt ${observedDt.toFixed(3)}s）`);
+      log(`品質ゲートで除外: ${detail}（観測Δt=${observedDt.toFixed(3)}s / 補正後=${result.flightSeconds.toFixed(3)}s）`);
     }
   }
   rallyOnHit(t);
@@ -611,6 +787,7 @@ function onHit(t) {
   }
   lastOnset = t; lastHitTime = t; onsetIndex++;
   lastHitWall = performance.now(); // トップ・ラリー継続判定用（実時間）
+  saveLiveSession();
 }
 
 function popEl(el) { el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
@@ -653,7 +830,8 @@ function showSpeed(v0, vAvg, dt) {
   let tier = null;
   for (const th of THRESHOLDS) if (v0 >= th) { counts[th]++; tier = th; }
   renderCounts();
-  log(`初速換算 <b>${v0.toFixed(1)}</b> km/h（平均 ${vAvg.toFixed(1)}, Δt=${dt.toFixed(3)}s）`);
+  log(`初速換算 ${v0.toFixed(1)} km/h（平均 ${vAvg.toFixed(1)}, Δt=${dt.toFixed(3)}s）`);
+  saveLiveSession();
 
   const minBeep = parseFloat($("minBeep").value) || 40;
   if (tier !== null && tier >= minBeep) beep(tier);
@@ -662,7 +840,7 @@ function showSpeed(v0, vAvg, dt) {
 function beep(tier) {
   if (!ctx) return;
   const now = ctx.currentTime;
-  refractoryUntil = Math.max(refractoryUntil, now + 0.30);
+  liveDetector.suppressUntil(now + 0.30);
   const osc = ctx.createOscillator(), gain = ctx.createGain();
   osc.frequency.value = 500 + ((tier - 40) / 5) * 120;
   osc.type = "square";
@@ -681,7 +859,7 @@ function tone(freq, dur, when) {
   gain.gain.exponentialRampToValueAtTime(0.001, when + dur);
   osc.connect(gain); gain.connect(ctx.destination);
   osc.start(when); osc.stop(when + dur);
-  refractoryUntil = Math.max(refractoryUntil, when + dur + 0.1); // 自己音を打音検出から除外
+  liveDetector.suppressUntil(when + dur + 0.1); // 自己音を打音検出から除外
 }
 // GO音（伸ばす：約1.3秒の持続音、立ち上がり→ホールド→リリース）
 function goTone() {
@@ -697,7 +875,7 @@ function goTone() {
   g.gain.exponentialRampToValueAtTime(0.001, t + 2.7);     // release
   osc.connect(g); g.connect(ctx.destination);
   osc.start(t); osc.stop(t + 2.75);
-  refractoryUntil = Math.max(refractoryUntil, t + 0.8); // 鋭い立ち上がりだけ抑制（持続音は狭帯域で誤検出されない）
+  liveDetector.suppressUntil(t + 0.8); // 鋭い立ち上がりだけ抑制（持続音は狭帯域で誤検出されない）
 }
 
 // 毎秒チック（サイン＝検出HP2.5kHz以下なので打音検出に干渉しない）。freqを変えてチク・タク
@@ -711,7 +889,7 @@ function tick(freq = 1400) {
   g.gain.exponentialRampToValueAtTime(0.0008, now + 0.07);
   osc.connect(g); g.connect(ctx.destination);
   osc.start(now); osc.stop(now + 0.08);
-  refractoryUntil = Math.max(refractoryUntil, now + 0.13); // 自己音を打音検出から除外
+  liveDetector.suppressUntil(now + 0.13); // 自己音を打音検出から除外
 }
 // ===== BGM（端末内の音楽ファイルを再生。Suno等のAI生成mp3を選択可） =====
 const bgmEl = $("bgm");
@@ -744,13 +922,19 @@ function handleCountdownAudio() {
 
 function stop() {
   running = false;
+  clearTimeout(detectorWarmupTimer); detectorWarmupTimer = null;
   stream?.getTracks().forEach(t => t.stop());
-  ctx?.close(); ctx = null; analyser = null;
-  lastOnset = null; lastHitTime = null;
+  if (processorNode) processorNode.onaudioprocess = null;
+  for (const node of [sourceNode, highPassNode, analyser, processorNode, silentSinkNode]) { try { node?.disconnect(); } catch (_) {} }
+  ctx?.close(); ctx = null; stream = null; analyser = null; sourceNode = highPassNode = processorNode = silentSinkNode = null;
+  if (wakeLock) wakeLock.release().catch(() => {});
+  wakeLock = null;
+  lastOnset = null; lastHitTime = null; onsetIndex = 0;
   syncStartButtons(false);
   statusEl.textContent = "停止しました";
   hudState.sub = "停止中"; $("hSub").textContent = hudState.sub;
   log("計測停止");
+  saveLiveSession();
 }
 
 function syncStartButtons(isRunning) {
@@ -762,11 +946,17 @@ function syncStartButtons(isRunning) {
 }
 
 async function toggleMeasure() {
+  if (startingMeasurement) return;
   if (!running) {
+    startingMeasurement = true;
+    for (const id of ["startBtn", "hudStart"]) $(id).disabled = true;
     try { await start(); }
     catch (err) {
       statusEl.textContent = "マイクを取得できません: " + err.message;
       $("hSub").textContent = "マイク取得失敗";
+    } finally {
+      startingMeasurement = false;
+      for (const id of ["startBtn", "hudStart"]) $(id).disabled = false;
     }
   } else { stop(); }
 }
@@ -982,8 +1172,11 @@ function resetAll() {
   $("hV").style.fontSize = ""; $("hV").style.color = ""; $("hV").style.textShadow = "";
   $("hV").textContent = "--"; $("hSub").textContent = "リセットしました";
   $("setSummary").hidden = true;
+  $("resumeBtn").hidden = true;
   statusEl.textContent = "リセットしました（計測は継続）";
   log("リセット（カウンタ初期化）");
+  try { localStorage.removeItem(LIVE_SESSION_STORAGE_KEY); } catch (_) {}
+  liveSessionTouched = false;
 }
 
 // ルール（フリー/クラシック/トップ）セグメント＋HUD表示
@@ -1013,11 +1206,28 @@ $("restBtn").addEventListener("click", takeRest);
 $("hudRest").addEventListener("click", takeRest);
 $("resetBtn").addEventListener("click", resetAll);
 $("hudReset").addEventListener("click", resetAll);
+$("resumeBtn").addEventListener("click", () => restoreLiveSession());
 $("swapBtn").addEventListener("click", swapPlayers);
 $("hudSwap").addEventListener("click", swapPlayers);
+for (const id of PERSISTED_SETTING_IDS) {
+  const el = $(id);
+  if (!el) continue;
+  const persist = () => {
+    if (id === "playerAName" || id === "playerBName") renderPlayers();
+    if (id === "bgmVol" && bgmEl) bgmEl.volume = Number($("bgmVol").value) || 0;
+    saveSettings();
+  };
+  el.addEventListener("change", persist);
+  if (el.type === "range" || el.type === "text" || el.type === "number") el.addEventListener("input", persist);
+}
+restoreSettings();
+if (!$("distance").value) $("distance").value = String(MEASUREMENT_SPEC.defaultCourtLengthM);
+if (!$("maxTrust").value) $("maxTrust").value = String(QUALITY_GATE.maxInitialSpeedKmh);
 updateRestVisibility();
 updateRuleUI();
 renderPlayers();
+showLiveResumeOption();
+window.addEventListener("pagehide", () => { saveSettings(); saveLiveSession(); });
 
 // BGM: ファイル選択・音量
 if (bgmEl) bgmEl.volume = 0.5;
@@ -1055,37 +1265,58 @@ $("sndTick").addEventListener("change", renderSndBtn);
 renderSndBtn();
 
 // ===== モード切替 =====
-let camStream = null;
+let camStream = null, cameraGeneration = 0;
 async function enterCamera() {
+  const generation = ++cameraGeneration;
+  camStream?.getTracks().forEach(t => t.stop()); camStream = null;
   $("tabCam").classList.add("active"); $("tabNum").classList.remove("active");
   $("camWrap").classList.add("show");
   $("gearBtn").style.display = "none";   // カメラ中は歯車を隠す
   updateRuleUI();
+  if (running && ctx) {
+    // Camera permission/activation can create handling and device-start noise.
+    // Hold detection until getUserMedia settles, then learn the new baseline.
+    liveDetector.suppressUntil(ctx.currentTime + 300);
+    lastOnset = null; onsetIndex = 0;
+    statusEl.textContent = "カメラ準備中… この間は打数に入りません";
+    hudState.sub = "カメラ準備中…"; $("hSub").textContent = hudState.sub;
+  }
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({
+    const requestedStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     });
+    if (generation !== cameraGeneration) { requestedStream.getTracks().forEach(t => t.stop()); return; }
+    camStream = requestedStream;
     const v = $("camVideo"); v.srcObject = camStream; await v.play().catch(() => {});
   } catch (err) {
-    $("hSub").textContent = "カメラ取得失敗: " + err.message;
+    if (generation === cameraGeneration) $("hSub").textContent = "カメラ取得失敗: " + err.message;
+  } finally {
+    if (generation === cameraGeneration && running && ctx) beginLiveDetectorWarmup("カメラ");
   }
   renderRally();
 }
 function exitCamera() {
+  cameraGeneration++;
+  const wasActive = $("camWrap").classList.contains("show") || Boolean(camStream);
   $("tabNum").classList.add("active"); $("tabCam").classList.remove("active");
   $("camWrap").classList.remove("show");
   $("gearBtn").style.display = "";       // 数値モードに戻ったら歯車を再表示
   camStream?.getTracks().forEach(t => t.stop()); camStream = null;
   $("camVideo").srcObject = null;
+  if (wasActive && running && ctx) beginLiveDetectorWarmup("モード切替");
 }
-function exitUpload() { $("upView").classList.remove("show"); $("numView").style.display = ""; }
+function exitUpload() {
+  if ($("upView").classList.contains("show")) resetUploadAnalysis();
+  $("upView").classList.remove("show"); $("numView").style.display = "";
+}
 function goNum() { exitUpload(); exitCamera(); $("tabUp").classList.remove("active"); }
 $("tabCam").addEventListener("click", () => { exitUpload(); $("tabUp").classList.remove("active"); enterCamera(); });
 $("tabNum").addEventListener("click", goNum);
 $("hudClose").addEventListener("click", goNum);
 $("tabUp").addEventListener("click", () => {
   exitCamera();
+  resetUploadAnalysis();
   $("numView").style.display = "none";
   $("upView").classList.add("show");
   $("tabUp").classList.add("active"); $("tabNum").classList.remove("active"); $("tabCam").classList.remove("active");
@@ -1130,38 +1361,53 @@ function fft(re, im) {
 // 2500–12000Hz帯のスペクトル平坦度（ライブの spectralFlatness と同等指標）
 function flatnessAt(buf, start, sr) {
   const N = 1024;
-  if (start + N > buf.length) return 1;
+  if (start + N > buf.length) return 0;
   const re = new Float32Array(N), im = new Float32Array(N);
   for (let i = 0; i < N; i++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)); re[i] = buf[start + i] * w; }
   fft(re, im);
   const nyq = sr / 2, lo = Math.floor(2500 / nyq * (N / 2)), hi = Math.floor(12000 / nyq * (N / 2));
   let logSum = 0, linSum = 0, cnt = 0;
   for (let i = lo; i < hi && i < N / 2; i++) { const p = re[i] * re[i] + im[i] * im[i] + 1e-12; logSum += Math.log(p); linSum += p; cnt++; }
-  if (!cnt) return 1;
+  if (!cnt) return 0;
   return Math.exp(logSum / cnt) / (linSum / cnt);
 }
 
+function assertAnalysisActive(shouldContinue) {
+  if (!shouldContinue || shouldContinue()) return;
+  const error = new Error("新しい解析に切り替わったため中止しました");
+  error.name = "AbortError";
+  throw error;
+}
+
 // --- 打音オンセット検出（ライブの onaudioprocess を 512サンプルホップで非リアルタイム再現） ---
-async function detectOnsets(buf, sr, onProgress) {
+async function detectOnsets(buf, sr, onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   const HOP = 512;
   const sens = parseFloat($("sens").value) || 6;
   const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
   const needAttack = 1.6 + vc * 0.28, needFlat = 0.06 + vc * 0.022;
-  let noiseFloor = 1e-4, fastEnv = 1e-4, refractoryUntil = -1;
+  const detector = DETECTION.createOnsetDetector({
+    refractorySeconds: REFRACTORY,
+    warmupSeconds: DETECTION.DEFAULTS.videoWarmupSeconds,
+    startTime: 0
+  });
   const onsets = [], n = buf.length; let frame = 0;
   for (let p = 0; p + HOP <= n; p += HOP) {
+    if ((frame & 255) === 0) assertAnalysisActive(shouldContinue);
     let sum = 0; for (let i = 0; i < HOP; i++) { const s = buf[p + i]; sum += s * s; }
-    const rms = Math.sqrt(sum / HOP), now = p / sr, prevFast = fastEnv;
-    fastEnv = fastEnv * 0.6 + rms * 0.4;
-    const loud = rms > noiseFloor * sens;
-    if (loud && now > refractoryUntil) {
-      const attackRatio = rms / (prevFast + 1e-9);
-      if (attackRatio >= needAttack && flatnessAt(buf, p, sr) >= needFlat) { refractoryUntil = now + REFRACTORY; onsets.push(now); }
-    } else if (now > refractoryUntil && !loud) {
-      noiseFloor = Math.max(1e-5, noiseFloor * 0.995 + rms * 0.005);
-    }
+    const rms = Math.sqrt(sum / HOP), now = p / sr;
+    const detection = detector.process({
+      rms,
+      now,
+      sensitivity: sens,
+      attackThreshold: needAttack,
+      flatnessThreshold: needFlat,
+      flatness: () => flatnessAt(buf, p, sr)
+    });
+    if (detection.detected) onsets.push(now);
     if ((++frame & 4095) === 0) { if (onProgress) onProgress(p / n); await new Promise(r => setTimeout(r)); }
   }
+  assertAnalysisActive(shouldContinue);
   if (onProgress) onProgress(1);
   return onsets;
 }
@@ -1222,8 +1468,10 @@ function audioDataToMono(ad) {
   return out;
 }
 // 巨大ファイルでも低メモリ：ファイルをチャンク読み→音声トラックのみデマックス→WebCodecsで復号
-async function decodeAudioWC(file, onProgress) {
+async function decodeAudioWC(file, onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   await ensureMp4box();
+  assertAnalysisActive(shouldContinue);
   try { MP4Box.Log.setLogLevel(MP4Box.Log.error); } catch (_) {}
   return await new Promise((resolve, reject) => {
     const mp4 = MP4Box.createFile();
@@ -1233,6 +1481,7 @@ async function decodeAudioWC(file, onProgress) {
     mp4.onError = e => reject(new Error("mp4box: " + e));
     mp4.onReady = async info => {
       try {
+        assertAnalysisActive(shouldContinue);
         track = (info.audioTracks && info.audioTracks[0]) || info.tracks.find(t => t.audio);
         if (!track) { wcDiag.step = "no-audio-track"; reject(new Error("音声トラックが見つかりません")); return; }
         sampleRate = track.audio.sample_rate; channels = track.audio.channel_count; nSamples = track.nb_samples || 1;
@@ -1248,7 +1497,11 @@ async function decodeAudioWC(file, onProgress) {
         wcDiag.supported = !!(sup && sup.supported);
         if (!wcDiag.supported) { wcDiag.step = "config-unsupported"; reject(new Error("この端末のAudioDecoderが " + codec + " 非対応")); return; }
         decoder = new AudioDecoder({
-          output: ad => { try { chunks.push(audioDataToMono(ad)); } catch (e) { wcDiag.outErr = String(e.message || e); } decoded++; if (onProgress) onProgress(Math.min(0.99, decoded / nSamples)); ad.close(); },
+          output: ad => {
+            if (shouldContinue && !shouldContinue()) { ad.close(); return; }
+            try { chunks.push(audioDataToMono(ad)); } catch (e) { wcDiag.outErr = String(e.message || e); }
+            decoded++; if (onProgress) onProgress(Math.min(0.99, decoded / nSamples)); ad.close();
+          },
           error: e => { wcDiag.step = "decoder-error"; reject(new Error("AudioDecoder: " + (e.message || e))); }
         });
         decoder.configure(cfg);
@@ -1258,6 +1511,7 @@ async function decodeAudioWC(file, onProgress) {
       } catch (e) { wcDiag.step = "onready-throw"; reject(new Error("設定失敗: " + (e.message || e))); }
     };
     mp4.onSamples = (id, user, samples) => {
+      if (shouldContinue && !shouldContinue()) return;
       for (const s of samples) {
         decoder.decode(new EncodedAudioChunk({
           type: s.is_sync ? "key" : "delta",
@@ -1271,12 +1525,17 @@ async function decodeAudioWC(file, onProgress) {
     const CHUNK = 8 * 1024 * 1024; let offset = 0;
     const reader = new FileReader();
     const readNext = () => {
+      try { assertAnalysisActive(shouldContinue); }
+      catch (error) { try { reader.abort(); } catch (_) {} try { decoder?.close(); } catch (_) {} reject(error); return; }
       if (offset >= file.size) {
         (async () => {
           try {
+            assertAnalysisActive(shouldContinue);
             await readyP;            // デコーダ生成・start完了を待ってからflush（null参照の競合を防ぐ）
+            assertAnalysisActive(shouldContinue);
             mp4.flush();
             await decoder.flush();
+            assertAnalysisActive(shouldContinue);
             let total = 0; for (const c of chunks) total += c.length;
             const buf = new Float32Array(total); let o = 0; for (const c of chunks) { buf.set(c, o); o += c.length; }
             if (!total) reject(new Error("音声を復号できませんでした")); else resolve({ buf, sampleRate });
@@ -1284,7 +1543,12 @@ async function decodeAudioWC(file, onProgress) {
         })();
         return;
       }
-      reader.onload = e => { const ab = e.target.result; ab.fileStart = offset; mp4.appendBuffer(ab); offset += CHUNK; if (onProgress) onProgress(Math.min(0.5, offset / file.size * 0.5)); readNext(); };
+      reader.onload = e => {
+        try { assertAnalysisActive(shouldContinue); }
+        catch (error) { try { decoder?.close(); } catch (_) {} reject(error); return; }
+        const ab = e.target.result; ab.fileStart = offset; mp4.appendBuffer(ab); offset += CHUNK;
+        if (onProgress) onProgress(Math.min(0.5, offset / file.size * 0.5)); readNext();
+      };
       reader.onerror = () => reject(reader.error);
       reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK));
     };
@@ -1343,11 +1607,14 @@ function resample16k(buf, sr) {
   return out;
 }
 // オンセット毎に0.96秒窓をYAMNetへ。声/風/音楽が高確信で支配的な時だけ除外（打音は守る＝保守的）
-async function yamnetFilter(mono, sr, onsets, onProgress) {
+async function yamnetFilter(mono, sr, onsets, onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   await ensureYamnet();
+  assertAnalysisActive(shouldContinue);
   const wav = resample16k(mono, sr), N = 15360, thr = Math.max(0.1, Math.min(1, parseFloat($("aiThresh").value) || 0.5));
   const kept = [];
   for (let i = 0; i < onsets.length; i++) {
+    assertAnalysisActive(shouldContinue);
     let start = Math.round(onsets[i] * 16000) - 4096; if (start < 0) start = 0;   // 打音をやや中央寄せ
     if (start + N > wav.length) start = Math.max(0, wav.length - N);
     const win = wav.subarray(start, start + N);
@@ -1367,50 +1634,46 @@ async function yamnetFilter(mono, sr, onsets, onProgress) {
   return kept;
 }
 // --- ファイル→音声デコード（巨大対応）→ハイパス→検出 ---
-async function analyzeFile(file, onProgress) {
+async function analyzeFile(file, onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   const LARGE = 250 * 1024 * 1024;            // これ超は全読みデコード不可（メモリ枯渇／クラッシュ回避）
   wcDiag = { v: "wc3", size: file.size, hasWC: ("AudioDecoder" in window && "EncodedAudioChunk" in window) };
   let mono = null, sr = 0, wcErr = null;
   if (wcDiag.hasWC) {
-    try { const r = await decodeAudioWC(file, p => onProgress && onProgress(p * 0.55)); mono = r.buf; sr = r.sampleRate; }
+    try { const r = await decodeAudioWC(file, p => onProgress && onProgress(p * 0.55), shouldContinue); mono = r.buf; sr = r.sampleRate; }
     catch (e) { wcErr = e; wcDiag.err = String(e.message || e); }
   }
+  assertAnalysisActive(shouldContinue);
   if (!mono) {
     if (file.size > LARGE) {
       // 巨大ファイルで全読みに落とすとクラッシュするので、ここで明確に止める
       throw new Error((wcDiag.hasWC ? "WebCodecs復号に失敗" : "この端末はWebCodecs非対応(iOS17以降が必要)") + " / 大容量のため全読み不可");
     }
-    const r = await decodeAudioFull(file); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55);
+    const r = await decodeAudioFull(file); assertAnalysisActive(shouldContinue); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55);
   }
   const filtered = await highpassMono(mono, sr);
+  assertAnalysisActive(shouldContinue);
   const aiOn = $("aiFilter") && $("aiFilter").checked;
-  let onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * (aiOn ? 0.30 : 0.45)));
+  let onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * (aiOn ? 0.30 : 0.45)), shouldContinue);
   let aiRejected = 0;
   if (aiOn && onsets.length) {
-    try { const kept = await yamnetFilter(mono, sr, onsets, p => onProgress && onProgress(0.85 + p * 0.15)); aiRejected = onsets.length - kept.length; onsets = kept; }
+    try { const kept = await yamnetFilter(mono, sr, onsets, p => onProgress && onProgress(0.85 + p * 0.15), shouldContinue); aiRejected = onsets.length - kept.length; onsets = kept; }
     catch (e) { wcDiag.aiErr = String(e.message || e); }   // 失敗時は除外せず全採用（fail open）
   }
+  assertAnalysisActive(shouldContinue);
   return { onsets, sr, duration: mono.length / sr, aiRejected };
 }
 
 // --- オンセット列→打球タイムライン（ライブの onHit / rallyOnHit を再現） ---
 function buildStats(onsets) {
-  const L = parseFloat($("distance").value) || 7.0;
-  const micPos = $("micPos").value;
-  const calib = parseFloat($("calib").value) || theoreticalFactor(L);
   const gap = parseFloat($("rallyGap").value) || 2.5;
-  const cap = parseFloat($("maxTrust").value) || 110;   // A: 信頼上限速度（超は速度集計から除外）
-  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0;
+  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0, qualityRejected = 0;
   for (const t of onsets) {
     let speed = null;
     if (lastOnset !== null) {
-      let dt = t - lastOnset;
-      if (micPos === "near") { const d = L / SOUND_SPEED; dt += (idx % 2 === 0) ? -d : +d; }
-      if (dt >= 0.20 && dt <= 0.90) {
-        const v = (L / dt * 3.6) * calib;
-        if (v > cap) excluded++;       // 偽の高速値（同一打の反響/二度取り/バウンド由来の短間隔）を速度集計から除外
-        else speed = v;                // 打数にはカウントするが速度は信頼しない
-      }
+      const result = measureObservedInterval(t - lastOnset, idx - 1);
+      if (result.accepted) speed = result.initialSpeedKmh;
+      else { qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
     }
     if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
     if (rNow === 0) rallies++;
@@ -1418,7 +1681,7 @@ function buildStats(onsets) {
     hits.push({ t, idx, player: idx % 2 === 0 ? "a" : "b", speed, rNow });
     lastOnset = t; lastHitTime = t; idx++;
   }
-  return { hits, rMax, rallies, total: hits.length, excluded };
+  return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected };
 }
 
 // --- 集計（flip=A/B割当の反転） ---
@@ -1444,6 +1707,32 @@ function aggregate(hits, flip) {
 
 // --- ダッシュボード描画 ---
 let curStats = null, curFlip = false;
+let uploadAnalysisGeneration = 0, uploadObjectUrl = null;
+
+function resetUploadAnalysis() {
+  const generation = ++uploadAnalysisGeneration;
+  curStats = null; curFlip = false;
+  currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
+  $("upProg").hidden = true;
+  $("upProg").textContent = "";
+  $("upDash").hidden = true;
+  $("upStage").hidden = true;
+  $("ulV").textContent = "--";
+  $("ulR").textContent = "0";
+  $("ulH").textContent = "0";
+  $("dpA").textContent = "0"; $("dpB").textContent = "0";
+  $("dsA").textContent = "平均 -- km/h"; $("dsB").textContent = "平均 -- km/h";
+  $("dashSummary").innerHTML = ""; $("histo").innerHTML = "";
+  $("vidBtn").style.display = "none"; $("vidBtn").disabled = false;
+  const video = $("upVideo");
+  try { video.pause(); } catch (_) {}
+  if (uploadObjectUrl) { try { URL.revokeObjectURL(uploadObjectUrl); } catch (_) {} uploadObjectUrl = null; }
+  video.removeAttribute("src");
+  try { video.load(); } catch (_) {}
+  $("upFile").value = "";
+  return generation;
+}
+
 function renderDash() {
   if (!curStats) return null;
   const ag = aggregate(curStats.hits, curFlip);
@@ -1458,9 +1747,10 @@ function renderDash() {
   const mx = Math.max(1, ...ag.hist.map(h => h.count));
   $("histo").innerHTML = ag.hist.map(h =>
     `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
-    + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${parseFloat($("maxTrust").value) || 110} km/h超）。打数には計上。</div>` : "")
+    + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${currentQualityOptions().maxInitialSpeedKmh} km/h超）。打数には計上。</div>` : "")
+    + ((curStats.qualityRejected > curStats.excluded) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ 品質ゲートで ${curStats.qualityRejected} 件を速度集計から除外（短間隔・長間隔・上限超過）。打数には計上。</div>` : "")
     + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
-    + (curStats.vidUsed ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">🎥 映像精査済み：隣の組ほか ${curStats.vidRejected || 0} 件を除外、A/Bは左右の動きで判定。</div>` : "");
+    + (curStats.review ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">🎥 映像精査済み（${escapeHtml(curStats.review.version)}）：隣の組ほか ${curStats.review.rejected || 0} 件を除外、A/Bは左右の動きで判定。</div>` : "");
   return ag;
 }
 
@@ -1480,36 +1770,45 @@ function syncLive() {
 // --- ファイル選択→解析 ---
 $("upFile").addEventListener("change", async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
+  const generation = resetUploadAnalysis();
   $("upProg").hidden = false; $("upProg").innerHTML = '解析中… <span id="upPct">0</span>%'; $("upDash").hidden = true;
   try {
-    $("upVideo").src = URL.createObjectURL(f); $("upStage").hidden = false;
-    const { onsets, aiRejected } = await analyzeFile(f, p => { const el = $("upPct"); if (el) el.textContent = Math.round(p * 100); });
-    curStats = buildStats(onsets); curStats.aiRejected = aiRejected || 0; curFlip = false;
+    uploadObjectUrl = URL.createObjectURL(f);
+    $("upVideo").src = uploadObjectUrl; $("upStage").hidden = false;
+    const { onsets, aiRejected } = await analyzeFile(f, p => {
+      if (generation !== uploadAnalysisGeneration) return;
+      const el = $("upPct"); if (el) el.textContent = Math.round(p * 100);
+    }, () => generation === uploadAnalysisGeneration);
+    if (generation !== uploadAnalysisGeneration) return;
+    curStats = buildStats(onsets); curStats.aiRejected = aiRejected || 0; curStats.review = null; curFlip = false;
     renderDash(); $("upDash").hidden = false; $("vidBtn").style.display = ""; syncLive();
     await saveRecord(f.name, $("upVideo").duration || 0);
+    if (generation !== uploadAnalysisGeneration) return;
     $("upProg").hidden = true;
   } catch (err) {
+    if (generation !== uploadAnalysisGeneration) return;
     $("upProg").hidden = false;
     $("upProg").innerHTML = "解析できませんでした: " + (err && err.message || err) +
       '<br><span style="font-size:11px;color:var(--muted)">診断: ' + JSON.stringify(wcDiag) + '</span>';
   }
 });
-$("dSwap").addEventListener("click", () => { curFlip = !curFlip; renderDash(); syncLive(); });
+$("dSwap").addEventListener("click", () => {
+  curFlip = !curFlip; renderDash(); syncLive();
+  saveCurrentRecord(); // A/Bの手動入替も同じレコードへ保存
+});
 $("upVideo").addEventListener("timeupdate", syncLive);
 
 // --- D: 映像モーション照合（隣の組の除外＋左右で打者判定） ---
 // 与えられた打音列（.t と .player を保持）から速度・ラリーを再計算（buildStatsの player固定版）
 function rebuildTimeline(hitsIn) {
-  const L = parseFloat($("distance").value) || 7.0, micPos = $("micPos").value;
-  const calib = parseFloat($("calib").value) || theoreticalFactor(L);
-  const gap = parseFloat($("rallyGap").value) || 2.5, cap = parseFloat($("maxTrust").value) || 110;
-  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0;
+  const gap = parseFloat($("rallyGap").value) || 2.5;
+  const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0, qualityRejected = 0;
   for (const h of hitsIn) {
     const t = h.t; let speed = null;
     if (lastOnset !== null) {
-      let dt = t - lastOnset;
-      if (micPos === "near") { const d = L / SOUND_SPEED; dt += (idx % 2 === 0) ? -d : +d; }
-      if (dt >= 0.20 && dt <= 0.90) { const v = (L / dt * 3.6) * calib; if (v > cap) excluded++; else speed = v; }
+      const result = measureObservedInterval(t - lastOnset, idx - 1);
+      if (result.accepted) speed = result.initialSpeedKmh;
+      else { qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
     }
     if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
     if (rNow === 0) rallies++;
@@ -1517,12 +1816,13 @@ function rebuildTimeline(hitsIn) {
     hits.push({ t, idx, player: h.player, speed, rNow });
     lastOnset = t; lastHitTime = t; idx++;
   }
-  return { hits, rMax, rallies, total: hits.length, excluded };
+  return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected };
 }
 // 動画を再生しながら「列ごとのモーション時系列」を収集（iOS安全：一時停止seekは黒画になるため）
 // 列バケツ化＝背景(波/人)の定常モーションを後で差し引き、スイングのピーク位置を取り出すため
 const VID_COLS = 16;
-async function buildMotionTimeline(v, onProgress) {
+async function buildMotionTimeline(v, onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   const W = 160, H = 90, B = VID_COLS, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const cx = cv.getContext("2d", { willReadFrequently: true });
   const samples = []; let prev = null;
@@ -1536,6 +1836,7 @@ async function buildMotionTimeline(v, onProgress) {
     const finish = () => { if (!done) { done = true; resolve(); } };
     const onFrame = () => {
       if (done) return;
+      if (shouldContinue && !shouldContinue()) { finish(); return; }
       cx.drawImage(v, 0, 0, W, H); const b = cx.getImageData(0, 0, W, H).data;
       if (prev) {
         const col = new Float64Array(B);
@@ -1556,19 +1857,22 @@ async function buildMotionTimeline(v, onProgress) {
     setTimeout(finish, (v.duration / Math.max(1, v.playbackRate)) * 1000 + 4000); // 保険
   });
   try { v.pause(); v.playbackRate = 1; } catch (_) {}
+  assertAnalysisActive(shouldContinue);
   return samples;
 }
 // 各打音±0.15秒で、背景差し引き後のピーク列＝打者の左右、超過モーション総量＝画角内動作の有無
-async function vidMotionPass(onProgress) {
+async function vidMotionPass(onProgress, shouldContinue) {
+  assertAnalysisActive(shouldContinue);
   const v = $("upVideo");
   if (!curStats || !curStats.hits.length) throw new Error("先に動画を解析してください");
   if (!v || !v.src || !v.duration || isNaN(v.duration)) throw new Error("この記録には動画がありません（再アップロードが必要）");
-  const B = VID_COLS, samples = await buildMotionTimeline(v, onProgress);
+  const B = VID_COLS, samples = await buildMotionTimeline(v, onProgress, shouldContinue);
   if (!samples.length) throw new Error("映像フレームを取得できませんでした");
   const med = new Float64Array(B);                       // 列ごとの背景ベースライン（中央値）
   for (let c = 0; c < B; c++) { const a = samples.map(s => s.col[c]).sort((x, y) => x - y); med[c] = a.length ? a[a.length >> 1] : 0; }
   const win = 0.15;
   const agg = curStats.hits.map(h => {
+    assertAnalysisActive(shouldContinue);
     let excess = 0, bestEx = -Infinity, bestC = 0;
     for (const s of samples) if (s.t >= h.t - win && s.t <= h.t + win) {
       for (let c = 0; c < B; c++) { const ex = s.col[c] - med[c]; if (ex > 0) excess += ex; if (ex > bestEx) { bestEx = ex; bestC = c; } }
@@ -1587,53 +1891,158 @@ async function vidMotionPass(onProgress) {
 }
 $("vidBtn").addEventListener("click", async () => {
   if (!curStats) return;
+  const generation = uploadAnalysisGeneration;
   $("upProg").hidden = false; $("upProg").innerHTML = '映像で精査中… <span id="upPct2">0</span>%（重い処理です）';
   $("vidBtn").disabled = true;
   try {
     const aiKeep = curStats.aiRejected || 0;
-    const { kept, rejected, analyzed } = await vidMotionPass(p => { const el = $("upPct2"); if (el) el.textContent = Math.round(p * 100); });
+    const { kept, rejected, analyzed } = await vidMotionPass(
+      p => { const el = $("upPct2"); if (el) el.textContent = Math.round(p * 100); },
+      () => generation === uploadAnalysisGeneration
+    );
+    if (generation !== uploadAnalysisGeneration) return;
     const s = rebuildTimeline(kept);
-    s.excluded = s.excluded; s.aiRejected = aiKeep; s.vidRejected = rejected; s.vidUsed = true;
+    s.aiRejected = aiKeep;
+    s.review = {
+      version: VIDEO_REVIEW_VERSION, performedAt: new Date().toISOString(),
+      algorithm: "motion-column-background-subtraction", rejected, analyzed
+    };
     curStats = s; curFlip = false;
     renderDash(); syncLive();
+    await saveCurrentRecord(); // 精査結果・打者判定・精査バージョンを同じ記録に反映
     $("upProg").hidden = true;
   } catch (e) {
+    if (generation !== uploadAnalysisGeneration) return;
     $("upProg").hidden = false; $("upProg").textContent = "映像精査に失敗: " + (e && e.message || e);
-  } finally { $("vidBtn").disabled = false; }
+  } finally { if (generation === uploadAnalysisGeneration) $("vidBtn").disabled = false; }
 });
 
-// --- IndexedDB（記録の蓄積） ---
+// --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---
+const DB_NAME = "frescoData", DB_VERSION = 2, RECORD_SCHEMA_VERSION = 2;
+const VIDEO_REVIEW_VERSION = "motion-columns-v1";
 let _db = null;
+let currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
+
+function defaultPlayerLabels() { return { a: "選手A", b: "選手B" }; }
+function normalizeRecord(raw) {
+  const record = raw || {};
+  const hits = (record.hits || []).map((hit, i) => {
+    const idx = Number.isInteger(hit.idx) ? hit.idx : i;
+    return {
+      t: Number(hit.t) || 0, idx,
+      player: hit.player === "a" || hit.player === "b" ? hit.player : (idx % 2 === 0 ? "a" : "b"),
+      speed: hit.speed == null ? null : Number(hit.speed),
+      rNow: Number(hit.rNow) || 0
+    };
+  });
+  const inferredHits = hits.reduce((acc, hit) => { acc[hit.player]++; return acc; }, { a: 0, b: 0 });
+  const review = record.review || (record.vidUsed ? {
+    version: "motion-columns-v1-legacy", performedAt: null,
+    rejected: Number(record.vidRejected) || 0, analyzed: null
+  } : null);
+  return {
+    ...record,
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    measurementSpecVersion: record.measurementSpecVersion || "legacy-unknown",
+    settings: record.settings || { schemaVersion: 0, captured: false, values: {} },
+    playerLabels: { ...defaultPlayerLabels(), ...(record.playerLabels || {}) },
+    review, hits,
+    pHits: record.pHits || inferredHits,
+    qualityRejected: Number(record.qualityRejected) || Number(record.excluded) || 0,
+    excluded: Number(record.excluded) || 0,
+    aiRejected: Number(record.aiRejected) || 0
+  };
+}
+
 function db() {
   return new Promise((res, rej) => {
     if (_db) return res(_db);
-    const r = indexedDB.open("frescoData", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("sessions", { keyPath: "id" });
+    const r = indexedDB.open(DB_NAME, DB_VERSION);
+    r.onupgradeneeded = event => {
+      const database = r.result;
+      const store = database.objectStoreNames.contains("sessions")
+        ? r.transaction.objectStore("sessions")
+        : database.createObjectStore("sessions", { keyPath: "id" });
+      // Keep v1 records usable: add per-hit player, settings/review containers,
+      // and schema metadata without changing their IDs or timestamps.
+      if (event.oldVersion < DB_VERSION) {
+        const cursor = store.openCursor();
+        cursor.onsuccess = () => {
+          const current = cursor.result;
+          if (!current) return;
+          current.update(normalizeRecord(current.value));
+          current.continue();
+        };
+      }
+    };
     r.onsuccess = () => { _db = r.result; res(_db); };
     r.onerror = () => rej(r.error);
   });
 }
-async function saveRecord(fileName, duration) {
+
+function makeRecord(meta = {}) {
+  if (!curStats) return null;
   const ag = aggregate(curStats.hits, curFlip);
-  const rec = {
-    id: Date.now(), dateISO: new Date().toISOString(), fileName, duration: Math.round(duration || 0),
-    total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies, drops: Math.max(0, curStats.rallies - 1), excluded: curStats.excluded || 0, aiRejected: curStats.aiRejected || 0,
-    pHits: ag.pHits, avgA: ag.avgA, avgB: ag.avgB, avgAll: ag.avgAll, maxSpeed: ag.maxSpeed, hist: ag.hist, flip: curFlip,
-    hits: curStats.hits.map(h => ({ t: +h.t.toFixed(3), idx: h.idx, speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow }))
-  };
-  try { const d = await db(); await new Promise((res, rej) => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); loadHistory(); }
-  catch (_) { /* 保存失敗時も解析結果は表示継続 */ }
+  return normalizeRecord({
+    id: meta.id == null ? Date.now() : meta.id,
+    dateISO: meta.dateISO || new Date().toISOString(),
+    fileName: meta.fileName || "解析結果",
+    duration: Math.round(meta.duration || 0),
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    measurementSpecVersion: MEASUREMENT_SPEC.version,
+    settings: currentSettings(),
+    playerLabels: { a: playerName("a"), b: playerName("b") },
+    review: curStats.review || null,
+    total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies,
+    drops: Math.max(0, curStats.rallies - 1), excluded: curStats.excluded || 0,
+    qualityRejected: curStats.qualityRejected || 0, aiRejected: curStats.aiRejected || 0,
+    pHits: ag.pHits, avgA: ag.avgA, avgB: ag.avgB, avgAll: ag.avgAll,
+    maxSpeed: ag.maxSpeed, hist: ag.hist, flip: curFlip,
+    hits: curStats.hits.map(h => ({
+      t: +h.t.toFixed(3), idx: h.idx, player: h.player === "b" ? "b" : "a",
+      speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow
+    }))
+  });
 }
+
+async function saveRecord(fileName, duration, recordId = null, dateISO = null) {
+  const rec = makeRecord({ id: recordId, dateISO, fileName, duration });
+  if (!rec) return null;
+  currentRecordMeta = { id: rec.id, dateISO: rec.dateISO, fileName: rec.fileName, duration: rec.duration };
+  try {
+    const d = await db();
+    await new Promise((res, rej) => {
+      const tx = d.transaction("sessions", "readwrite");
+      tx.objectStore("sessions").put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+    loadHistory();
+  } catch (_) { /* 保存失敗時も解析結果とエクスポートは継続 */ }
+  return rec;
+}
+async function saveCurrentRecord() {
+  if (!curStats) return null;
+  return saveRecord(
+    currentRecordMeta.fileName || "解析結果", currentRecordMeta.duration || 0,
+    currentRecordMeta.id, currentRecordMeta.dateISO
+  );
+}
+
 async function loadHistory() {
   let recs = [];
-  try { const d = await db(); recs = await new Promise((res, rej) => { const req = d.transaction("sessions", "readonly").objectStore("sessions").getAll(); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
-  catch (_) {}
-  recs.sort((a, b) => b.id - a.id);
+  try {
+    const d = await db();
+    recs = await new Promise((res, rej) => {
+      const req = d.transaction("sessions", "readonly").objectStore("sessions").getAll();
+      req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error);
+    });
+  } catch (_) {}
+  recs = recs.map(normalizeRecord).sort((a, b) => b.id - a.id);
   const el = $("histList");
   if (!recs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">まだ記録がありません</div>'; return; }
   el.innerHTML = recs.map(r => {
     const d = new Date(r.dateISO), ds = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}</div><div class="meta">A${r.pHits.a} B${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
+    const reviewed = r.review ? " ・ 映像精査済" : "";
+    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}${reviewed}</div><div class="meta">${escapeHtml(r.playerLabels.a)}${r.pHits.a} ${escapeHtml(r.playerLabels.b)}${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
   }).join("");
   el.querySelectorAll(".rec").forEach(div => {
     const id = +div.dataset.id, r = recs.find(x => x.id === id);
@@ -1641,16 +2050,73 @@ async function loadHistory() {
     div.querySelector(".del").addEventListener("click", () => deleteRecord(id));
   });
 }
-function openRecord(r) {
-  curStats = { hits: r.hits.map(h => ({ t: h.t, idx: h.idx, player: h.idx % 2 === 0 ? "a" : "b", speed: h.speed, rNow: h.rNow })), rMax: r.rMax, rallies: r.rallies, total: r.total, excluded: r.excluded || 0, aiRejected: r.aiRejected || 0 };
-  curFlip = r.flip || false; renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
-  $("vidBtn").style.display = "none";   // 過去記録は動画がないため映像精査は不可
+function openRecord(raw) {
+  resetUploadAnalysis();
+  const r = normalizeRecord(raw);
+  if (r.settings && r.settings.captured !== false) applySettings(r.settings);
+  if (r.playerLabels) {
+    $("playerAName").value = r.playerLabels.a || "選手A";
+    $("playerBName").value = r.playerLabels.b || "選手B";
+  }
+  renderPlayers();
+  curStats = {
+    hits: r.hits, rMax: r.rMax, rallies: r.rallies, total: r.total,
+    excluded: r.excluded, qualityRejected: r.qualityRejected,
+    aiRejected: r.aiRejected, review: r.review || null
+  };
+  curFlip = Boolean(r.flip);
+  currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration };
+  renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
+  $("vidBtn").style.display = "none";   // 過去記録は動画がないため再精査は不可
 }
 async function deleteRecord(id) {
-  try { const d = await db(); await new Promise(res => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").delete(id); tx.oncomplete = res; }); } catch (_) {}
+  try {
+    const d = await db();
+    await new Promise(res => { const tx = d.transaction("sessions", "readwrite"); tx.objectStore("sessions").delete(id); tx.oncomplete = res; });
+  } catch (_) {}
+  if (currentRecordMeta.id === id) currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
   loadHistory();
 }
+
+function csvValue(value) {
+  const text = value == null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+function downloadText(filename, content, type) {
+  const blob = new Blob([content], { type: type + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+function exportCurrent(kind) {
+  const record = makeRecord(currentRecordMeta);
+  if (!record) { flashSub("先に動画を解析するか、記録を開いてください"); return; }
+  const stamp = (record.dateISO || new Date().toISOString()).replace(/[:.]/g, "-");
+  if (kind === "json") {
+    downloadText(`frescoball-${stamp}.json`, JSON.stringify(record, null, 2), "application/json");
+    return;
+  }
+  const header = ["record_id", "date", "file", "measurement_spec", "review_version", "time_s", "onset_index", "player", "player_name", "initial_kmh", "rally"];
+  const rows = record.hits.map(hit => [
+    record.id, record.dateISO, record.fileName, record.measurementSpecVersion,
+    record.review ? record.review.version : "", hit.t, hit.idx, hit.player,
+    record.playerLabels[hit.player] || hit.player, hit.speed, hit.rNow
+  ].map(csvValue).join(","));
+  downloadText(`frescoball-${stamp}.csv`, "\uFEFF" + [header.join(","), ...rows].join("\n"), "text/csv");
+}
+$("exportJsonBtn").addEventListener("click", () => exportCurrent("json"));
+$("exportCsvBtn").addEventListener("click", () => exportCurrent("csv"));
 loadHistory();
+
+// PWAのアプリシェルを保存。計測に必要な外部モデルは初回解析時に別途取得する。
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(err => {
+    console.warn("Service worker registration failed", err);
+  }));
+}
 
 </script>
 </body>

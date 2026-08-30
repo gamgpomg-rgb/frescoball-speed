@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-07-10",
+  "model": "quadratic-drag-distance",
+  "ballDiameterM": 0.057,
+  "ballMassKg": 0.04,
+  "dragCoefficient": 0.5,
+  "airDensityKgM3": 1.2,
+  "soundSpeedMps": 343.0,
+  "defaultCourtLengthM": 7.0,
+  "qualityGate": {
+    "minFlightSeconds": 0.2,
+    "maxFlightSeconds": 0.9,
+    "maxInitialSpeedKmh": 110.0
+  },
+  "nearMicrophone": {
+    "firstOnsetSideRequired": true,
+    "definition": "firstOnsetSide is the side of onset index 0 relative to the microphone.",
+    "correction": "For a near-to-far pair subtract distance/soundSpeed from observed interval; for a far-to-near pair add it."
+  }
+}

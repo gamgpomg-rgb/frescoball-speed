@@ -1,0 +1,4 @@
+.venv/
+.local-cert/
+__pycache__/
+*.py[cod]

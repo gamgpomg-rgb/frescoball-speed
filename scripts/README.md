@@ -1,42 +1,48 @@
-# フレスコボール球速検証スクリプト
+# Python解析スクリプト
 
-詳細は親フォルダの `20260613_フレスコボール球速測定_技術検証レポート_v1.md` を参照。
+最初に、親フォルダで隔離環境を作成します。
 
-## セットアップ
 ```bash
-pip install numpy scipy opencv-python
-brew install ffmpeg   # 音声解析で動画から音声を抜く場合に必要
+./scripts/setup_venv.sh
 ```
 
-## 撮影（iPhone）
-1. カメラ → スロー、設定>カメラ>スローモーション撮影 = **1080p/240fps**
-2. コート側面・中央付近に三脚固定。両選手が画角に入る位置
-3. ファイルは **AirDrop等で「ファイルとして」転送**（再エンコード回避）
+## 動画方式（手動打点、推奨）
 
-## 使い方
-
-### 動画方式（推奨・手動マーク）
 ```bash
-python video_speed.py rally.mov
-# j/l でフレーム送り、打点の瞬間に SPACE、q で終了 → 球速一覧と閾値カウントが出る
+.venv/bin/python scripts/video_speed.py rally.mov --fps 240
 ```
 
-### 音声方式（全自動）
+`j/l`で1フレーム、`J/L`で10フレーム移動し、SPACEで打点をマークします。`q`で終了すると、品質ゲートを通過した初速と閾値カウントを表示します。
+
+## 音声方式（自動）
+
 ```bash
-python audio_speed.py rally.mov --mic-pos center
-# 打音を自動検出してラリー全体の球速と 50/55/60... km/h 超え回数を集計
+.venv/bin/python scripts/audio_speed.py rally.mov --mic-pos center
 ```
 
-### 物理パラメータの確認・校正
-```bash
-python fresco_physics.py
-```
-公式球を実測したら `fresco_physics.py` 冒頭の `BALL_DIAMETER_M` / `BALL_MASS_KG` を更新。
-スピードガン併走テスト後は `CALIBRATED_V0_FACTOR` に実測係数を直接セットする
-（現状の理論値: 平均速×1.070 = 初速）。
+片側マイクでは、0番目の打音がどちら側かを明示します。
 
-## 最初の検証手順（Phase 0）
-1. 公式球の質量・直径をキッチンスケール＋ノギスで実測 → `fresco_physics.py` 更新
-2. 240fpsでラリーを1本撮影
-3. `video_speed.py` と `audio_speed.py` の両方で解析し、値が±1〜2km/hで一致するか確認
-4. 可能ならスピードガン or SpeedClockアプリ（$2.99）併走で絶対値を校正
+```bash
+.venv/bin/python scripts/audio_speed.py rally.mov --mic-pos near --first-onset-side near
+```
+
+`near` は「最初の打音がマイク近側」、`far` は遠側です。近側→遠側の観測間隔から伝搬時間を引き、次の遠側→近側では足すため、補正符号を推測で固定しません。
+
+## 校正と品質
+
+計算正本は親フォルダの `measurement-spec.json` です。既定では物理モデルを使い、実測校正値は次のように明示します。
+
+```bash
+.venv/bin/python scripts/video_speed.py rally.mov --calibration-factor 1.03
+```
+
+校正値の根拠がない場合はオプションを付けません。既定の品質ゲートは補正後0.20〜0.90秒、初速110km/h以下です。必要なら `--min-dt`、`--max-dt`、`--max-initial-kmh` で変更できます。
+
+## 依存診断・テスト
+
+```bash
+.venv/bin/python scripts/diagnose.py --strict
+./tests/run_tests.sh
+```
+
+動画から音声を抽出する時だけ `ffmpeg` が必要です（`brew install ffmpeg`）。

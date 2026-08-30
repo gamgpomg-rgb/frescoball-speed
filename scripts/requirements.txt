@@ -1,0 +1,5 @@
+# Runtime dependencies for the optional Python post-analysis tools.
+# Keep browser/PWA tooling dependency-free.
+numpy>=1.26,<3
+scipy>=1.11,<2
+opencv-python>=4.8,<5
