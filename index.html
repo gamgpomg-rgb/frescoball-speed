@@ -394,6 +394,22 @@
   border: 1px solid var(--line); background: rgba(255,255,255,.05); }
 .players2 .pc.a { box-shadow: inset 0 0 0 1px rgba(46,197,255,.35); }
 .players2 .pc.b { box-shadow: inset 0 0 0 1px rgba(255,46,126,.35); }
+  #speedButterfly { margin: 4px 0 14px; padding: 12px 12px 8px; border-radius: 12px; background: rgba(255,255,255,.04); }
+  #speedButterfly .sb-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  #speedButterfly .sb-head b { font-family: var(--num); font-size: 15px; letter-spacing: .06em; }
+  #speedButterfly .sb-head .sb-l { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #2EC5FF; }
+  #speedButterfly .sb-head .sb-r { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: var(--pink); }
+  .sb-row { display: grid; grid-template-columns: 30px 1fr 58px 1fr 30px; align-items: center; gap: 6px; margin: 3px 0; }
+  .sb-row .sb-band { font-family: var(--num); font-weight: 700; font-size: 13px; color: var(--muted); }
+  .sb-row .sb-band.right { text-align: right; }
+  .sb-row .sb-track { height: 14px; border-radius: 7px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .sb-row .sb-track .fill { height: 100%; border-radius: 7px; min-width: 0; }
+  .sb-row .sb-track.left .fill { background: linear-gradient(90deg,#2EC5FF,#16E6C3); }
+  .sb-row .sb-track.right { display: flex; justify-content: flex-end; }
+  .sb-row .sb-track.right .fill { background: linear-gradient(270deg,var(--pink),var(--orange)); }
+  .sb-row .sb-cnt { text-align: center; font-family: var(--num); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .sb-row .sb-cnt b { color: #fff; font-weight: 700; }
+  .sb-note { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
 .players2 .pc b { display: block; font-family: var(--num); font-size: 26px; color: var(--ink); }
 .players2 .pc span { font-size: 12px; color: var(--muted); }
 .players2 #dSwap { background: rgba(255,255,255,.08); border: 1px solid var(--line); color: var(--ink);
@@ -430,6 +446,11 @@
       <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
       <button id="dSwap" aria-label="A/B入替">⇄</button>
       <div class="pc b"><span id="dpBLabel">選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
+    </div>
+    <div id="speedButterfly" hidden>
+      <div class="sb-head"><span class="sb-l">LEFT PLAYER</span><b>球速分布</b><span class="sb-r">RIGHT PLAYER</span></div>
+      <div id="sbRows"></div>
+      <div id="sbNote" class="sb-note"></div>
     </div>
     <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
     <div style="display:flex;gap:8px;margin:2px 0 10px">
@@ -1847,7 +1868,33 @@ function renderDash() {
     + ((curStats.qualityRejected > curStats.excluded) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ 品質ゲートで ${curStats.qualityRejected} 件を速度集計から除外（短間隔・長間隔・上限超過）。打数には計上。</div>` : "")
     + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
     + (curStats.review ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">🎥 映像精査済み（${escapeHtml(curStats.review.version)}）：隣の組ほか ${curStats.review.rejected || 0} 件を除外、A/Bは左右の動きで判定。</div>` : "");
+  renderSpeedButterfly();
   return ag;
+}
+
+// --- 左右対称（バタフライ）の球速分布。左端=LEFT PLAYER(A)・右端=RIGHT PLAYER(B) ---
+function renderSpeedButterfly() {
+  const wrap = $("speedButterfly");
+  if (!curStats) { wrap.hidden = true; return; }
+  const speeds = RESULT.speedsByPlayer(curStats.hits, curFlip);
+  if (!speeds.all.length) { wrap.hidden = true; return; }
+  const left = RESULT.bandHistogram(speeds.a), right = RESULT.bandHistogram(speeds.b);
+  const rows = [{ label: "<50", l: left.under50, r: right.under50 }]
+    .concat(RESULT.JFBA_BANDS.map((band, i) => ({
+      label: String(band.min), l: left.bands[i].count, r: right.bands[i].count
+    })));
+  const mx = Math.max(1, ...rows.flatMap(row => [row.l, row.r]));
+  $("sbRows").innerHTML = rows.map(row => `<div class="sb-row">
+    <div class="sb-band">${row.label}</div>
+    <div class="sb-track left"><div class="fill" style="width:${row.l / mx * 100}%"></div></div>
+    <div class="sb-cnt"><b>${row.l}</b> / <b>${row.r}</b>球</div>
+    <div class="sb-track right"><div class="fill" style="width:${row.r / mx * 100}%"></div></div>
+    <div class="sb-band right">${row.label}</div>
+  </div>`).join("");
+  $("sbNote").textContent = curStats.review
+    ? "映像精査済みの左右判定に基づく分布です。速度は打ち出した側へ帰属しています。"
+    : "精査前のためA/B交互の仮割当です。「映像で精査」後は実際の左右判定になります。";
+  wrap.hidden = false;
 }
 
 // --- 再生に同期したライブ表示 ---
@@ -1982,11 +2029,13 @@ async function vidMotionPass(onProgress, shouldContinue) {
     const dev = a.map(v => Math.abs(v - med[c])).sort((x, y) => x - y);
     mad[c] = Math.max(dev.length ? dev[dev.length >> 1] : 0, 1e-6);
   }
-  const win = 0.15;
+  // 窓は非対称（前0.15s・後0.05s）。打者の振りはインパクト直前に集中し、
+  // 受け手は打たれた後に動き出すため、後ろ窓を削ると受け手の動きの混入が減る。
+  const winBefore = 0.15, winAfter = 0.05;
   const agg = curStats.hits.map(h => {
     assertAnalysisActive(shouldContinue);
     let excess = 0, leftE = 0, rightE = 0;
-    for (const s of samples) if (s.t >= h.t - win && s.t <= h.t + win) {
+    for (const s of samples) if (s.t >= h.t - winBefore && s.t <= h.t + winAfter) {
       for (let c = 0; c < B; c++) {
         const ex = (s.col[c] - med[c]) / mad[c];        // 正規化した超過モーション
         if (ex > 0) { excess += ex; if (c < B / 2) leftE += ex; else rightE += ex; }
@@ -2039,7 +2088,7 @@ $("vidBtn").addEventListener("click", async () => {
 
 // --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---
 const DB_NAME = "frescoData", DB_VERSION = 2, RECORD_SCHEMA_VERSION = 2;
-const VIDEO_REVIEW_VERSION = "motion-columns-v2-rally-alternate";
+const VIDEO_REVIEW_VERSION = "motion-columns-v3-prewindow";
 let _db = null;
 let currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
 
