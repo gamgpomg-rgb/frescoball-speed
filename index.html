@@ -453,10 +453,11 @@
       <div id="sbNote" class="sb-note"></div>
     </div>
     <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
-    <div style="display:flex;gap:8px;margin:2px 0 10px">
-      <button id="exportJsonBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">JSON出力</button>
-      <button id="resultCardBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">リザルトカード</button>
-      <button id="exportVideoBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">🎬 オーバーレイ動画</button>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 10px">
+      <button id="resultCardBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">リザルトカード</button>
+      <button id="exportVideoBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">🎬 オーバーレイ動画</button>
+      <button id="exportStoryBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">📱 ストーリーズ動画（60秒）</button>
+      <button id="exportJsonBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">JSON出力</button>
     </div>
     <h4>速度分布</h4>
     <div id="histo"></div>
@@ -2602,6 +2603,191 @@ async function exportOverlayVideo() {
   }
 }
 $("exportVideoBtn").addEventListener("click", exportOverlayVideo);
+
+// ===== ストーリーズ動画（9:16・最大60秒・音付き）。上=リザルト/中=動画/下=球速分布 =====
+/** 最長ラリーを中心にした切り出し窓 [start, end] を返す。動画が60秒以下なら全編。 */
+function storyHighlightWindow(durationSec, maxLen = 60) {
+  if (!curStats || !Number.isFinite(durationSec) || durationSec <= maxLen) return [0, durationSec || 0];
+  let peakEnd = 0, peakStart = 0, best = 0;
+  for (let i = 0; i < curStats.hits.length; i++) {
+    const hit = curStats.hits[i];
+    if (hit.rNow > best) {
+      best = hit.rNow; peakEnd = hit.t;
+      peakStart = curStats.hits[i - (hit.rNow - 1)] ? curStats.hits[i - (hit.rNow - 1)].t : hit.t;
+    }
+  }
+  const center = (peakStart + peakEnd) / 2;
+  const start = Math.max(0, Math.min(center - maxLen / 2, durationSec - maxLen));
+  return [start, start + maxLen];
+}
+
+function drawStoryChrome(g, W, H, videoY, videoH, stats, day, clipNote) {
+  // 背景（アプリのダークテーマ）
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#1b0f38"); bg.addColorStop(0.5, "#160E2E"); bg.addColorStop(1, "#230d2e");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.textBaseline = "alphabetic";
+  // ヘッダー
+  g.textAlign = "center"; g.fillStyle = "#fff";
+  g.font = "800 44px -apple-system, 'Helvetica Neue', sans-serif";
+  g.fillText("FRESCOBALL SPEED METER", W / 2, 88);
+  g.fillStyle = "#9aa3c5"; g.font = "600 26px -apple-system, 'Hiragino Sans', sans-serif";
+  // 切り抜きでも全体の計測時間が分かるよう「◯分の計測」を常に明記する
+  const durationLabel = stats.durationSec ? `${fmtTime(stats.durationSec)}の計測` : "";
+  g.fillText([`${day.getFullYear()}/${day.getMonth() + 1}/${day.getDate()}`, durationLabel, clipNote, "非公式計測"].filter(Boolean).join(" ・ "), W / 2, 132);
+  // 上段: リザルト4枚
+  const cells = [
+    ["総打数", String(stats.totalHits), "#FFD23F"],
+    ["Over50", `${stats.over50}球`, "#fff"],
+    ["最高速", stats.maxSpeed == null ? "--" : `${stats.maxSpeed.toFixed(0)}km/h`, "#16E6C3"],
+    ["最長ラリー", String(stats.maxRally), "#fff"]
+  ];
+  const cw = (W - 60 - 24 * 3) / 4;
+  cells.forEach(([label, value, color], i) => {
+    const x = 30 + i * (cw + 24);
+    g.fillStyle = "rgba(255,255,255,.06)";
+    if (g.roundRect) { g.beginPath(); g.roundRect(x, 168, cw, 150, 20); g.fill(); } else g.fillRect(x, 168, cw, 150);
+    g.fillStyle = "#9aa3c5"; g.font = "700 26px -apple-system, 'Hiragino Sans', sans-serif";
+    g.fillText(label, x + cw / 2, 218);
+    g.fillStyle = color; g.font = "800 52px -apple-system, 'Helvetica Neue', sans-serif";
+    g.fillText(value, x + cw / 2, 292);
+  });
+  // 下段: バタフライ球速分布
+  const speeds = RESULT.speedsByPlayer(curStats.hits, curFlip);
+  const left = RESULT.bandHistogram(speeds.a), right = RESULT.bandHistogram(speeds.b);
+  const rows = [{ label: "<50", l: left.under50, r: right.under50 }]
+    .concat(RESULT.JFBA_BANDS.map((band, i) => ({ label: String(band.min), l: left.bands[i].count, r: right.bands[i].count })));
+  const mx = Math.max(1, ...rows.flatMap(row => [row.l, row.r]));
+  const chartTop = videoY + videoH + 64;
+  g.font = "800 28px -apple-system, sans-serif";
+  g.fillStyle = "#2EC5FF"; g.textAlign = "left"; g.fillText("LEFT PLAYER", 40, chartTop - 18);
+  g.fillStyle = "#FF2E7E"; g.textAlign = "right"; g.fillText("RIGHT PLAYER", W - 40, chartTop - 18);
+  g.fillStyle = "#fff"; g.textAlign = "center";
+  g.font = "800 30px -apple-system, 'Hiragino Sans', sans-serif";
+  g.fillText("球速分布", W / 2, chartTop - 18);
+  const rowH = Math.min(44, (H - chartTop - 120) / rows.length);
+  const bandW = 64, cntW = 130, trackW = (W - 80 - bandW * 2 - cntW - 24 * 2) / 2;
+  rows.forEach((row, i) => {
+    const y = chartTop + i * rowH, cy = y + rowH * 0.62;
+    g.fillStyle = "#8a93b5"; g.font = "700 26px -apple-system, sans-serif";
+    g.textAlign = "left"; g.fillText(row.label, 40, cy);
+    g.textAlign = "right"; g.fillText(row.label, W - 40, cy);
+    const ltX = 40 + bandW, rtX = W - 40 - bandW - trackW;
+    g.fillStyle = "rgba(255,255,255,.07)";
+    g.fillRect(ltX, y + rowH * 0.22, trackW, rowH * 0.5);
+    g.fillRect(rtX, y + rowH * 0.22, trackW, rowH * 0.5);
+    const lw = row.l / mx * trackW, rw = row.r / mx * trackW;
+    const lg = g.createLinearGradient(ltX, 0, ltX + trackW, 0);
+    lg.addColorStop(0, "#2EC5FF"); lg.addColorStop(1, "#16E6C3");
+    g.fillStyle = lg; g.fillRect(ltX, y + rowH * 0.22, lw, rowH * 0.5);
+    const rg = g.createLinearGradient(rtX, 0, rtX + trackW, 0);
+    rg.addColorStop(0, "#FF7A18"); rg.addColorStop(1, "#FF2E7E");
+    g.fillStyle = rg; g.fillRect(rtX + trackW - rw, y + rowH * 0.22, rw, rowH * 0.5);
+    g.fillStyle = "#e8ebf7"; g.textAlign = "center"; g.font = "700 24px -apple-system, sans-serif";
+    g.fillText(`${row.l} / ${row.r}`, W / 2, cy);
+  });
+  // フッター
+  g.fillStyle = "#8a93b5"; g.textAlign = "center";
+  g.font = "600 26px -apple-system, sans-serif";
+  g.fillText("speed.giftn.co.jp", W / 2, H - 40);
+}
+
+let storyExporting = false;
+async function exportStoryVideo() {
+  if (!curStats) { flashSub("先に動画を解析してください"); return; }
+  const video = $("upVideo");
+  if (!video.currentSrc && !video.src) { flashSub("動画がありません（過去記録は映像なしのため書き出せません）"); return; }
+  if (storyExporting || overlayExporting) return;
+  const mime = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"]
+    .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+  if (!mime) { flashSub("この環境は動画の書き出しに未対応です"); return; }
+  storyExporting = true;
+  const btn = $("exportStoryBtn"); btn.disabled = true;
+  const wasTime = video.currentTime;
+  let recorder = null, tick = null, pumpActive = true;
+  const { audioCtx, source, speakerGain } = getUpVideoAudioGraph();
+  const dest = audioCtx.createMediaStreamDestination();
+  const onEnded = () => {};
+  try {
+    if (!video.videoWidth) await new Promise(res => video.addEventListener("loadedmetadata", res, { once: true }));
+    const [startT, endT] = storyHighlightWindow(video.duration);
+    const clipNote = (endT - startT) < (video.duration - 0.5) ? "ハイライト60秒" : "";
+    const W = 1080, H = 1920;
+    const videoH = Math.round(W * (video.videoHeight || 720) / (video.videoWidth || 1280));
+    const videoY = 372;
+    const record = makeRecord(currentRecordMeta) || { dateISO: new Date().toISOString(), hits: curStats.hits, total: curStats.total, rMax: curStats.rMax, drops: 0, duration: video.duration || 0 };
+    const stats = RESULT.resultCardStats(record);
+    const day = new Date(record.dateISO || Date.now());
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const g = canvas.getContext("2d");
+    source.connect(dest);
+    speakerGain.gain.value = 0;
+    const canvasStream = canvas.captureStream(30);
+    const mixed = new MediaStream([...canvasStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const chunks = [];
+    recorder = new MediaRecorder(mixed, { mimeType: mime, videoBitsPerSecond: 9000000 });
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { recorder.onstop = res; });
+    const pump = () => {
+      if (!pumpActive) return;
+      drawStoryChrome(g, W, H, videoY, videoH, stats, day, clipNote);
+      g.drawImage(video, 0, videoY, W, videoH);
+      g.save(); g.translate(0, videoY);
+      drawPlaybackOverlay(g, W, videoH, video.currentTime);
+      g.restore();
+      if ("requestVideoFrameCallback" in video) video.requestVideoFrameCallback(pump);
+      else requestAnimationFrame(pump);
+    };
+    video.pause();
+    video.currentTime = startT;
+    await new Promise(res => video.addEventListener("seeked", res, { once: true }));
+    video.muted = false; video.volume = 1;
+    await audioCtx.resume();
+    recorder.start(1000);
+    pump();
+    tick = setInterval(() => {
+      const total = Math.max(1, endT - startT);
+      const pct = Math.min(99, Math.round((video.currentTime - startT) / total * 100));
+      btn.textContent = `書き出し中… ${pct}%（実時間）`;
+    }, 500);
+    await video.play();
+    await new Promise(res => {
+      const onTime = () => { if (video.currentTime >= endT - 0.05 || video.ended) { cleanup(); res(); } };
+      const cleanup = () => { video.removeEventListener("timeupdate", onTime); video.removeEventListener("ended", onTime); };
+      video.addEventListener("timeupdate", onTime);
+      video.addEventListener("ended", onTime);
+    });
+    video.pause();
+    pumpActive = false;
+    clearInterval(tick); tick = null;
+    recorder.stop();
+    await stopped;
+    const blob = new Blob(chunks, { type: mime.split(";")[0] });
+    const ext = mime.includes("mp4") ? "mp4" : "webm";
+    const file = new File([blob], `frescoball-story-${Date.now()}.${ext}`, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Frescoball Speed Meter" }); }
+      catch (_) { downloadBlob(blob, file.name); }
+    } else {
+      downloadBlob(blob, file.name);
+    }
+    flashSub(`ストーリーズ動画を書き出しました（${Math.round(endT - startT)}秒・${ext}）`);
+  } catch (err) {
+    console.warn("story export", err);
+    flashSub("書き出しに失敗しました: " + (err && err.message || err));
+  } finally {
+    storyExporting = false;
+    pumpActive = false;
+    if (tick) clearInterval(tick);
+    try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch (_) {}
+    try { source.disconnect(dest); } catch (_) {}
+    speakerGain.gain.value = 1;
+    btn.disabled = false; btn.textContent = "📱 ストーリーズ動画（60秒）";
+    try { video.pause(); video.currentTime = wasTime; } catch (_) {}
+  }
+}
+$("exportStoryBtn").addEventListener("click", exportStoryVideo);
 loadHistory();
 
 // PWAのアプリシェルを保存。計測に必要な外部モデルは初回解析時に別途取得する。
