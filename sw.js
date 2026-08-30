@@ -1,6 +1,6 @@
 /* Frescoball Speed Meter application-shell cache. */
 const CACHE_PREFIX = "frescoball-speed-shell-";
-const CACHE_NAME = "frescoball-speed-shell-v4";
+const CACHE_NAME = "frescoball-speed-shell-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -27,7 +27,9 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(caches.open(CACHE_NAME).then(async cache => {
     const cached = await cache.match(request);
-    const refresh = fetch(request).then(async response => {
+    // HTTPキャッシュのヒューリスティクス（Cache-Control無しの静的配信）で古い本文を
+    // 掴んだままSWキャッシュを「更新」してしまうのを防ぐため、常にネットワークから取る。
+    const refresh = fetch(request, { cache: "no-store" }).then(async response => {
       if (response && response.ok) await cache.put(request, response.clone());
       return response;
     }).catch(error => { if (cached) return cached; throw error; });

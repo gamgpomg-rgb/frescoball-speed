@@ -241,7 +241,7 @@
 </header>
 
 <div id="browserNotice" hidden style="margin:8px 0 12px;padding:10px 14px;border:1px solid #e0a000;background:#fff7e0;color:#5a4500;font-size:13px;line-height:1.7;border-radius:8px">
-  このアプリは <b>iPhone / iPad の Safari</b> での利用を前提にしています。いまのブラウザではマイク計測・動画解析が正しく動かない可能性があります。Safariでこのページを開き直してください（LINEやInstagram等のアプリ内ブラウザは不可）。
+  推奨ブラウザ: <b>iPhone / iPad は Safari</b>、<b>Android は Chrome</b> です。いまのブラウザ（アプリ内ブラウザ等）ではマイク計測・動画解析が動かない可能性があるため、推奨ブラウザでこのページを開き直してください。
 </div>
 <script>
 // Safari以外（iOSのアプリ内ブラウザ・Chrome等）では注意書きを表示する。
@@ -249,8 +249,10 @@
 (function(){
   var ua = navigator.userAgent;
   var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  var isSafari = /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Edg\/|OPR\/|Line\/|Instagram|FBAN|FBAV/.test(ua);
-  if (!isSafari || (!isIOS && !/Macintosh/.test(ua))) {
+  var inApp = /Line\/|Instagram|FBAN|FBAV|Twitter|MicroMessenger/.test(ua);
+  var iosNonSafari = isIOS && /CriOS|FxiOS|EdgiOS|GSA\//.test(ua);
+  // iOSはSafari、AndroidはChrome系で動く想定。警告はアプリ内ブラウザとiOSの別ブラウザだけに出す。
+  if (inApp || iosNonSafari) {
     var el = document.getElementById("browserNotice");
     if (el) el.hidden = false;
   }
@@ -258,9 +260,9 @@
 </script>
 
 <div id="modeTabs">
+  <button id="tabUp">動画解析</button>
   <button id="tabNum" class="active">数値モード</button>
   <button id="tabCam">カメラモード</button>
-  <button id="tabUp">動画解析</button>
 </div>
 
 <!-- ===== 数値モード ===== -->
@@ -302,14 +304,6 @@
 
   <div id="setSummary" hidden></div>
 
-  <div id="resultCardWrap" hidden style="margin:14px 0">
-    <canvas id="resultCanvas" width="1200" height="675" style="width:100%;height:auto;border-radius:14px;display:block"></canvas>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button id="resultShareBtn" style="flex:1;margin:0">画像をシェア</button>
-      <button id="resultSaveBtn" class="ghost" style="flex:1;margin:0">画像を保存</button>
-      <button id="resultCloseBtn" class="ghost" style="margin:0">閉じる</button>
-    </div>
-  </div>
 
   <button id="startBtn">計測開始</button>
   <button id="resumeBtn" class="ghost" hidden>前回の集計を再開</button>
@@ -385,6 +379,11 @@
 #upLive .ul-meta { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 12px;
   padding: 6px 10px; font-size: 13px; backdrop-filter: blur(6px); }
 #upLive .ul-meta b { font-family: var(--num); color: var(--yellow); font-size: 17px; }
+  .ul-p { position: absolute; bottom: 46px; text-align: center; line-height: 1.05; pointer-events: none;
+    text-shadow: 0 1px 6px rgba(0,0,0,.75); }
+  .ul-p.left { left: 12px; } .ul-p.right { right: 12px; }
+  .ul-p small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #fff; opacity: .85; }
+  .ul-p span { font-family: var(--num); font-weight: 800; font-size: 30px; color: #fff; }
 .dashGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .dashGrid .cell { background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 8px; text-align: center; }
@@ -422,6 +421,8 @@
       <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
       <div class="ul-meta">ラリー <b id="ulR">0</b> ・ 打数 <b id="ulH">0</b></div>
     </div>
+    <div class="ul-p left"><small>LEFT PLAYER</small><span id="ulPA">0</span></div>
+    <div class="ul-p right"><small>RIGHT PLAYER</small><span id="ulPB">0</span></div>
   </div>
   <div id="upDash" hidden>
     <div class="dashGrid" id="dashSummary"></div>
@@ -433,9 +434,8 @@
     <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
     <div style="display:flex;gap:8px;margin:2px 0 10px">
       <button id="exportJsonBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">JSON出力</button>
-      <button id="exportCsvBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">CSV出力</button>
-      <button id="jfbaCsvBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">公式帯CSV</button>
       <button id="resultCardBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">リザルトカード</button>
+      <button id="exportVideoBtn" class="ghost" style="flex:1;margin:0;border-radius:12px;padding:10px">🎬 オーバーレイ動画</button>
     </div>
     <h4>速度分布</h4>
     <div id="histo"></div>
@@ -448,6 +448,17 @@
 </div><!-- /.wrap -->
 
 <!-- ===== カメラHUDモード ===== -->
+<div id="resultCardHost">
+  <div id="resultCardWrap" hidden style="margin:14px 0">
+    <canvas id="resultCanvas" width="1200" height="675" style="width:100%;height:auto;border-radius:14px;display:block"></canvas>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="resultShareBtn" style="flex:1;margin:0">画像をシェア</button>
+      <button id="resultSaveBtn" class="ghost" style="flex:1;margin:0">画像を保存</button>
+      <button id="resultCloseBtn" class="ghost" style="margin:0">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="camWrap">
   <video id="camVideo" playsinline muted autoplay></video>
   <div id="hud">
@@ -1403,6 +1414,9 @@ $("tabUp").addEventListener("click", () => {
   $("upView").classList.add("show");
   $("tabUp").classList.add("active"); $("tabNum").classList.remove("active"); $("tabCam").classList.remove("active");
 });
+// 一番使う動画解析を初期表示にする（数値モードへはタブで戻れる）。
+// ハンドラが参照する後方定義（camStream等）の初期化後に呼ぶため、スクリプト評価後へ遅延。
+setTimeout(() => $("tabUp").click(), 0);
 
 /* ============================================================================
    動画解析モード：アップロード動画の音声トラックを“オフライン再解析”し、
@@ -1847,6 +1861,14 @@ function syncLive() {
   $("ulV").textContent = (cur && (t - cur.t) < 1.2) ? cur.speed.toFixed(1) : "--";
   $("ulR").textContent = lastH ? lastH.rNow : 0;
   $("ulH").textContent = hitsTo;
+  let pa = 0, pb = 0;
+  for (const h of curStats.hits) {
+    if (h.t > t) break;
+    const pl = curFlip ? (h.player === "a" ? "b" : "a") : h.player;
+    if (pl === "a") pa++; else pb++;
+  }
+  $("ulPA").textContent = pa;
+  $("ulPB").textContent = pb;
 }
 
 // --- ファイル選択→解析 ---
@@ -2216,8 +2238,7 @@ function exportCurrent(kind) {
   downloadText(`frescoball-${stamp}.csv`, "\uFEFF" + [header.join(","), ...rows].join("\n"), "text/csv");
 }
 $("exportJsonBtn").addEventListener("click", () => exportCurrent("json"));
-$("exportCsvBtn").addEventListener("click", () => exportCurrent("csv"));
-$("jfbaCsvBtn").addEventListener("click", () => exportCurrent("jfba"));
+// CSV系のボタンは要望により非表示（exportCurrent("csv"/"jfba") は温存）。
 $("resultCardBtn").addEventListener("click", () => {
   const record = makeRecord(currentRecordMeta);
   if (!record) { flashSub("先に動画を解析するか、記録を開いてください"); return; }
@@ -2370,6 +2391,152 @@ $("resultShareBtn").addEventListener("click", async () => {
   flashSub("この環境は共有シートに未対応のため「画像を保存」を使ってください");
 });
 $("resultCloseBtn").addEventListener("click", () => { $("resultCardWrap").hidden = true; });
+
+// ===== オーバーレイ付き動画の書き出し（実時間・音声付き） =====
+// 音声は MediaElementSource で取り出す。要素の音声経路は一度作ると恒久的に
+// WebAudio 経由になるため、シングルトンで保持しスピーカー経路も常設する。
+let upAudioGraph = null;
+function getUpVideoAudioGraph() {
+  if (upAudioGraph) return upAudioGraph;
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaElementSource($("upVideo"));
+  const speakerGain = audioCtx.createGain();
+  source.connect(speakerGain); speakerGain.connect(audioCtx.destination);
+  upAudioGraph = { audioCtx, source, speakerGain };
+  return upAudioGraph;
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+/** 再生オーバーレイと同じ内容をキャンバスへ描く（速度/ラリー/打数/左右プレイヤー打数）。 */
+function drawPlaybackOverlay(g, w, h, t) {
+  if (!curStats) return;
+  let cur = null, hitsTo = 0, lastH = null, pa = 0, pb = 0;
+  for (const hit of curStats.hits) {
+    if (hit.t > t) break;
+    hitsTo++; lastH = hit; if (hit.speed != null) cur = hit;
+    const pl = curFlip ? (hit.player === "a" ? "b" : "a") : hit.player;
+    if (pl === "a") pa++; else pb++;
+  }
+  const u = w / 1280; // 基準スケール
+  g.save();
+  g.textBaseline = "alphabetic";
+  // 左上: 速度（文字だけ・ティール）
+  g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 8 * u;
+  g.fillStyle = "#16E6C3"; g.textAlign = "left";
+  g.font = `800 ${Math.round(64 * u)}px -apple-system, 'Helvetica Neue', sans-serif`;
+  const speedText = (cur && (t - cur.t) < 1.2) ? cur.speed.toFixed(1) : "--";
+  const speedWidth = g.measureText(speedText).width;
+  g.fillText(speedText, 24 * u, 78 * u);
+  g.font = `700 ${Math.round(24 * u)}px -apple-system, sans-serif`;
+  g.fillText(" km/h", 24 * u + speedWidth, 78 * u);
+  // 右上: ラリー・打数（黒のピル）
+  const meta = `ラリー ${lastH ? lastH.rNow : 0} ・ 打数 ${hitsTo}`;
+  g.font = `700 ${Math.round(26 * u)}px -apple-system, 'Hiragino Sans', sans-serif`;
+  const mw = g.measureText(meta).width + 44 * u;
+  g.shadowBlur = 0;
+  g.fillStyle = "rgba(8,6,24,.55)";
+  const rx = w - mw - 20 * u, ry = 26 * u, rh = 52 * u, rr = 14 * u;
+  if (g.roundRect) { g.beginPath(); g.roundRect(rx, ry, mw, rh, rr); g.fill(); }
+  else g.fillRect(rx, ry, mw, rh);
+  g.fillStyle = "#ffd93d"; g.textAlign = "center";
+  g.fillText(meta, rx + mw / 2, ry + rh * 0.68);
+  // 左下/右下: プレイヤー打数（文字だけ）
+  const drawPlayer = (x, align, label, count) => {
+    g.textAlign = align;
+    g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 8 * u;
+    g.fillStyle = "rgba(255,255,255,.88)";
+    g.font = `800 ${Math.round(17 * u)}px -apple-system, sans-serif`;
+    g.fillText(label, x, h - 74 * u);
+    g.fillStyle = "#fff";
+    g.font = `800 ${Math.round(48 * u)}px -apple-system, 'Helvetica Neue', sans-serif`;
+    g.fillText(String(count), x, h - 26 * u);
+  };
+  drawPlayer(26 * u, "left", "LEFT PLAYER", pa);
+  drawPlayer(w - 26 * u, "right", "RIGHT PLAYER", pb);
+  g.restore();
+}
+let overlayExporting = false;
+async function exportOverlayVideo() {
+  if (!curStats) { flashSub("先に動画を解析してください"); return; }
+  const video = $("upVideo");
+  if (!video.currentSrc && !video.src) { flashSub("動画がありません（過去記録は映像なしのため書き出せません）"); return; }
+  if (overlayExporting) return;
+  const mime = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"]
+    .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+  if (!mime) { flashSub("この環境は動画の書き出しに未対応です"); return; }
+  overlayExporting = true;
+  const btn = $("exportVideoBtn"); btn.disabled = true;
+  const wasTime = video.currentTime;
+  let recorder = null, tick = null, pumpActive = true;
+  const { audioCtx, source, speakerGain } = getUpVideoAudioGraph();
+  const dest = audioCtx.createMediaStreamDestination();
+  try {
+    if (!video.videoWidth) await new Promise(res => video.addEventListener("loadedmetadata", res, { once: true }));
+    const scale = Math.min(1, 1280 / (video.videoWidth || 1280));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round((video.videoWidth || 1280) * scale);
+    canvas.height = Math.round((video.videoHeight || 720) * scale);
+    const g = canvas.getContext("2d");
+    source.connect(dest);
+    speakerGain.gain.value = 0; // 書き出し中はスピーカーへ流さない（録音には入る）
+    const canvasStream = canvas.captureStream(30);
+    const mixed = new MediaStream([...canvasStream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const chunks = [];
+    recorder = new MediaRecorder(mixed, { mimeType: mime, videoBitsPerSecond: 8000000 });
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(res => { recorder.onstop = res; });
+    const pump = () => {
+      if (!pumpActive) return;
+      g.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawPlaybackOverlay(g, canvas.width, canvas.height, video.currentTime);
+      if ("requestVideoFrameCallback" in video) video.requestVideoFrameCallback(pump);
+      else requestAnimationFrame(pump);
+    };
+    video.pause();
+    video.currentTime = 0;
+    await new Promise(res => video.addEventListener("seeked", res, { once: true }));
+    video.muted = false; video.volume = 1;
+    await audioCtx.resume();
+    recorder.start(1000);
+    pump();
+    tick = setInterval(() => {
+      const pct = video.duration ? Math.min(99, Math.round(video.currentTime / video.duration * 100)) : 0;
+      btn.textContent = `書き出し中… ${pct}%（実時間・画面はこのまま）`;
+    }, 500);
+    await video.play();
+    await new Promise(res => video.addEventListener("ended", res, { once: true }));
+    pumpActive = false;
+    clearInterval(tick); tick = null;
+    recorder.stop();
+    await stopped;
+    const blob = new Blob(chunks, { type: mime.split(";")[0] });
+    const ext = mime.includes("mp4") ? "mp4" : "webm";
+    const file = new File([blob], `frescoball-overlay-${Date.now()}.${ext}`, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Frescoball Speed Meter" }); }
+      catch (_) { downloadBlob(blob, file.name); }
+    } else {
+      downloadBlob(blob, file.name);
+    }
+    flashSub(`オーバーレイ動画を書き出しました（${ext}）`);
+  } catch (err) {
+    console.warn("overlay export", err);
+    flashSub("書き出しに失敗しました: " + (err && err.message || err));
+  } finally {
+    overlayExporting = false;
+    pumpActive = false;
+    if (tick) clearInterval(tick);
+    try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch (_) {}
+    try { source.disconnect(dest); } catch (_) {}
+    speakerGain.gain.value = 1;
+    btn.disabled = false; btn.textContent = "🎬 オーバーレイ動画";
+    try { video.pause(); video.currentTime = wasTime; } catch (_) {}
+  }
+}
+$("exportVideoBtn").addEventListener("click", exportOverlayVideo);
 loadHistory();
 
 // PWAのアプリシェルを保存。計測に必要な外部モデルは初回解析時に別途取得する。
