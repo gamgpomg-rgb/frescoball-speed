@@ -1972,25 +1972,41 @@ async function vidMotionPass(onProgress, shouldContinue) {
   if (!v || !v.src || !v.duration || isNaN(v.duration)) throw new Error("この記録には動画がありません（再アップロードが必要）");
   const B = VID_COLS, samples = await buildMotionTimeline(v, onProgress, shouldContinue);
   if (!samples.length) throw new Error("映像フレームを取得できませんでした");
-  const med = new Float64Array(B);                       // 列ごとの背景ベースライン（中央値）
-  for (let c = 0; c < B; c++) { const a = samples.map(s => s.col[c]).sort((x, y) => x - y); med[c] = a.length ? a[a.length >> 1] : 0; }
+  // 列ごとの背景ベースライン（中央値）と散らばり（MAD）。
+  // MADで正規化することで、カメラに近く大きく写る選手のピクセル変化量が
+  // 遠い選手を常に上回ってしまう「近接バイアス」を抑える（v1の317対14問題）。
+  const med = new Float64Array(B), mad = new Float64Array(B);
+  for (let c = 0; c < B; c++) {
+    const a = samples.map(s => s.col[c]).sort((x, y) => x - y);
+    med[c] = a.length ? a[a.length >> 1] : 0;
+    const dev = a.map(v => Math.abs(v - med[c])).sort((x, y) => x - y);
+    mad[c] = Math.max(dev.length ? dev[dev.length >> 1] : 0, 1e-6);
+  }
   const win = 0.15;
   const agg = curStats.hits.map(h => {
     assertAnalysisActive(shouldContinue);
-    let excess = 0, bestEx = -Infinity, bestC = 0;
+    let excess = 0, leftE = 0, rightE = 0;
     for (const s of samples) if (s.t >= h.t - win && s.t <= h.t + win) {
-      for (let c = 0; c < B; c++) { const ex = s.col[c] - med[c]; if (ex > 0) excess += ex; if (ex > bestEx) { bestEx = ex; bestC = c; } }
+      for (let c = 0; c < B; c++) {
+        const ex = (s.col[c] - med[c]) / mad[c];        // 正規化した超過モーション
+        if (ex > 0) { excess += ex; if (c < B / 2) leftE += ex; else rightE += ex; }
+      }
     }
-    return { t: h.t, excess, bestC };
+    return { t: h.t, excess, evidence: rightE - leftE }; // 正=右(B)・負=左(A)・絶対値=信頼度
   });
   const tot = agg.map(m => m.excess).slice().sort((a, b) => a - b);
   const median = tot.length ? tot[tot.length >> 1] : 0;
   const thr = median * 0.2;     // 超過モーションが中央値の20%未満＝画角内に動きなし＝隣の組
-  const kept = []; let rejected = 0;
+  const keptItems = []; let rejected = 0;
   for (const m of agg) {
     if (m.excess < thr) { rejected++; continue; }
-    kept.push({ t: m.t, player: m.bestC < B / 2 ? "a" : "b" });   // ピーク位置が左=A/右=B
+    keptItems.push({ t: m.t, evidence: m.evidence });
   }
+  // フレスコボールはラリー内で必ず交互に打つ。1打ごとの独立判定はやめ、
+  // ラリー単位で「開始側」だけを証拠の重み付き多数決で決めて交互に割り当てる。
+  const gap = parseFloat($("rallyGap").value) || 2.5;
+  const players = RESULT.alternateByRallyVote(keptItems, gap);
+  const kept = keptItems.map((item, index) => ({ t: item.t, player: players[index] }));
   return { kept, rejected, analyzed: agg.length };
 }
 $("vidBtn").addEventListener("click", async () => {
@@ -2023,7 +2039,7 @@ $("vidBtn").addEventListener("click", async () => {
 
 // --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---
 const DB_NAME = "frescoData", DB_VERSION = 2, RECORD_SCHEMA_VERSION = 2;
-const VIDEO_REVIEW_VERSION = "motion-columns-v1";
+const VIDEO_REVIEW_VERSION = "motion-columns-v2-rally-alternate";
 let _db = null;
 let currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
 

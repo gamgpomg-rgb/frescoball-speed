@@ -128,10 +128,41 @@
     };
   }
 
+  /**
+   * ラリー単位の交互割当。フレスコボールはラリー内で必ず交互に打つため、
+   * 1打ごとの左右証拠（evidence>0=右/"b"、<0=左/"a"、絶対値=信頼度）を
+   * ラリーごとに重み付き多数決して「開始側」だけを決め、あとは交互に割り当てる。
+   * 個々の誤判定（近い選手の動きが大きい等）は多数決で吸収される。
+   * items: [{t, evidence}]（時刻昇順） → ["a"|"b", ...]
+   */
+  function alternateByRallyVote(items, gapSeconds) {
+    const gap = Number(gapSeconds) > 0 ? Number(gapSeconds) : 2.5;
+    const players = new Array((items || []).length);
+    let rallyStart = 0;
+    const flushRally = (end) => {
+      // 開始側の仮説2つをスコアリング: 打index偶奇で期待側が決まる
+      let scoreStartA = 0; // 開始"a"なら偶数番目=a(期待evidence負)・奇数番目=b(期待evidence正)
+      for (let i = rallyStart; i < end; i++) {
+        const evidence = Number(items[i].evidence) || 0;
+        const expectB = (i - rallyStart) % 2 === 1;
+        scoreStartA += expectB ? evidence : -evidence;
+      }
+      const startPlayer = scoreStartA >= 0 ? "a" : "b";
+      for (let i = rallyStart; i < end; i++) {
+        const even = (i - rallyStart) % 2 === 0;
+        players[i] = even ? startPlayer : (startPlayer === "a" ? "b" : "a");
+      }
+    };
+    for (let i = 1; i <= (items || []).length; i++) {
+      if (i === items.length || items[i].t - items[i - 1].t > gap) { flushRally(i); rallyStart = i; }
+    }
+    return players;
+  }
+
   /** liveログの保持期限（days日前のUTC ISO）。 */
   function retentionCutoffISO(nowMs, days) {
     return new Date(nowMs - days * 24 * 60 * 60 * 1000).toISOString();
   }
 
-  return { JFBA_BANDS, bandIndex, bandHistogram, comboPeak, speedsByPlayer, jfbaSummaryRows, resultCardStats, retentionCutoffISO };
+  return { JFBA_BANDS, bandIndex, bandHistogram, comboPeak, speedsByPlayer, jfbaSummaryRows, resultCardStats, alternateByRallyVote, retentionCutoffISO };
 });

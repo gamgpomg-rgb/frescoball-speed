@@ -73,6 +73,26 @@ assert.equal(R.comboPeak([]), 0);
   assert.equal(stats.drops, 1);
 }
 
+// ラリー多数決の交互割当: 誤判定込みの証拠でも多数決で正しい開始側に揃う
+{
+  // ラリー1: 実際は a開始（証拠は1打だけ誤って左に強く振れている）
+  // ラリー2: b開始
+  const items = [
+    { t: 1.0, evidence: -3 },  // a
+    { t: 1.5, evidence: +2 },  // b
+    { t: 2.0, evidence: +5 },  // a のはずが誤検出で右に振れた例
+    { t: 2.5, evidence: +4 },  // b
+    { t: 9.0, evidence: +6 },  // 新ラリー: b開始
+    { t: 9.5, evidence: -2 }   // a
+  ];
+  const players = R.alternateByRallyVote(items, 2.5);
+  // ラリー1のスコア: 開始a仮説 = -(-3)+(+2)-(+5)+(+4) = 4 > 0 → a開始
+  assert.deepEqual(players.slice(0, 4), ["a", "b", "a", "b"]);
+  assert.deepEqual(players.slice(4), ["b", "a"]);
+  // 交互性が常に保たれる（割当が偏らない）
+  for (let i = 1; i < 4; i++) assert.notEqual(players[i], players[i - 1]);
+}
+
 // 保持期限
 assert.equal(R.retentionCutoffISO(Date.UTC(2026, 7, 31), 30), "2026-08-01T00:00:00.000Z");
 
