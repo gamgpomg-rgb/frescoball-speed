@@ -456,6 +456,7 @@
     <div id="materialOut" style="margin:2px 0 10px;padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
       <div style="font-family:var(--num);font-size:15px;letter-spacing:.06em;margin-bottom:8px">📤 素材出力（SNSシェア）</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">「映像で精査」後に出力すると左右の数字が正確になります。書き出し後に開く共有シートで<b>「画像を保存」「ビデオを保存」</b>を選ぶと写真アプリに入ります（インスタへ直接共有も可）。</div>
+      <div id="noVideoNote" hidden style="font-size:11px;color:#ffb84d;margin-bottom:8px">この記録には動画が保存されていないため、動画系の出力は使えません（リザルトカードとJSONは可）。</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         <button id="exportStoryBtn" style="flex:1 1 45%;margin:0;border-radius:12px;padding:12px">📱 ストーリーズ動画<br><small style="font-weight:400">縦9:16・最大60秒・音付き</small></button>
         <button id="exportStoryImgBtn" style="flex:1 1 45%;margin:0;border-radius:12px;padding:12px">🖼 ストーリーズ画像<br><small style="font-weight:400">縦9:16・いま表示中のシーン</small></button>
@@ -475,7 +476,7 @@
 </div><!-- /.wrap -->
 
 <!-- ===== カメラHUDモード ===== -->
-<div id="resultCardHost">
+<div id="resultCardHost" style="padding-bottom:calc(56px + env(safe-area-inset-bottom))">
   <div id="resultCardWrap" hidden style="margin:14px 0">
     <canvas id="resultCanvas" width="1200" height="675" style="width:100%;height:auto;border-radius:14px;display:block"></canvas>
     <div style="display:flex;gap:8px;margin-top:8px">
@@ -1097,7 +1098,22 @@ function updateRestVisibility() {
   $("restBtn").hidden = !show;
   $("hudRest").hidden = !show;
 }
-function flashSub(msg) { hudState.sub = msg; $("hSub").textContent = msg; statusEl.textContent = msg; }
+let toastTimer = null;
+function flashSub(msg) {
+  hudState.sub = msg; $("hSub").textContent = msg; statusEl.textContent = msg;
+  // 動画解析タブでは #status が隠れているため、画面下のトーストでも必ず見せる
+  let toast = document.getElementById("appToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "appToast";
+    toast.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));max-width:88vw;z-index:200;background:rgba(10,8,30,.94);color:#fff;font-size:13px;line-height:1.6;padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.18);box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;transition:opacity .25s";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = "1";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.style.opacity = "0"; }, 3200);
+}
 
 // セット（試合タイマー）ボタンを数値モード・HUDで同期。停止系の表記重複を防ぐ
 function setSetButtons(running) {
@@ -1928,6 +1944,16 @@ function syncLive() {
   $("ulPB").textContent = pb;
 }
 
+// 動画の有無で動画系の出力ボタンを切り替える（無反応に見える状態を作らない）
+function setVideoExportAvailability(available) {
+  for (const id of ["exportStoryBtn", "exportStoryImgBtn", "exportVideoBtn"]) {
+    const btn = $(id);
+    btn.disabled = !available;
+    btn.style.opacity = available ? "" : ".45";
+  }
+  $("noVideoNote").hidden = available;
+}
+
 // --- ファイル選択→解析 ---
 $("upFile").addEventListener("change", async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
@@ -1936,6 +1962,7 @@ $("upFile").addEventListener("change", async e => {
   try {
     uploadObjectUrl = URL.createObjectURL(f);
     $("upVideo").src = uploadObjectUrl; $("upStage").hidden = false;
+    setVideoExportAvailability(true);
     const { onsets, aiRejected } = await analyzeFile(f, p => {
       if (generation !== uploadAnalysisGeneration) return;
       const el = $("upPct"); if (el) el.textContent = Math.round(p * 100);
@@ -2273,6 +2300,7 @@ function openRecord(raw) {
   currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration };
   renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
   $("vidBtn").style.display = "none";   // 過去記録は動画がないため再精査は不可
+  setVideoExportAvailability(false);
 }
 async function deleteRecord(id) {
   try {
@@ -2446,9 +2474,15 @@ function drawResultCard(record) {
   ctx2.fillText(`${day.getFullYear()}/${day.getMonth() + 1}/${day.getDate()}  speed.giftn.co.jp`, W / 2, H - 132);
 }
 function showResultCard(record) {
-  try { drawResultCard(record); } catch (err) { console.warn("result card", err); return; }
-  $("resultCardWrap").hidden = false;
-  $("resultCardWrap").scrollIntoView({ behavior: "smooth", block: "center" });
+  try { drawResultCard(record); } catch (err) { console.warn("result card", err); flashSub("リザルトカードの生成に失敗しました"); return; }
+  const wrap = $("resultCardWrap");
+  // 動画解析タブなら素材出力欄の直後、それ以外は共通ホストへ（押した場所のすぐ近くに出す）
+  const material = $("materialOut");
+  const host = ($("upView").classList.contains("show") && material) ? material.parentElement : $("resultCardHost");
+  const anchor = ($("upView").classList.contains("show") && material) ? material.nextSibling : null;
+  if (wrap.parentElement !== host || anchor) host.insertBefore(wrap, anchor);
+  wrap.hidden = false;
+  setTimeout(() => { try { wrap.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (_) { wrap.scrollIntoView(); } }, 60);
 }
 async function resultCardBlob() {
   return new Promise(res => $("resultCanvas").toBlob(res, "image/png"));
