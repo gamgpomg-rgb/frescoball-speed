@@ -453,11 +453,16 @@
       <div id="sbNote" class="sb-note"></div>
     </div>
     <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px">🎥 映像で精査（打者判定・隣の組を除外／重い）</button>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 10px">
-      <button id="resultCardBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">リザルトカード</button>
-      <button id="exportVideoBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">🎬 オーバーレイ動画</button>
-      <button id="exportStoryBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">📱 ストーリーズ動画（60秒）</button>
-      <button id="exportJsonBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">JSON出力</button>
+    <div id="materialOut" style="margin:2px 0 10px;padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
+      <div style="font-family:var(--num);font-size:15px;letter-spacing:.06em;margin-bottom:8px">📤 素材出力（SNSシェア）</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">「映像で精査」後に出力すると左右の数字が正確になります。</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button id="exportStoryBtn" style="flex:1 1 45%;margin:0;border-radius:12px;padding:12px">📱 ストーリーズ動画<br><small style="font-weight:400">縦9:16・最大60秒・音付き</small></button>
+        <button id="exportStoryImgBtn" style="flex:1 1 45%;margin:0;border-radius:12px;padding:12px">🖼 ストーリーズ画像<br><small style="font-weight:400">縦9:16・いま表示中のシーン</small></button>
+        <button id="exportVideoBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">🎬 オーバーレイ動画（全編）</button>
+        <button id="resultCardBtn" class="ghost" style="flex:1 1 45%;margin:0;border-radius:12px;padding:10px">🃏 リザルトカード（横型画像）</button>
+        <button id="exportJsonBtn" class="ghost" style="flex:1 1 100%;margin:0;border-radius:12px;padding:8px;font-size:12px">JSON出力（バックアップ用）</button>
+      </div>
     </div>
     <h4>速度分布</h4>
     <div id="histo"></div>
@@ -2788,6 +2793,40 @@ async function exportStoryVideo() {
   }
 }
 $("exportStoryBtn").addEventListener("click", exportStoryVideo);
+
+// ===== ストーリーズ画像（9:16静止画）。動画の現在の再生位置のフレームを使う =====
+async function exportStoryImage() {
+  if (!curStats) { flashSub("先に動画を解析してください"); return; }
+  const video = $("upVideo");
+  if (!video.currentSrc && !video.src) { flashSub("動画がありません（過去記録は映像なしのため書き出せません）"); return; }
+  try {
+    if (!video.videoWidth) await new Promise(res => video.addEventListener("loadedmetadata", res, { once: true }));
+    const W = 1080, H = 1920;
+    const videoH = Math.round(W * (video.videoHeight || 720) / (video.videoWidth || 1280));
+    const videoY = 372;
+    const record = makeRecord(currentRecordMeta) || { dateISO: new Date().toISOString(), hits: curStats.hits, total: curStats.total, rMax: curStats.rMax, drops: 0, duration: video.duration || 0 };
+    const stats = RESULT.resultCardStats(record);
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const g = canvas.getContext("2d");
+    drawStoryChrome(g, W, H, videoY, videoH, stats, new Date(record.dateISO || Date.now()), "");
+    g.drawImage(video, 0, videoY, W, videoH);
+    g.save(); g.translate(0, videoY);
+    drawPlaybackOverlay(g, W, videoH, video.currentTime);
+    g.restore();
+    const blob = await new Promise(res => canvas.toBlob(res, "image/png"));
+    if (!blob) throw new Error("画像を生成できませんでした");
+    const file = new File([blob], `frescoball-story-${Date.now()}.png`, { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Frescoball Speed Meter" }); return; } catch (_) {}
+    }
+    downloadBlob(blob, file.name);
+  } catch (err) {
+    console.warn("story image", err);
+    flashSub("画像の書き出しに失敗しました: " + (err && err.message || err));
+  }
+}
+$("exportStoryImgBtn").addEventListener("click", exportStoryImage);
 loadHistory();
 
 // PWAのアプリシェルを保存。計測に必要な外部モデルは初回解析時に別途取得する。
