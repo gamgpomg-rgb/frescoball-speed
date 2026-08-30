@@ -1790,8 +1790,11 @@ async function analyzeFile(file, onProgress, shouldContinue) {
 // --- オンセット列→打球タイムライン（ライブの onHit / rallyOnHit を再現） ---
 function buildStats(onsets) {
   const gap = parseFloat($("rallyGap").value) || 2.5;
+  // 反響・割り込みで正常間隔が半分×2に割れた偽打音を除去（速度2倍の誤検出対策）
+  const split = RESULT.removeSplitOnsets(onsets, gap);
+  const cleanOnsets = split.times;
   const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0, qualityRejected = 0;
-  for (const t of onsets) {
+  for (const t of cleanOnsets) {
     let speed = null;
     if (lastOnset !== null) {
       const result = measureObservedInterval(t - lastOnset, idx - 1);
@@ -1804,7 +1807,7 @@ function buildStats(onsets) {
     hits.push({ t, idx, player: idx % 2 === 0 ? "a" : "b", speed, rNow });
     lastOnset = t; lastHitTime = t; idx++;
   }
-  return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected };
+  return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected, splitRemoved: split.removed };
 }
 
 // --- 集計（flip=A/B割当の反転） ---
@@ -1872,6 +1875,7 @@ function renderDash() {
     `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
     + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 高速異常 ${curStats.excluded} 件を速度集計から除外（上限 ${currentQualityOptions().maxInitialSpeedKmh} km/h超）。打数には計上。</div>` : "")
     + ((curStats.qualityRejected > curStats.excluded) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ 品質ゲートで ${curStats.qualityRejected} 件を速度集計から除外（短間隔・長間隔・上限超過）。打数には計上。</div>` : "")
+    + ((curStats.splitRemoved > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ リズム矛盾の打音 ${curStats.splitRemoved} 件を除去（間隔が前後の半分に割れた反響・割り込み）。</div>` : "")
     + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
     + (curStats.review ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">🎥 映像精査済み（${escapeHtml(curStats.review.version)}）：隣の組ほか ${curStats.review.rejected || 0} 件を除外、A/Bは左右の動きで判定。</div>` : "");
   renderSpeedButterfly();
@@ -2060,9 +2064,13 @@ async function vidMotionPass(onProgress, shouldContinue) {
   // フレスコボールはラリー内で必ず交互に打つ。1打ごとの独立判定はやめ、
   // ラリー単位で「開始側」だけを証拠の重み付き多数決で決めて交互に割り当てる。
   const gap = parseFloat($("rallyGap").value) || 2.5;
-  const players = RESULT.alternateByRallyVote(keptItems, gap);
-  const kept = keptItems.map((item, index) => ({ t: item.t, player: players[index] }));
-  return { kept, rejected, analyzed: agg.length };
+  // 割れた間隔の偽打音を除去してから開始側投票へ（交互割当の前提を守る）
+  const split = RESULT.removeSplitOnsets(keptItems.map(item => item.t), gap);
+  const cleanSet = new Set(split.times);
+  const cleanItems = keptItems.filter(item => cleanSet.has(item.t));
+  const players = RESULT.alternateByRallyVote(cleanItems, gap);
+  const kept = cleanItems.map((item, index) => ({ t: item.t, player: players[index] }));
+  return { kept, rejected, analyzed: agg.length, splitRemoved: split.removed };
 }
 $("vidBtn").addEventListener("click", async () => {
   if (!curStats) return;
@@ -2071,13 +2079,14 @@ $("vidBtn").addEventListener("click", async () => {
   $("vidBtn").disabled = true;
   try {
     const aiKeep = curStats.aiRejected || 0;
-    const { kept, rejected, analyzed } = await vidMotionPass(
+    const { kept, rejected, analyzed, splitRemoved } = await vidMotionPass(
       p => { const el = $("upPct2"); if (el) el.textContent = Math.round(p * 100); },
       () => generation === uploadAnalysisGeneration
     );
     if (generation !== uploadAnalysisGeneration) return;
     const s = rebuildTimeline(kept);
     s.aiRejected = aiKeep;
+    s.splitRemoved = splitRemoved || 0;
     s.review = {
       version: VIDEO_REVIEW_VERSION, performedAt: new Date().toISOString(),
       algorithm: "motion-column-background-subtraction", rejected, analyzed
@@ -2563,8 +2572,8 @@ async function exportOverlayVideo() {
       if (!pumpActive) return;
       g.drawImage(video, 0, 0, canvas.width, canvas.height);
       drawPlaybackOverlay(g, canvas.width, canvas.height, video.currentTime);
-      if ("requestVideoFrameCallback" in video) video.requestVideoFrameCallback(pump);
-      else requestAnimationFrame(pump);
+      // 固定30fpsで描く（rVFC/rAF駆動はフレーム時刻がムラになり、録画が早送り気味になる端末があるため）
+      setTimeout(pump, 1000 / 30);
     };
     video.pause();
     video.currentTime = 0;
@@ -2741,8 +2750,8 @@ async function exportStoryVideo() {
       g.save(); g.translate(0, videoY);
       drawPlaybackOverlay(g, W, videoH, video.currentTime);
       g.restore();
-      if ("requestVideoFrameCallback" in video) video.requestVideoFrameCallback(pump);
-      else requestAnimationFrame(pump);
+      // 固定30fpsで描く（rVFC/rAF駆動はフレーム時刻がムラになり、録画が早送り気味になる端末があるため）
+      setTimeout(pump, 1000 / 30);
     };
     video.pause();
     video.currentTime = startT;

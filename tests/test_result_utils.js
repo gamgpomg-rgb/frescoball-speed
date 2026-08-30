@@ -93,6 +93,17 @@ assert.equal(R.comboPeak([]), 0);
   for (let i = 1; i < 4; i++) assert.notEqual(players[i], players[i - 1]);
 }
 
+// 割れた間隔の偽打音除去: 0.5s刻みのラリーに0.25s地点の偽音1つ→除去。アタック（短い間隔×1）は残す
+{
+  const times=[1.0, 1.5, 1.75, 2.0, 2.5, 3.0, 3.35, 3.85];
+  // 1.75 は 1.5-2.0 の間に割り込んだ偽音（0.25+0.25=0.5=中央値）
+  // 3.35 は本物のアタック（3.0→3.35 の短い間隔×1。次は3.35→3.85=0.5で正常）
+  const r=R.removeSplitOnsets(times, 2.5);
+  assert.equal(r.removed, 1);
+  assert.ok(!r.times.includes(1.75));
+  assert.ok(r.times.includes(3.35));
+}
+
 // 保持期限
 assert.equal(R.retentionCutoffISO(Date.UTC(2026, 7, 31), 30), "2026-08-01T00:00:00.000Z");
 

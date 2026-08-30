@@ -159,10 +159,46 @@
     return players;
   }
 
+  /**
+   * 「割れた間隔」の偽打音を除去する。本物の打音2つの間に反響・隣組の音などが
+   * 1つ挟まると、正常間隔が「短い間隔×2」に割れて速度が約2倍に見える。
+   * 署名: 連続する2間隔がどちらもラリー中央値の70%未満で、合計が中央値±25%に収まる。
+   * 本物のアタック（速い1打）は「短い間隔×1」なので誤除去しない。
+   * times: 時刻昇順の配列 → { times: 除去後, removed: 除去数 }
+   */
+  function removeSplitOnsets(times, gapSeconds) {
+    const gap = Number(gapSeconds) > 0 ? Number(gapSeconds) : 2.5;
+    const input = (times || []).slice();
+    const out = [];
+    let removed = 0;
+    let rallyStart = 0;
+    const flush = (end) => {
+      const rally = input.slice(rallyStart, end);
+      if (rally.length < 4) { out.push(...rally); return; }
+      const intervals = [];
+      for (let i = 1; i < rally.length; i++) intervals.push(rally[i] - rally[i - 1]);
+      const sorted = intervals.slice().sort((a, b) => a - b);
+      const median = sorted[sorted.length >> 1];
+      const drop = new Set();
+      for (let i = 1; i < rally.length - 1; i++) {
+        if (drop.has(i - 1)) continue; // 直前を消した場合は間隔が変わるためスキップ
+        const before = rally[i] - rally[i - 1], after = rally[i + 1] - rally[i];
+        if (before < 0.7 * median && after < 0.7 * median && Math.abs(before + after - median) < 0.25 * median) {
+          drop.add(i); removed++;
+        }
+      }
+      for (let i = 0; i < rally.length; i++) if (!drop.has(i)) out.push(rally[i]);
+    };
+    for (let i = 1; i <= input.length; i++) {
+      if (i === input.length || input[i] - input[i - 1] > gap) { flush(i); rallyStart = i; }
+    }
+    return { times: out, removed };
+  }
+
   /** liveログの保持期限（days日前のUTC ISO）。 */
   function retentionCutoffISO(nowMs, days) {
     return new Date(nowMs - days * 24 * 60 * 60 * 1000).toISOString();
   }
 
-  return { JFBA_BANDS, bandIndex, bandHistogram, comboPeak, speedsByPlayer, jfbaSummaryRows, resultCardStats, alternateByRallyVote, retentionCutoffISO };
+  return { JFBA_BANDS, bandIndex, bandHistogram, comboPeak, speedsByPlayer, jfbaSummaryRows, resultCardStats, alternateByRallyVote, removeSplitOnsets, retentionCutoffISO };
 });
