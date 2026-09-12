@@ -21,6 +21,8 @@ class AppHandler(SimpleHTTPRequestHandler):
     ALLOWED_PATHS = {
         "/", "/index.html", "/measurement-spec.js", "/measurement-spec.json", "/detection-engine.js",
         "/manifest.webmanifest", "/sw.js", "/icons/icon.svg",
+        "/result-utils.js", "/motion-core.js", "/motion-review.js",
+        "/video-quality.js", "/share-core.js", "/share-media.js",
     }
 
     def _is_allowed(self) -> bool:

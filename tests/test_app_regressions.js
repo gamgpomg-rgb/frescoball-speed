@@ -24,12 +24,18 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v12/);
+assert.match(sw, /frescoball-speed-shell-v20/);
 assert.match(sw, /result-utils\.js/);
 assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 assert.match(sw, /cache\.match\(request\)/);
 assert.doesNotMatch(sw, /caches\.match\(request\)/);
 assert.match(sw, /\.\/detection-engine\.js/);
 assert.match(server, /"\/detection-engine\.js"/);
+for (const asset of ['result-utils.js', 'motion-core.js', 'motion-review.js', 'video-quality.js', 'share-core.js', 'share-media.js']) {
+  assert(sw.includes(`./${asset}`));
+  assert(server.includes(`"/${asset}"`));
+}
+assert.doesNotMatch(html, /id="tabNum"/);
+assert.match(html, /FrescoMotionReview.open/);
 
 console.log("Application state regression checks passed");
