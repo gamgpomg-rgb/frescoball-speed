@@ -123,7 +123,8 @@
       if(b&&Math.abs(b.t-t)<1e-6)p={...b};
       else if(a&&b&&b.t-a.t<=MAX_GAP+1e-9){const f=(t-a.t)/(b.t-a.t);p={t,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,kind:'interpolated',predicted:true};}
       if(!p)continue;
-      const trail=ps.filter(q=>q.t>=t-.22&&q.t<=t);if(!trail.length||Math.abs(trail.at(-1).t-t)>1e-6)trail.push(p);
+      // 1返球ぶん（最長1.2秒）の軌跡を残す。0.22秒だけだと球の直後しか線が出ず、途切れて見えた。
+      const trail=ps.filter(q=>q.t>=t-1.2&&q.t<=t);if(!trail.length||Math.abs(trail.at(-1).t-t)>1e-6)trail.push(p);
       const span=Math.hypot(ps.at(-1).x-ps[0].x,ps.at(-1).y-ps[0].y);
       matches.push({trackId:tr.id,point:p,trail,predicted:p.predicted,span});
     }
@@ -211,25 +212,30 @@
     for(let i=1;i<stops.length;i++)if(speed<=stops[i][0]){const a=stops[i-1],b=stops[i],f=(speed-a[0])/(b[0]-a[0]);return '#'+a[1].map((n,j)=>Math.round(n+(b[1][j]-n)*f).toString(16).padStart(2,'0')).join('');}
     return '#ff484d';
   }
-  // Rendering only: colour follows audio speed; dashed predictions stay distinct.
+  // Rendering only: colour follows audio speed. Widths are about a third of the
+  // previous 3x trail (参考動画の細い発光線に寄せた: 本線3.6・縁6.4・芯1.2 ×unit)。
+  // Consecutive segments with the same colour and kind are stroked as one path:
+  // stroking segment by segment with alpha<1 doubles up at the round joints and
+  // the flight looks beaded. Predicted points (interpolation, display bridges,
+  // contact estimates) are fainter solid lines without the white core instead
+  // of dashes, so a short gap reads as one flight while staying distinguishable.
   function drawTrail(c,points,width,t,hits=[]){
     if(!points?.length)return false;
     const unit=Math.max(1,width/640),colorAt=time=>speedColor(speedAt(hits,time));
-    c.save();c.lineCap='round';c.lineJoin='round';
-    let trailLength=0;
+    const runs=[];
     for(let i=1;i<points.length;i++){
-      const a=points[i-1],b=points[i],predicted=a.predicted||b.predicted,color=colorAt((a.t+b.t)/2),fade=.25+.75*i/points.length;
-      c.setLineDash?.(predicted?[9*unit,18*unit]:[]);
-      c.lineDashOffset=-trailLength;trailLength+=Math.hypot(b.x-a.x,b.y-a.y);
-      const line=()=>{c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();};
-      c.shadowBlur=0;c.strokeStyle='#081421';c.globalAlpha=.55*fade;c.lineWidth=14.4*unit;line();
-      c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=predicted?0:5*unit;c.globalAlpha=(predicted?.7:1)*fade;c.lineWidth=8.4*unit;line();
-      c.shadowBlur=0;c.strokeStyle='#fff';c.globalAlpha=(predicted?.3:.85)*fade;c.lineWidth=2.4*unit;line();
+      const a=points[i-1],b=points[i],predicted=!!(a.predicted||b.predicted),color=colorAt((a.t+b.t)/2),last=runs.at(-1);
+      if(last&&last.predicted===predicted&&last.color===color)last.points.push(b);else runs.push({predicted,color,points:[a,b]});
     }
-    c.setLineDash?.([]);c.shadowBlur=0;c.globalAlpha=1;
-    const p=points.at(-1),color=colorAt(t),radius=3.2*unit;
-    c.beginPath();c.arc(p.x,p.y,radius+2*unit,0,Math.PI*2);c.fillStyle='#08142199';c.fill();
-    c.beginPath();c.arc(p.x,p.y,radius,0,Math.PI*2);c.strokeStyle=color;c.lineWidth=1.5*unit;c.shadowColor=color;c.shadowBlur=p.predicted?0:6*unit;
+    c.save();c.lineCap='round';c.lineJoin='round';c.setLineDash?.([]);
+    const stroke=(run,style,alpha,lineWidth,blur)=>{c.strokeStyle=style;c.globalAlpha=alpha;c.lineWidth=lineWidth;c.shadowColor=run.color;c.shadowBlur=blur;c.beginPath();run.points.forEach((p,k)=>k?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();};
+    for(const run of runs)stroke(run,'#081421',run.predicted?.3:.55,6.4*unit,0);
+    for(const run of runs)stroke(run,run.color,run.predicted?.45:.95,3.6*unit,run.predicted?0:4*unit);
+    for(const run of runs)if(!run.predicted)stroke(run,'#fff',.8,1.2*unit,0);
+    c.shadowBlur=0;c.globalAlpha=1;
+    const p=points.at(-1),color=colorAt(t),radius=2.6*unit;
+    c.beginPath();c.arc(p.x,p.y,radius+1.6*unit,0,Math.PI*2);c.fillStyle='#08142199';c.fill();
+    c.beginPath();c.arc(p.x,p.y,radius,0,Math.PI*2);c.strokeStyle=color;c.lineWidth=1.2*unit;c.shadowColor=color;c.shadowBlur=p.predicted?0:5*unit;
     if(p.predicted){c.setLineDash?.([2*unit,2*unit]);c.stroke();}
     else{c.fillStyle='#fff';c.fill();c.stroke();}
     c.restore();return true;

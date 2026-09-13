@@ -24,7 +24,7 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v35/);
+assert.match(sw, /frescoball-speed-shell-v36/);
 assert.match(sw, /result-utils\.js/);
 assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 assert.match(sw, /cache\.match\(request\)/);
