@@ -508,7 +508,7 @@
     <canvas id="motionOverlay" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none" hidden></canvas>
     <div id="upLive">
       <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
-      <div class="ul-meta"><span id="ulShot" style="display:block;color:var(--yellow)"></span>ラリー <b id="ulR">0</b> ・ 打数 <b id="ulH">0</b></div>
+      <div class="ul-meta">連続 <b id="ulR">0</b>回 ・ 累計 <b id="ulH">0</b>回</div>
     </div>
     <div class="ul-p left"><small>LEFT PLAYER</small><span id="ulPA">0</span></div>
     <div class="ul-p right"><small>RIGHT PLAYER</small><span id="ulPB">0</span></div>
@@ -2172,7 +2172,6 @@ function renderSpeedButterfly() {
 function syncLive() {
   if (!curStats) return;
   const t = $("upVideo").currentTime;
-  const shot=currentShotEstimates.filter(e=>e.t<=t&&t-e.t<.9).at(-1);$("ulShot").textContent=shot?.type?`${shot.player==="a"?"1":"2"}人目：${shot.type==="attack"?"アタック":"ディフェンス"}（推定）`:"";
   let cur = null, hitsTo = 0, lastH = null;
   for (const h of curStats.hits) {
     if (h.t <= t) { hitsTo++; lastH = h; if (h.speed != null) cur = h; } else break;

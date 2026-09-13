@@ -44,8 +44,10 @@ window.FrescoMotionReview = (() => {
     if(!panel||!video.videoWidth)return;
     const w=video.videoWidth,h=video.videoHeight;view.width=w;view.height=h;if(timeline)timeline.value=video.currentTime;if(clockLabel)clockLabel.textContent=`${timeText(video.currentTime)} / ${timeText(video.duration)}`;
     const c=view.getContext('2d');c.drawImage(video,0,0,w,h);
-    c.lineWidth=Math.max(2,w/500);c.font=`${Math.max(18,w/65)}px sans-serif`;
-    regions.forEach((r,i)=>{c.strokeStyle=i?'#f4bf55':'#58d5ef';c.strokeRect(r.x,r.y,r.w,r.h);c.fillStyle=c.strokeStyle;c.fillText(i?'2人目':'1人目',r.x+6,r.y+28);});
+    const uiScale=w/(view.getBoundingClientRect().width||w);c.lineWidth=2*uiScale;c.font=`${12*uiScale}px sans-serif`;
+    regions.forEach((r,i)=>{c.strokeStyle=i?'#f4bf55':'#58d5ef';c.strokeRect(r.x,r.y,r.w,r.h);c.fillStyle='#111b';c.fillRect(r.x+12*uiScale,r.y+6*uiScale,48*uiScale,20*uiScale);c.fillStyle=c.strokeStyle;c.fillText(i?'2人目':'1人目',r.x+16*uiScale,r.y+21*uiScale);
+      if(!busy&&!reviewSection?.open){const radius=9*w/(view.getBoundingClientRect().width||w);for(const [x,y] of [[r.x,r.y],[r.x+r.w,r.y],[r.x,r.y+r.h],[r.x+r.w,r.y+r.h]]){c.beginPath();c.arc(x,y,radius,0,Math.PI*2);c.fill();c.strokeStyle='#fff';c.stroke();c.strokeStyle=i?'#f4bf55':'#58d5ef';}}
+    });
     if(corner){c.fillStyle='#fff';c.beginPath();c.arc(corner.x,corner.y,w/100,0,Math.PI*2);c.fill();}
     drawOverlay(c,w,h,video.currentTime);
     const f=previewFrame||M.nearestFrame(frames,video.currentTime),fmt=n=>n==null?'読み取れません':`${n.toFixed(0)}°`;
@@ -264,7 +266,7 @@ window.FrescoMotionReview = (() => {
     el('h3','2人の軌跡と打ち方を見る',panel);
     el('p','2人の動きと球の軌跡を、映像で確かめられます。',panel);
     const reviewHelp=el('p','気になる場面を再生し、必要なところだけ判定を直せます。',panel);detailNodes.push(reviewHelp);
-    viewHome=el('div','',panel);view=el('canvas','',viewHome);view.style.cssText='width:auto;max-width:100%;max-height:36svh;display:block;margin:auto;object-fit:contain;touch-action:none;background:#000';view.setAttribute('aria-label','選手の全身を囲む映像。対角の2か所をタップして範囲を指定します');
+    viewHome=el('div','',panel);view=el('canvas','',viewHome);view.style.cssText='width:auto;max-width:100%;max-height:36svh;display:block;margin:auto;object-fit:contain;touch-action:none;background:#000';view.setAttribute('aria-label','選手の枠。四隅をドラッグして大きさを調整し、枠の内側をドラッグして移動します');
     playback=el('div','',viewHome);
     button('再生 / 一時停止',playback,()=>{if(busy)return;clipEnd=null;if(video.paused)video.play().catch(e=>say(e.message));else video.pause();});
     for(const [label,delta] of [['5秒戻る',-5],['0.1秒戻る',-.1],['0.1秒進む',.1],['5秒進む',5]])button(label,playback,()=>{if(!busy){video.pause();seek(Math.max(0,Math.min(video.duration-.001,video.currentTime+delta))).then(draw).catch(e=>say(e.message));}});
@@ -273,18 +275,27 @@ window.FrescoMotionReview = (() => {
     const displayOptions=el('details','',playback);detailNodes.push(displayOptions);el('summary','表示を調整する',displayOptions);for(const [text,key]of [['骨格を表示','skeleton'],['球の軌跡候補を表示','ball']]){const label=el('label','',displayOptions),toggle=el('input','',label);toggle.type='checkbox';toggle.checked=true;toggle.dataset.overlay=key;el('span',text,label);toggle.onchange=()=>{if(key==='skeleton')showSkeleton=toggle.checked;else showBall=toggle.checked;draw();};}
     el('small','球の線は対象2人の間で動いた候補です。短い見失いは前後の位置から補い、推定部分は破線で表示します。長く見失うと線を止めます。',displayOptions);
     conditions=el('details','',panel);conditions.open=true;el('summary','解析条件を変更する',conditions);const selector=el('div','',conditions);el('h4','1. 解析する2人を選ぶ',selector);
-    el('p','選手の頭から足までが入るように、左上と右下をタップします。指でなぞって囲むこともできます。隣の選手を入れないようにしてください。',selector);
-    for(let i=0;i<2;i++)button(`${i+1}人目を選ぶ`,selector,()=>{if(busy)return;video.pause();viewHome.append(view);viewHome.append(playback);selecting=i;corner=null;say(`${i+1}人目の全身を囲む左上をタップし、次に右下をタップしてください`);draw();});
+    el('p','2つの枠を選手に合わせてください。四隅の丸を指で動かすと大きさが変わり、枠の内側を動かすと位置が変わります。頭から足まで入れ、隣の選手を含めないでください。',selector);
+    for(let i=0;i<2;i++)button(`${i+1}人目を選ぶ`,selector,()=>{if(busy)return;video.pause();reviewSection.open=false;viewHome.append(view);viewHome.append(playback);selecting=i;say(`${i+1}人目の枠の四隅、または内側を動かしてください`);draw();});
     const xy=e=>{const r=view.getBoundingClientRect();return {x:Math.max(0,Math.min(view.width,(e.clientX-r.left)*view.width/r.width)),y:Math.max(0,Math.min(view.height,(e.clientY-r.top)*view.height/r.height))};};
-    view.onpointerdown=e=>{if(selecting==null||busy)return;origin=xy(e);view.setPointerCapture(e.pointerId);};
-    view.onpointercancel=()=>{origin=null;corner=null;draw();};
-    view.onpointerup=e=>{if(!origin||selecting==null||busy)return;const p=xy(e),dragged=Math.hypot(p.x-origin.x,p.y-origin.y)>view.width*.015;
-      if(!dragged&&!corner){corner=p;origin=null;say('次に、選手の全身を囲む反対側の角をタップしてください');draw();return;}
-      const from=dragged?origin:corner,r={x:Math.min(p.x,from.x),y:Math.min(p.y,from.y),w:Math.abs(p.x-from.x),h:Math.abs(p.y-from.y)};
-      if(r.w<20||r.h<20){origin=null;corner=null;say('範囲が小さすぎます。頭から足までを囲んでください');draw();return;}
-      serial++;runButton.textContent='選んだ2人で自動解析';regions[selecting]=r;frames=[];tracks=[];drawingTracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();
-      const done=regions[0]&&regions[1];selecting=done?null:selecting===0?1:0;origin=null;corner=null;
-      say(done?'2人を選びました。「選んだ2人で自動解析」を押すと骨格の線と球の軌跡を確認できます。':`${selecting+1}人目も、全身を囲む2か所をタップしてください`);draw();};
+    view.onpointerdown=e=>{
+      if(busy||reviewSection.open||origin)return;const p=xy(e),scale=view.width/(view.getBoundingClientRect().width||view.width),radius=24*scale;
+      let hit=null,best=Infinity;
+      regions.forEach((r,i)=>{for(const [key,x,y]of [['nw',r.x,r.y],['ne',r.x+r.w,r.y],['sw',r.x,r.y+r.h],['se',r.x+r.w,r.y+r.h]]){const d=Math.hypot(p.x-x,p.y-y);if(d<=radius&&d<best){hit={i,key};best=d;}}});
+      if(!hit){const order=selecting===1?[1,0]:[0,1];for(const i of order){const r=regions[i];if(r&&p.x>=r.x&&p.x<=r.x+r.w&&p.y>=r.y&&p.y<=r.y+r.h){hit={i,key:'move'};break;}}}
+      if(!hit)return;video.pause();selecting=hit.i;serial++;origin={...hit,p,start:{...regions[hit.i]},pointer:e.pointerId};view.setPointerCapture(e.pointerId);e.preventDefault?.();
+    };
+    view.onpointermove=e=>{
+      if(!origin||origin.pointer!==e.pointerId||busy)return;const p=xy(e),{start:r,key}=origin,dx=p.x-origin.p.x,dy=p.y-origin.p.y,min=20;
+      if(key==='move')regions[origin.i]={...r,x:Math.max(0,Math.min(view.width-r.w,r.x+dx)),y:Math.max(0,Math.min(view.height-r.h,r.y+dy))};
+      else{let l=r.x,t=r.y,right=r.x+r.w,bottom=r.y+r.h;if(key.includes('w'))l=Math.max(0,Math.min(right-min,r.x+dx));if(key.includes('e'))right=Math.min(view.width,Math.max(l+min,r.x+r.w+dx));if(key.includes('n'))t=Math.max(0,Math.min(bottom-min,r.y+dy));if(key.includes('s'))bottom=Math.min(view.height,Math.max(t+min,r.y+r.h+dy));regions[origin.i]={x:l,y:t,w:right-l,h:bottom-t};}draw();
+    };
+    view.onpointercancel=e=>{if(!origin||origin.pointer!==e.pointerId)return;regions[origin.i]=origin.start;origin=null;draw();};
+    view.onpointerup=e=>{
+      if(!origin||origin.pointer!==e.pointerId||busy)return;view.onpointermove(e);const edited=JSON.stringify(regions[origin.i])!==JSON.stringify(origin.start);origin=null;
+      if(edited){runButton.textContent='選んだ2人で自動解析';frames=[];tracks=[];drawingTracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();}
+      say('枠が2人の全身に合ったら「選んだ2人で自動解析」を押してください。');draw();
+    };
     controls=el('fieldset','',conditions);controls.style.border='0';el('legend','2. 動きを解析する',controls);
     const advanced=el('details','',controls);detailNodes.push(advanced);el('summary','詳しく調整する',advanced);const input=(label,key,value,min,max)=>{const l=el('label',label,advanced),i=el('input','',l);i.type='number';i.value=value;i.min=min;i.max=max;i.step='any';i.dataset[key]='';i.style.width='90px';return i;};
     input('開始する秒数 ','start',0,0,video.duration);
@@ -294,7 +305,7 @@ window.FrescoMotionReview = (() => {
     const runButton=button('選んだ2人で自動解析',controls,run);
     el('p','解析中は画面を開いたままお待ちください。途中経過はこの端末に自動保存します。中断後は同じ動画を開くと前回の2人を復元して再開できます。',controls);
     button('解析を中止',panel,()=>{if(!busy)return;serial++;previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});controls.disabled=false;rows.inert=false;draw();say('解析を中止しました。完了していた結果は残しています');});
-    status=el('p','まず「1人目を選ぶ」を押してください',viewHome);status.setAttribute('role','status');
+    status=el('p','四隅の丸を動かして2人の全身に枠を合わせてください',viewHome);status.setAttribute('role','status');
     const posture=el('p','',panel);posture.dataset.posture='';detailNodes.push(posture);
     reviewSection=el('details','',panel);detailNodes.push(reviewSection);el('summary','打球の判定を確認・修正する',reviewSection);reviewSection.ontoggle=()=>renderEvents();
     el('p','気になる判定だけ、映像を見ながら修正できます。',reviewSection);rows=el('div','',reviewSection);
@@ -310,6 +321,7 @@ window.FrescoMotionReview = (() => {
     const label=el('label','バックアップから戻す ',backup),file=el('input','',label);file.type='file';file.accept='.json,application/json';file.onchange=async()=>{const token=serial;try{if(busy)throw new Error('解析を中止してから戻してください');if(!file.files[0])return;const raw=JSON.parse(await file.files[0].text());if(token!==serial||busy)return;restore(raw);changed();if(frames.length)await seek(frames[0].t);if(token!==serial)return;draw();say('記録を戻しました');}catch(e){if(token===serial)say(e.message);}};
     events=(options.hits||[]).map((h,i)=>({id:`audio-${i}`,t:h.t,player:null,status:'pending',origin:'audio'}));
     if(options.initialData){try{restore(options.initialData);say('保存していた解析を表示しました');}catch(e){say(`保存した解析を戻せませんでした：${e.message}`);}}
+    if(!regions.length)regions=[.08,.7].map(x=>({x:source.width*x,y:source.height*.2,w:source.width*.22,h:source.height*.65}));
     renderEvents();draw();setMode(options.mode||uiMode);if(frames.length&&uiMode==='detail')conditions.open=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
     const opened=serial;
     if(!frames.length)findCheckpoint(source,uiMode).then(savedJob=>{

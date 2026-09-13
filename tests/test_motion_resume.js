@@ -20,7 +20,7 @@ function load(name='resume.mov',mode='simple',stop=false){
  const R=context.window.FrescoMotionReview,source={name,size:100,lastModified:42,width:1000,height:500,duration:1};
  const button=text=>host.walk().find(e=>e.tag==='button'&&e.textContent===text);
  R.open({host,video,source,distance:7,mode,hits:[{t:.5}],onProgress:p=>{if(stop&&!cancelled&&p.busy&&p.percent>30){cancelled=true;button('解析を中止').onclick();}}});
- return {R,host,source,button,calls:()=>calls,select(offset=0){button('1人目を選ぶ').onclick();const c=host.walk().find(e=>e.tag==='canvas');for(const [x,y]of [[10,10],[200,400],[700,10],[900,400]]){const e={clientX:x+offset,clientY:y,pointerId:1};c.onpointerdown(e);c.onpointerup(e);}}};
+ return {R,host,source,button,calls:()=>calls,select(offset=0){button('1人目を選ぶ').onclick();const c=host.walk().find(e=>e.tag==='canvas');const r=R.snapshot().regions[0];c.onpointerdown({clientX:r.x,clientY:r.y,pointerId:1});c.onpointerup({clientX:r.x+10+offset,clientY:r.y+10,pointerId:1});}};
 }
 (async()=>{
  const first=load('resume.mov','simple',true);first.select();await first.button('選んだ2人で自動解析').onclick();
