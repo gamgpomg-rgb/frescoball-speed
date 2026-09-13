@@ -171,7 +171,7 @@ window.FrescoMotionReview = (() => {
     for(const [job,index] of keys){
       if(index!==0)continue;
       let meta;try{meta=JSON.parse(job);}catch{continue;}
-      if(meta.version!==3||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
+      if(meta.version!==4||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
       const chunk=await new Promise((resolve,reject)=>{const r=db.transaction('chunks','readonly').objectStore('chunks').get([job,0]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
       if(chunk)matches.push({meta,updatedAt:chunk.updatedAt||0});
     }
@@ -215,8 +215,14 @@ window.FrescoMotionReview = (() => {
       let detector=null;
       const cv=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
       const pixelDetector=window.FrescoBallTracker?.createDetector(cv.width,cv.height,roi.map(r=>({x:r.x*scale,y:r.y*scale,w:r.w*scale,h:r.h*scale})));
+      // 原寸の局所探索。次フレームで球が来るはずの位置（検出器の予測）と、打音直後の打者の手首の周りだけ、
+      // 縮小前の画素で小窓を切り出して同じ規則を当てる。窓は前フレームで同じ位置を切り出しておき差分を取る。
+      const hi=document.createElement('canvas'),hiCtx=hi.getContext('2d',{willReadFrequently:true}),unitPx=video.videoWidth/1920;
+      let watch=[];
+      const window_=(cxp,cyp,size,exclude)=>{const w=Math.round(size*unitPx),h=w,x=Math.round(Math.max(0,Math.min(video.videoWidth-w,cxp-w/2))),y=Math.round(Math.max(0,Math.min(video.videoHeight-h,cyp-h/2)));if(w<8||h<8)return;watch.push({x,y,w,h,center:{x:cxp,y:cyp},exclude,data:null});};
+      const cropWindow=win=>{if(hi.width!==win.w||hi.height!==win.h){hi.width=win.w;hi.height=win.h;}hiCtx.drawImage(video,win.x,win.y,win.w,win.h,0,0,win.w,win.h);return hiCtx.getImageData(0,0,win.w,win.h).data;};
       const count=Math.ceil(duration*30),schedule=poseSchedule(start,count,workingEvents,runMode);
-      job=JSON.stringify({version:3,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
+      job=JSON.stringify({version:4,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
       try{
         const stored=await readCheckpoint(job);if(token!==serial)return;
         if(stored.length<=count&&stored.every((f,i)=>Math.abs(f.t-(start+i/30))<.001&&Array.isArray(f.poses)&&Array.isArray(f.ballCandidates))){for(const frame of stored)output.push(frame);saved=stored.length;}
@@ -243,7 +249,22 @@ window.FrescoMotionReview = (() => {
           draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
         }
         cx.drawImage(video,0,0,cv.width,cv.height);const scaledPoses=poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale})));const data=cx.getImageData(0,0,cv.width,cv.height).data;const candidate=pixelDetector?{data,candidates:pixelDetector.detect(data,t,scaledPoses)}:balls(cv,previous,scaledPoses);previous=candidate.data;
-        output.push({t,poseSampleTime:!samplePose&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
+        const ballCandidates=candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}));
+        if(pixelDetector&&window.FrescoBallTracker?.refineLocal){
+          const extra=[];
+          for(const win of watch){if(!win.data)continue;const found=window.FrescoBallTracker.refineLocal({data:cropWindow(win),prev:win.data,width:win.w,height:win.h,origin:{x:win.x,y:win.y},center:win.center,exclude:win.exclude,unit:unitPx});
+            for(const p of found)if(!ballCandidates.some(c=>Math.hypot(c.x-p.x,c.y-p.y)<18*unitPx)&&!extra.some(e=>Math.hypot(e.x-p.x,e.y-p.y)<18*unitPx))extra.push({x:p.x,y:p.y,local:true});}
+          if(extra.length){pixelDetector.adopt(extra.map(p=>({x:p.x*scale,y:p.y*scale})),t);ballCandidates.push(...extra.map(p=>({x:p.x,y:p.y})));}
+          // 次フレーム用の窓: 予測位置、無ければ打音直後（0.2秒）の手首
+          watch=[];const tn=t+1/30;
+          // 関節の周りは除外（手首は小さく、それ以外は大きく）。ラケット面の球は手首から離れているので残る
+          const joints=poses.flatMap(ps=>(ps||[]).map((p,k)=>p&&p.visibility>=.5?{x:p.x,y:p.y,r:(k===15||k===16?12:30)*unitPx}:null).filter(Boolean))
+            .concat(poses.flatMap(ps=>[[11,12],[11,23],[12,24],[23,24],[23,25],[24,26],[25,27],[26,28],[11,13],[12,14],[13,15],[14,16]].map(([a,b])=>{const p=ps?.[a],q=ps?.[b];return p&&q&&p.visibility>=.5&&q.visibility>=.5?{x1:p.x,y1:p.y,x2:q.x,y2:q.y,r:28*unitPx}:null;}).filter(Boolean)));
+          for(const q of pixelDetector.predictions(tn))window_(q.x/scale,q.y/scale,128,joints);
+          if(!watch.length&&workingEvents.some(e=>e.t<=tn+1e-6&&tn-e.t<=.2))for(const ps of poses)for(const k of [15,16]){const wr=ps?.[k];if(wr&&wr.visibility>=.5)window_(wr.x,wr.y,160,joints);}
+          for(const win of watch)win.data=cropWindow(win);
+        }
+        output.push({t,poseSampleTime:!samplePose&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates});
         if(output.length-saved>=90||n===count-1){await persist();if(token!==serial)return;}
       }
       if(token!==serial)return;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=96),busy:true});say(uiMode==='simple'?'解析結果をまとめています':'3 / 4：打音と2人の動きを照合しています');await new Promise(r=>setTimeout(r,0));if(token!==serial)return;

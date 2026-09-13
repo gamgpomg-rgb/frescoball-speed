@@ -59,15 +59,57 @@
         const w=maxX-minX+1,h=maxY-minY+1,ratio=Math.max(w,h)/Math.min(w,h);
         if(n>=2&&n<=45&&ratio<=(near?7:3)&&n/(w*h)>=.3)found.push({x:sx/n,y:sy/n});
       }
-      const candidates=found.slice(0,100),next=[],used=new Set();
-      for(const p of candidates){let best=null,error=Infinity;
-        for(let j=0;j<hypotheses.length;j++){const q=hypotheses[j],gap=t-q.t;if(used.has(j)||gap>.1)continue;const vx=(p.x-q.x)/gap,vy=(p.y-q.y)/gap,speed=Math.hypot(vx,vy);if(speed<width*.18||speed>width*3.5)continue;
-          if(q.vx!=null&&(vx*q.vx+vy*q.vy<=0||speed<Math.hypot(q.vx,q.vy)*.45||speed>Math.hypot(q.vx,q.vy)*2.2))continue;
-          const e=Math.hypot(p.x-q.x-(q.vx||0)*gap,p.y-q.y-(q.vy||0)*gap);if(e<(q.vx==null?width*.16:width*.03)&&e<error){best={j,vx,vy,count:q.count+1};error=e;}}
-        if(best){used.add(best.j);next.push({...p,t,vx:best.vx,vy:best.vy,count:best.count});}else next.push({...p,t,count:1});
-      }
-      hypotheses=next;previous.set(data);lastTime=t;return candidates;
-    }};
+      const candidates=found.slice(0,100);
+      hypotheses=associate(candidates,t,hypotheses,width);previous.set(data);lastTime=t;return candidates;
+    },
+    // 次フレームの予測位置（検出器座標）。見失った仮説も0.1秒は持ち越すので、1〜3フレームの欠測でも予測が出る。
+    predictions(t){return hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t>0&&t-q.t<=.1+1e-6).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));},
+    // 原寸の局所探索で見つかった点（検出器座標）を、この時刻の観測として仮説に取り込む
+    adopt(points,t){if(lastTime==null||Math.abs(t-lastTime)>1e-6||!points?.length)return;hypotheses=associate(points,t,hypotheses,width);}
+    };
+  }
+  // 候補点を直前の仮説に対応付ける。速度の連続性と予測誤差で選ぶ。見失った仮説は0.1秒だけ
+  // 持ち越す（予測位置の局所探索と弱い色の回復に使う）。この時刻に作った仮説はそのまま残す。
+  function associate(points,t,current,width){
+    const next=[],used=new Set();
+    for(const p of points){let best=null,error=Infinity;
+      for(let j=0;j<current.length;j++){const q=current[j],gap=t-q.t;if(used.has(j)||gap<=0||gap>.1+1e-6)continue;const vx=(p.x-q.x)/gap,vy=(p.y-q.y)/gap,speed=Math.hypot(vx,vy);if(speed<width*.18||speed>width*3.5)continue;
+        if(q.vx!=null&&(vx*q.vx+vy*q.vy<=0||speed<Math.hypot(q.vx,q.vy)*.45||speed>Math.hypot(q.vx,q.vy)*2.2))continue;
+        const e=Math.hypot(p.x-q.x-(q.vx||0)*gap,p.y-q.y-(q.vy||0)*gap);if(e<(q.vx==null?width*.16:width*.03)&&e<error){best={j,vx,vy,count:q.count+1};error=e;}}
+      if(best){used.add(best.j);next.push({...p,t,vx:best.vx,vy:best.vy,count:best.count});}else next.push({...p,t,count:1});
+    }
+    for(let j=0;j<current.length;j++){const q=current[j];if(used.has(j))continue;if(q.t===t||(q.count>=2&&q.vx!=null&&t-q.t<=.1+1e-6))next.push(q);}
+    return next;
+  }
+  // 原寸の小窓での局所探索。予測位置（または打音直後の手首）の周りだけ、縮小前の画素で色規則と
+  // 前フレーム差分を当て、窓の中心に最も近い「球らしい塊」を1つ返す。座標は元動画のピクセル。
+  // 球らしさ: 直径およそ5〜14px相当・丸い・充填率が高い。看板のような大きな赤い領域の一部（腕で
+  // 見え隠れする縁）は、動きに関係なく赤い画素のつながりが大きいので除外する。exclude は関節など
+  // の除外円。背景モデルは持たず、静止した赤い物は差分で落ちる。
+  // 除外は円 {x,y,r} か線分 {x1,y1,x2,y2,r}（関節を結ぶ胴体・脚・腕。パンツの模様や肌を拾わないため）
+  const excluded=(e,x,y)=>{if(e.x1!=null){const dx=e.x2-e.x1,dy=e.y2-e.y1,f=Math.max(0,Math.min(1,((x-e.x1)*dx+(y-e.y1)*dy)/(dx*dx+dy*dy||1)));return (x-e.x1-f*dx)**2+(y-e.y1-f*dy)**2<e.r*e.r;}return (e.x-x)**2+(e.y-y)**2<e.r*e.r;};
+  function refineLocal({data,prev,width:W,height:H,origin,center,exclude=[],unit=1}){
+    if(!data||!prev||data.length!==prev.length||!W||!H||!origin||!center)return [];
+    const colour=new Uint8Array(W*H),moving=new Uint8Array(W*H),cx=center.x-origin.x,cy=center.y-origin.y;
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=(y*W+x)*4,r=data[i],g=data[i+1],b=data[i+2],chroma=Math.max(r,g,b)-Math.min(r,g,b);
+      const red=r>=95&&r>=g*1.45&&r>=b*1.25&&r-g>=38,pink=r>=100&&r>=b*.95&&r-g>=28&&b-g>=18&&chroma/Math.max(1,r,g,b)>=.2;
+      if(!red&&!pink)continue;colour[y*W+x]=1;
+      const delta=Math.abs(r-prev[i])+Math.abs(g-prev[i+1])+Math.abs(b-prev[i+2]);if(delta<40)continue;
+      if(exclude.some(e=>excluded(e,x+origin.x,y+origin.y)))continue;
+      moving[y*W+x]=1;}
+    const label=new Int32Array(W*H),size=[0];
+    for(let i=0;i<W*H;i++){if(!colour[i]||label[i])continue;const id=size.length;size.push(0);const queue=[i];label[i]=id;
+      while(queue.length){const j=queue.pop();size[id]++;for(const z of [j-1,j+1,j-W,j+W])if(z>=0&&z<W*H&&colour[z]&&!label[z]){label[z]=id;queue.push(z);}}}
+    let best=null;const minN=Math.round(10*unit*unit),maxN=Math.round(300*unit*unit);
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;if(!moving[i])continue;
+      const queue=[i];let n=0,sx=0,sy=0,minX=W,maxX=0,minY=H,maxY=0;moving[i]=0;const id=label[i];
+      while(queue.length){const j=queue.pop(),px=j%W,py=Math.floor(j/W);n++;sx+=px;sy+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);for(const z of [j-1,j+1,j-W,j+W])if(z>=0&&z<moving.length&&moving[z]){moving[z]=0;queue.push(z);}}
+      const w=maxX-minX+1,h=maxY-minY+1,ratio=Math.max(w,h)/Math.min(w,h);
+      if(n<minN||n>maxN||ratio>3.5||n/(w*h)<.3)continue;   // ブレた球は細長くなるので縦横比は3.5まで
+      if(size[id]>maxN*1.5)continue;
+      const d=Math.hypot(sx/n-cx,sy/n-cy);if(d>Math.min(W,H)*.4)continue;
+      if(!best||d<best.d)best={d,x:origin.x+sx/n,y:origin.y+sy/n};}
+    return best?[{x:best.x,y:best.y}]:[];
   }
   function track(frames,width,regions){
     if(!Array.isArray(frames)||!finite(width)||width<=0)throw new Error('動画の追跡入力が不正です');
@@ -337,5 +379,5 @@
     }
     c.restore();return true;
   }
-  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
+  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,refineLocal,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
 });

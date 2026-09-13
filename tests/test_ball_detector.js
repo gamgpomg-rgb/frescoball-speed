@@ -35,4 +35,29 @@ console.log('Search range above the player boxes passed');
   assert.equal(D5.detect(sky([{x:120,y:20,color:[140,150,160]}]),2/30).length,0,'a dark dot that is not redder than the sky is ignored');
 }
 console.log('Sky-contrast lob candidates passed');
+// 見失った仮説の持ち越しと予測、原寸の局所探索
+{
+  const D6=B.createDetector(w,h,regions);D6.detect(frame(),0);
+  D6.detect(frame([{x:80,y:50}]),1/30);D6.detect(frame([{x:90,y:50}]),2/30);
+  assert.equal(D6.predictions(3/30).length,1,'a moving ball yields a prediction for the next frame');
+  D6.detect(frame(),3/30);D6.detect(frame(),4/30);   // 2フレーム見失う
+  assert.equal(D6.predictions(5/30).length,1,'the hypothesis is carried through a two-frame miss');
+  assert.equal(D6.detect(frame([{x:120,y:50,color:[150,130,145]}]),5/30).length,1,'faint pixels are recovered near the carried prediction');
+  D6.detect(frame(),6/30);D6.detect(frame(),7/30);D6.detect(frame(),8/30);D6.detect(frame(),9/30);
+  assert.equal(D6.predictions(10/30).length,0,'a hypothesis is dropped after 0.1s without observation');
+  const D7=B.createDetector(w,h,regions);D7.detect(frame(),0);D7.detect(frame([{x:80,y:50}]),1/30);D7.detect(frame([{x:90,y:50}]),2/30);
+  D7.detect(frame(),3/30);D7.adopt([{x:100,y:50}],3/30);
+  const p=D7.predictions(4/30)[0];assert(p&&Math.abs(p.x-110)<1.5,'adopted local observation continues the prediction chain');
+  // refineLocal: 原寸窓（60x60）で、動いた赤い塊だけを窓中心に近い順に返す
+  const W=60,H=60,blank=()=>{const d=new Uint8ClampedArray(W*H*4);for(let i=0;i<d.length;i+=4){d[i]=d[i+1]=d[i+2]=120;d[i+3]=255;}return d;};
+  const put=(d,x,y,size,color)=>{for(let yy=y;yy<y+size;yy++)for(let xx=x;xx<x+size;xx++)d.set([...color,255],(yy*W+xx)*4);return d;};
+  const prev=put(blank(),5,5,4,[230,60,60]);                 // 静止した赤い物（前後で同じ位置）
+  const now=put(put(blank(),5,5,4,[230,60,60]),28,26,4,[230,60,60]);
+  const found=B.refineLocal({data:now,prev,width:W,height:H,origin:{x:1000,y:500},center:{x:1030,y:530}});
+  assert.equal(found.length,1,'a moving red blob near the centre is found');assert(Math.abs(found[0].x-1029.5)<1&&Math.abs(found[0].y-527.5)<1,'returned in video coordinates');
+  assert.equal(B.refineLocal({data:prev,prev,width:W,height:H,origin:{x:1000,y:500},center:{x:1030,y:530}}).length,0,'a static red object is ignored');
+  assert.equal(B.refineLocal({data:now,prev,width:W,height:H,origin:{x:1000,y:500},center:{x:1030,y:530},exclude:[{x:1030,y:528,r:8}]}).length,0,'blobs inside an exclusion circle (wrist) are ignored');
+  assert.equal(B.refineLocal({data:put(blank(),20,20,25,[230,60,60]),prev,width:W,height:H,origin:{x:0,y:0},center:{x:30,y:30}}).length,0,'a large moving red object is not a ball');
+}
+console.log('Prediction carry-over, adopt and full-resolution local refinement passed');
 
