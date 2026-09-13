@@ -203,11 +203,11 @@
     c.save();c.lineCap='round';c.lineJoin='round';
     for(let i=1;i<points.length;i++){
       const a=points[i-1],b=points[i],predicted=a.predicted||b.predicted,color=colorAt((a.t+b.t)/2),fade=.25+.75*i/points.length;
-      c.setLineDash?.(predicted?[3*unit,4*unit]:[]);
+      c.setLineDash?.(predicted?[9*unit,18*unit]:[]);
       const line=()=>{c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();};
-      c.shadowBlur=0;c.strokeStyle='#081421';c.globalAlpha=.55*fade;c.lineWidth=4.8*unit;line();
-      c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=predicted?0:5*unit;c.globalAlpha=(predicted?.7:1)*fade;c.lineWidth=2.8*unit;line();
-      c.shadowBlur=0;c.strokeStyle='#fff';c.globalAlpha=(predicted?.3:.85)*fade;c.lineWidth=.8*unit;line();
+      c.shadowBlur=0;c.strokeStyle='#081421';c.globalAlpha=.55*fade;c.lineWidth=14.4*unit;line();
+      c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=predicted?0:5*unit;c.globalAlpha=(predicted?.7:1)*fade;c.lineWidth=8.4*unit;line();
+      c.shadowBlur=0;c.strokeStyle='#fff';c.globalAlpha=(predicted?.3:.85)*fade;c.lineWidth=2.4*unit;line();
     }
     c.setLineDash?.([]);c.shadowBlur=0;c.globalAlpha=1;
     const p=points.at(-1),color=colorAt(t),radius=3.2*unit;
