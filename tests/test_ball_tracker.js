@@ -85,7 +85,9 @@ console.log('Hand-proximity rejection passed');
   assert.equal(marks.length,1,'only unignored hits with a nearby observed point, within the display window');
   assert(Math.abs(marks[0].x-416.7)<.5,'nearest observed point, moved back along the track to the hit time');
   assert.equal(B.impactMarkers([{t:.2,status:'auto'}],tr,1.2).length,0,'marker disappears after impactSeconds');
-  assert.equal(B.impactMarkers([{t:.6,status:'auto'}],tr,.7).length,0,'no observed point near the hit means no marker');
+  assert.equal(B.impactMarkers([{t:.6,status:'auto'}],tr,.7).length,0,'no track end near the hit means no marker');
+  const longFlight=B.track(Array.from({length:20},(_,i)=>({t:i*.03,ballCandidates:[{x:250+i*20,y:100}]})),1000,regions);
+  assert.equal(B.impactMarkers([{t:.3,status:'auto'}],longFlight,.4).length,0,'a hit in the middle of a flight (no track end within 0.12s) gets no marker');
   console.log('Impact markers follow audio time and observed positions only');
 }
 

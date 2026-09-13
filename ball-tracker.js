@@ -244,10 +244,11 @@
     else{c.fillStyle='#fff';c.fill();c.stroke();}
     c.restore();return true;
   }
-  // 打音の位置マーカー（表示専用）。時刻は打音で確定し、場所は打音の±0.25秒以内にある
-  // 観測点のうち最も近いものを使う。観測点が無い打音には出さない（音だけでは場所が分からない）。
-  // 速度・打数・接触判定には一切使わない。
-  const IMPACT_SECONDS=.7;
+  // 打音の位置マーカー（表示専用）。時刻は打音で確定し、場所は「軌跡の端」（返球の観測の
+  // 始点か終点）が打音の±0.12秒以内にあるときだけ、その端から隣の観測点との速度で打音時刻
+  // まで戻した位置に置く。飛行途中の観測点には置かない（打点ではないので）。端が無い打音、
+  // つまり映像の裏付けが無い打音には出さない。速度・打数・接触判定には一切使わない。
+  const IMPACT_SECONDS=.7,IMPACT_WINDOW=.12;
   function impactMarkers(hits,tracks,t){
     if(!Array.isArray(hits)||!finite(t))return [];
     const out=[];
@@ -255,12 +256,15 @@
       if(!h||!finite(h.t)||h.status==='ignored')continue;
       const age=t-h.t;if(age<0||age>IMPACT_SECONDS)continue;
       let best=null;
-      for(const tr of tracks||[]){const ps=(tr.points||[]).filter(p=>!p.predicted&&valid(p));
-        ps.forEach((p,i)=>{const d=Math.abs(p.t-h.t);if(d>.25||(best&&d>=best.d))return;
-          // 観測点は打音の少し後（または前）にあるので、隣の観測点との速度で打音時刻まで戻す。
-          // 戻す量は最大0.25秒ぶんの観測速度で、軌跡の端より外へ長く延ばさない。
-          const q=ps[i+1]||ps[i-1],dt=q?q.t-p.t:0,vx=dt?(q.x-p.x)/dt:0,vy=dt?(q.y-p.y)/dt:0,back=h.t-p.t;
-          best={d,x:p.x+vx*back,y:p.y+vy*back};});}
+      for(const tr of tracks||[]){
+        if(tr.displayOnly)continue;
+        const ps=(tr.points||[]).filter(p=>!p.predicted&&valid(p));if(ps.length<2)continue;
+        for(const [p,q] of [[ps[0],ps[1]],[ps.at(-1),ps.at(-2)]]){
+          const d=Math.abs(p.t-h.t);if(d>IMPACT_WINDOW||(best&&d>=best.d))continue;
+          const dt=q.t-p.t,vx=dt?(q.x-p.x)/dt:0,vy=dt?(q.y-p.y)/dt:0,back=h.t-p.t;
+          best={d,x:p.x+vx*back,y:p.y+vy*back};
+        }
+      }
       if(best)out.push({t:h.t,x:best.x,y:best.y,age,offset:best.d});
     }
     return out;
