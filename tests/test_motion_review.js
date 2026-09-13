@@ -10,7 +10,7 @@ class Element{
 }
 const video=new Element('video');Object.assign(video,{videoWidth:1000,videoHeight:500,currentTime:0,duration:4,readyState:2,paused:true,addEventListener(){},pause(){},play:async()=>{}});
 let testTime=0;const listeners={};video.addEventListener=(type,fn)=>{listeners[type]=fn;};video.removeEventListener=type=>{delete listeners[type];};Object.defineProperty(video,'currentTime',{get:()=>testTime,set:value=>{testTime=value;queueMicrotask(()=>listeners.seeked?.());}});
-const context={window:{FrescoMotion:require('../motion-core.js')},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,URL,Blob,console};
+const context={window:{FrescoBallTracker:require('../ball-tracker'),FrescoMotion:require('../motion-core.js')},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,URL,Blob,console};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../motion-review.js'),'utf8').replace('return {open,reset', 'return {poseSchedule,poseAudioEstimates,open,reset').replace('if(models)return models;', 'if(window.__testDetector)return window.__testDetector;if(models)return models;'),context);
 const schedule=context.window.FrescoMotionReview.poseSchedule;
 const detailed=schedule(0,300,[{t:1},{t:2.43}], 'detail'), simple=schedule(0,300,[{t:1},{t:2.43}], 'simple');

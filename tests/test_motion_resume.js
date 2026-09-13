@@ -15,7 +15,7 @@ function load(name='resume.mov',mode='simple',stop=false){
  const video=new Element('video'),host=new Element('host'),listeners={};let t=0,calls=0,cancelled=false;
  Object.assign(video,{videoWidth:1000,videoHeight:500,duration:1,readyState:2,paused:true,addEventListener:(k,f)=>listeners[k]=f,removeEventListener:k=>delete listeners[k],pause(){},play:async()=>{}});
  Object.defineProperty(video,'currentTime',{get:()=>t,set:n=>{t=n;queueMicrotask(()=>listeners.seeked?.());}});
- const context={window:{indexedDB,IDBKeyRange,FrescoMotion:require('../motion-core'),__testDetector:{detect(){calls++;return {landmarks:[]};}}},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,console};
+ const context={window:{indexedDB,IDBKeyRange,FrescoBallTracker:require('../ball-tracker'),FrescoMotion:require('../motion-core'),__testDetector:{detect(){calls++;return {landmarks:[]};}}},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,console};
  vm.runInNewContext(fs.readFileSync(require.resolve('../motion-review.js'),'utf8').replace('if(models)return models;','if(window.__testDetector)return window.__testDetector;if(models)return models;').replace('return {open,reset','return {readCheckpoint,findCheckpoint,clearCheckpoints,open,reset'),context);
  const R=context.window.FrescoMotionReview,source={name,size:100,lastModified:42,width:1000,height:500,duration:1};
  const button=text=>host.walk().find(e=>e.tag==='button'&&e.textContent===text);

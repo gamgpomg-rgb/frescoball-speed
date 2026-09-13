@@ -8,6 +8,53 @@
   const finite=n=>typeof n==='number'&&Number.isFinite(n);
   const valid=p=>p&&finite(p.x)&&finite(p.y);
   const MAX_GAP=.12;
+  // Colour and temporal evidence only. All returned points are visible pixels;
+  // a motion prediction narrows the search but never creates a ball position.
+  function createDetector(width,height,regions){
+    let previous=null,background=null,lastTime=null,hypotheses=[];
+    const x0=Math.max(1,Math.floor(Math.min(...regions.map(r=>r.x)))),x1=Math.min(width-2,Math.ceil(Math.max(...regions.map(r=>r.x+r.w))));
+    const y0=Math.max(1,Math.floor(Math.min(...regions.map(r=>r.y-r.h*.15)))),y1=Math.min(height-2,Math.ceil(Math.max(...regions.map(r=>r.y+r.h*.92))));
+    return {detect(data,t,poses=[]){
+      if(!previous||lastTime==null||t<=lastTime||t-lastTime>.15){previous=new Uint8ClampedArray(data);background=Float32Array.from(data);lastTime=t;hypotheses=[];return [];}
+      const dt=t-lastTime,predictions=hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t<=.1).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));
+      const mask=new Uint8Array(width*height),found=[];
+      const limbs=poses.flatMap(ps=>[[13,15],[14,16],[23,25],[24,26],[25,27],[26,28]].map(([a,b])=>[ps?.[a],ps?.[b]])).filter(pair=>pair.every(p=>p&&p.visibility>.65));
+      const body=poses.flatMap(ps=>[0,7,8,11,12,13,14,15,16,23,24,25,26,27,28].map(k=>ps?.[k])).filter(p=>p&&p.visibility>.65);
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+        const i=(y*width+x)*4,r=data[i],g=data[i+1],b=data[i+2],chroma=Math.max(r,g,b)-Math.min(r,g,b);
+        const delta=Math.abs(r-previous[i])+Math.abs(g-previous[i+1])+Math.abs(b-previous[i+2]);
+        const bgDelta=Math.abs(r-background[i])+Math.abs(g-background[i+1])+Math.abs(b-background[i+2]);
+        for(let k=0;k<3;k++)background[i+k]+=(data[i+k]-background[i+k])*.04;
+        const red=r>=95&&r>=g*1.45&&r>=b*1.25&&r-g>=38;
+        const pink=r>=100&&r>=b*.95&&r-g>=28&&b-g>=18&&chroma/Math.max(1,r,g,b)>=.2;
+        const weak=r>=80&&r>=b*.9&&r-g>=15&&b>=g&&chroma/Math.max(1,r,g,b)>=.1;
+        if(!red&&!pink&&!weak)continue;
+        const inPlayer=regions.some(q=>x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h);
+        const strong=red||(!inPlayer&&pink);
+        const near=!inPlayer&&predictions.some(p=>(p.x-x)**2+(p.y-y)**2<p.radius**2);
+        if(!(strong&&delta>=45&&bgDelta>=35)&&!(near&&weak&&delta>=22&&bgDelta>=24))continue;
+        if(body.some(p=>(p.x-x)**2+(p.y-y)**2<(width*.012)**2))continue;
+        if(limbs.some(([a,b])=>{const dx=b.x-a.x,dy=b.y-a.y,f=Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy||1)));return (x-a.x-f*dx)**2+(y-a.y-f*dy)**2<(width*.012)**2;}))continue;
+        mask[y*width+x]=near?2:1;
+      }
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+        const i=y*width+x;if(!mask[i])continue;
+        const queue=[i];let n=0,sx=0,sy=0,minX=width,maxX=0,minY=height,maxY=0,near=mask[i]===2;mask[i]=0;
+        while(queue.length){const j=queue.pop(),px=j%width,py=Math.floor(j/width);n++;sx+=px;sy+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+          for(const z of [j-1,j+1,j-width,j+width])if(z>=0&&z<mask.length&&mask[z]){near=near||mask[z]===2;mask[z]=0;queue.push(z);}}
+        const w=maxX-minX+1,h=maxY-minY+1,ratio=Math.max(w,h)/Math.min(w,h);
+        if(n>=2&&n<=45&&ratio<=(near?7:3)&&n/(w*h)>=.3)found.push({x:sx/n,y:sy/n});
+      }
+      const candidates=found.slice(0,100),next=[],used=new Set();
+      for(const p of candidates){let best=null,error=Infinity;
+        for(let j=0;j<hypotheses.length;j++){const q=hypotheses[j],gap=t-q.t;if(used.has(j)||gap>.1)continue;const vx=(p.x-q.x)/gap,vy=(p.y-q.y)/gap,speed=Math.hypot(vx,vy);if(speed<width*.18||speed>width*3.5)continue;
+          if(q.vx!=null&&(vx*q.vx+vy*q.vy<=0||speed<Math.hypot(q.vx,q.vy)*.45||speed>Math.hypot(q.vx,q.vy)*2.2))continue;
+          const e=Math.hypot(p.x-q.x-(q.vx||0)*gap,p.y-q.y-(q.vy||0)*gap);if(e<(q.vx==null?width*.16:width*.03)&&e<error){best={j,vx,vy,count:q.count+1};error=e;}}
+        if(best){used.add(best.j);next.push({...p,t,vx:best.vx,vy:best.vy,count:best.count});}else next.push({...p,t,count:1});
+      }
+      hypotheses=next;previous.set(data);lastTime=t;return candidates;
+    }};
+  }
   function track(frames,width,regions){
     if(!Array.isArray(frames)||!finite(width)||width<=0)throw new Error('動画の追跡入力が不正です');
     if(!Array.isArray(regions)||regions.length!==2||Array.from(regions).some(r=>!r||![r.x,r.y,r.w,r.h].every(finite)||r.w<=0||r.h<=0))return [];
@@ -149,5 +196,5 @@
     for(let i=1;i<stops.length;i++)if(speed<=stops[i][0]){const a=stops[i-1],b=stops[i],f=(speed-a[0])/(b[0]-a[0]);return '#'+a[1].map((n,j)=>Math.round(n+(b[1][j]-n)*f).toString(16).padStart(2,'0')).join('');}
     return '#ff484d';
   }
-  return {track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
+  return {createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
 });

@@ -171,7 +171,7 @@ window.FrescoMotionReview = (() => {
     for(const [job,index] of keys){
       if(index!==0)continue;
       let meta;try{meta=JSON.parse(job);}catch{continue;}
-      if(meta.version!==1||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
+      if(meta.version!==2||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
       const chunk=await new Promise((resolve,reject)=>{const r=db.transaction('chunks','readonly').objectStore('chunks').get([job,0]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
       if(chunk)matches.push({meta,updatedAt:chunk.updatedAt||0});
     }
@@ -214,13 +214,14 @@ window.FrescoMotionReview = (() => {
       say(uiMode==='simple'?'映像を解析する準備をしています':'2 / 4：骨格を読み取る準備をしています。初回は通信が必要です');
       let detector=null;
       const cv=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
+      const pixelDetector=window.FrescoBallTracker?.createDetector(cv.width,cv.height,roi.map(r=>({x:r.x*scale,y:r.y*scale,w:r.w*scale,h:r.h*scale})));
       const count=Math.ceil(duration*30),schedule=poseSchedule(start,count,workingEvents,runMode);
-      job=JSON.stringify({version:1,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
+      job=JSON.stringify({version:2,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
       try{
         const stored=await readCheckpoint(job);if(token!==serial)return;
         if(stored.length<=count&&stored.every((f,i)=>Math.abs(f.t-(start+i/30))<.001&&Array.isArray(f.poses)&&Array.isArray(f.ballCandidates))){for(const frame of stored)output.push(frame);saved=stored.length;}
       }catch(e){storageFailed=true;}
-      if(output.length&&output.length<count){await seek(output.at(-1).t);if(token!==serial)return;cx.drawImage(video,0,0,cv.width,cv.height);previous=cx.getImageData(0,0,cv.width,cv.height).data;}
+      if(output.length&&output.length<count){await seek(output.at(-1).t);if(token!==serial)return;cx.drawImage(video,0,0,cv.width,cv.height);previous=cx.getImageData(0,0,cv.width,cv.height).data;pixelDetector?.detect(previous,output.at(-1).t);}
       const resumed=output.length;
       if(output.length<count){detector=await model();if(token!==serial)return;}
       const began=Date.now();
@@ -241,7 +242,7 @@ window.FrescoMotionReview = (() => {
           say(`映像を解析中 ${Math.round((n+1)/count*100)}%：完了すると骨格とボールの軌跡が動画に加わります。速度・打数は先に確認できます。`);
           draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
         }
-        cx.drawImage(video,0,0,cv.width,cv.height);const candidate=balls(cv,previous,poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale}))));previous=candidate.data;
+        cx.drawImage(video,0,0,cv.width,cv.height);const scaledPoses=poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale})));const data=cx.getImageData(0,0,cv.width,cv.height).data;const candidate=pixelDetector?{data,candidates:pixelDetector.detect(data,t,scaledPoses)}:balls(cv,previous,scaledPoses);previous=candidate.data;
         output.push({t,poseSampleTime:!samplePose&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
         if(output.length-saved>=90||n===count-1){await persist();if(token!==serial)return;}
       }
