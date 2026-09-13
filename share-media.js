@@ -64,8 +64,11 @@ window.FrescoShare = (() => {
       const x=i?box.x+box.w-132*u:box.x+8*u;
       const bottomClearance=story?(state.showTrajectory?34:8):44;
       const y=box.y+box.h-(68+bottomClearance)*u;
-      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(x,y,124*u,68*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+8*u,y+16*u);
-      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+8*u,y+32*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+8*u,y+59*u,68*u);
+      const count=String(visibleHits.filter(e=>e.player===player).length),center=x+62*u;
+      g.textAlign='center';g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',center,y+16*u);
+      g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;const countWidth=Math.max(44*u,Math.min(100*u,g.measureText(count).width+16*u));
+      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(center-countWidth/2,y+21*u,countWidth,47*u);
+      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',center,y+34*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(count,center,y+60*u,countWidth-12*u);g.textAlign='left';
     }
     if(story){
       if(closeups)motion.regions.forEach((region,i)=>{
