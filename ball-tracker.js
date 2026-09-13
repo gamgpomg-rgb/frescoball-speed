@@ -8,10 +8,40 @@
   const finite=n=>typeof n==='number'&&Number.isFinite(n);
   const valid=p=>p&&finite(p.x)&&finite(p.y);
   const MAX_GAP=.12;
+  // 見失った仮説を持ち越す長さ（秒）。予測が放物線になったので、直線予測の0.1秒より長く持てる。
+  const CARRY=.2;
+  // 画像上の重力（px/s²、下向き）。選手枠の中心間隔を7m（公式のライン間隔）として換算する。
+  // 枠が無いときは0（重力を仮定しない＝従来どおりの直線予測）。
+  function gravityFor(width,regions){
+    if(!Array.isArray(regions)||regions.length!==2||regions.some(r=>!r||![r.x,r.y,r.w,r.h].every(finite)))return 0;
+    const c=regions.map(r=>({x:r.x+r.w/2,y:r.y+r.h/2})),separation=Math.hypot(c[1].x-c[0].x,c[1].y-c[0].y);
+    return separation>0?9.8/7*separation:0;
+  }
+  // 直近 FIT_POINTS 点（FIT_SECONDS 秒以内）に運動モデルを当てる。x は等速、y は下向き加速度 g の放物線。
+  // g は選手枠から換算した事前値で、観測からは推定しない（手持ち撮影の揺れやブレで加速度の当てはめが
+  // 暴れ、速度の推定まで狂って対応付けが切れる。IMG_0001 で飛行中94→90%に落ちたため）。
+  // 点数も2点（直前の速度そのまま＋重力）に留める。4点・10点の平滑化は Node ハーネスで打点付近の
+  // 観測を1〜9点失った（速度変化への追従が遅れる）。
+  // 戻り値は末尾（fromStart なら先頭）の点の時刻における位置・速度・加速度。点が1つなら速度なし。
+  const FIT_POINTS=2,FIT_SECONDS=.1;
+  function fitMotion(points,g=0,fromStart=false){
+    const ps=(points||[]).filter(p=>valid(p)&&finite(p.t));if(!ps.length)return null;
+    const anchor=fromStart?ps[0]:ps.at(-1),tail=fromStart?ps.filter(p=>p.t<=anchor.t+FIT_SECONDS).slice(0,FIT_POINTS):ps.filter(p=>p.t>=anchor.t-FIT_SECONDS).slice(-FIT_POINTS);
+    if(tail.length<2)return {t:anchor.t,x:anchor.x,y:anchor.y,vx:null,vy:null,ay:g};
+    const tau=tail.map(p=>p.t-anchor.t);
+    const line=vals=>{const n=tail.length;let su=0,sv=0,suu=0,suv=0;for(let i=0;i<n;i++){su+=tau[i];sv+=vals[i];suu+=tau[i]*tau[i];suv+=tau[i]*vals[i];}const d=n*suu-su*su,k=Math.abs(d)>1e-12?(n*suv-su*sv)/d:0;return [(sv-k*su)/n,k];};
+    const [x,vx]=line(tail.map(p=>p.x)),[y,vy]=line(tail.map((p,i)=>p.y-.5*g*tau[i]*tau[i]));
+    return {t:anchor.t,x,y,vx,vy,ay:g};
+  }
+  // 運動モデル m を時刻 t まで進める（t が前なら戻す）
+  function predict(m,t){const dt=t-m.t;if(m.vx==null)return {x:m.x,y:m.y};return {x:m.x+m.vx*dt,y:m.y+m.vy*dt+.5*m.ay*dt*dt};}
+  // 2点 a→b を通り、縦加速度 ay を持つ放物線上の時刻 t の位置（欠測区間の補間用）
+  function arc(a,b,ay,t){const D=b.t-a.t,u=t-a.t,f=D>0?u/D:0;return {x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f+.5*ay*u*(u-D)};}
   // Colour and temporal evidence only. All returned points are visible pixels;
   // a motion prediction narrows the search but never creates a ball position.
   function createDetector(width,height,regions){
     let previous=null,background=null,lastTime=null,hypotheses=[];
+    const g=gravityFor(width,regions);
     const x0=Math.max(1,Math.floor(Math.min(...regions.map(r=>r.x)))),x1=Math.min(width-2,Math.ceil(Math.max(...regions.map(r=>r.x+r.w))));
     // 縦の探索範囲は画面上端から選手の足元まで。以前は「枠の上端−15%」で止めていたため、
     // 頭〜膝の狭い枠を引くと山なりの球が枠より上を飛ぶ区間で候補が消え、軌跡が分断された
@@ -24,7 +54,8 @@
     const skyAround=(x,y)=>skyAt(x,y)&&skyAt(x-3,y)&&skyAt(x+3,y)&&skyAt(x,y-3)&&skyAt(x,y+3);
     return {detect(data,t,poses=[]){
       if(!previous||lastTime==null||t<=lastTime||t-lastTime>.15){previous=new Uint8ClampedArray(data);background=Float32Array.from(data);lastTime=t;hypotheses=[];return [];}
-      const dt=t-lastTime,predictions=hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t<=.1).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));
+      // 予測位置は放物線。持ち越しが長いほど予測が甘くなるので、弱い色を拾う半径も持ち越し時間に応じて広げる。
+      const dt=t-lastTime,predictions=hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t<=CARRY+1e-6).map(q=>{const p=predict(q,t);return {x:p.x,y:p.y,radius:Math.max(5,width*.015)*(1+Math.min(t-q.t,.3)*3)};});
       const mask=new Uint8Array(width*height),found=[];
       const limbs=poses.flatMap(ps=>[[13,15],[14,16],[23,25],[24,26],[25,27],[26,28]].map(([a,b])=>[ps?.[a],ps?.[b]])).filter(pair=>pair.every(p=>p&&p.visibility>.65));
       const body=poses.flatMap(ps=>[0,7,8,11,12,13,14,15,16,23,24,25,26,27,28].map(k=>ps?.[k])).filter(p=>p&&p.visibility>.65);
@@ -60,25 +91,29 @@
         if(n>=2&&n<=45&&ratio<=(near?7:3)&&n/(w*h)>=.3)found.push({x:sx/n,y:sy/n});
       }
       const candidates=found.slice(0,100);
-      hypotheses=associate(candidates,t,hypotheses,width);previous.set(data);lastTime=t;return candidates;
+      hypotheses=associate(candidates,t,hypotheses,width,g);previous.set(data);lastTime=t;return candidates;
     },
-    // 次フレームの予測位置（検出器座標）。見失った仮説も0.1秒は持ち越すので、1〜3フレームの欠測でも予測が出る。
-    predictions(t){return hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t>0&&t-q.t<=.1+1e-6).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));},
+    // 次フレームの予測位置（検出器座標）。放物線で進めるので、見失った仮説を CARRY 秒持ち越しても予測が外れにくい。
+    predictions(t){return hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t>0&&t-q.t<=CARRY+1e-6).map(q=>{const p=predict(q,t);return {x:p.x,y:p.y,radius:Math.max(5,width*.015)};});},
     // 原寸の局所探索で見つかった点（検出器座標）を、この時刻の観測として仮説に取り込む
-    adopt(points,t){if(lastTime==null||Math.abs(t-lastTime)>1e-6||!points?.length)return;hypotheses=associate(points,t,hypotheses,width);}
+    adopt(points,t){if(lastTime==null||Math.abs(t-lastTime)>1e-6||!points?.length)return;hypotheses=associate(points,t,hypotheses,width,g);}
     };
   }
-  // 候補点を直前の仮説に対応付ける。速度の連続性と予測誤差で選ぶ。見失った仮説は0.1秒だけ
-  // 持ち越す（予測位置の局所探索と弱い色の回復に使う）。この時刻に作った仮説はそのまま残す。
-  function associate(points,t,current,width){
+  // 候補点を直前の仮説に対応付ける。速度の連続性と放物線予測との誤差で選ぶ。仮説は直近の観測点を
+  // 最大10点持ち、対応付けのたびに運動モデル（位置・速度・縦加速度）を当て直す。見失った仮説は
+  // CARRY 秒だけ持ち越す（予測位置の局所探索と弱い色の回復に使う）。この時刻に作った仮説はそのまま残す。
+  function associate(points,t,current,width,g=0){
     const next=[],used=new Set();
     for(const p of points){let best=null,error=Infinity;
-      for(let j=0;j<current.length;j++){const q=current[j],gap=t-q.t;if(used.has(j)||gap<=0||gap>.1+1e-6)continue;const vx=(p.x-q.x)/gap,vy=(p.y-q.y)/gap,speed=Math.hypot(vx,vy);if(speed<width*.18||speed>width*3.5)continue;
+      for(let j=0;j<current.length;j++){const q=current[j],gap=t-q.t;if(used.has(j)||gap<=0||gap>CARRY+1e-6)continue;const vx=(p.x-q.x)/gap,vy=(p.y-q.y)/gap,speed=Math.hypot(vx,vy);if(speed<width*.18||speed>width*3.5)continue;
         if(q.vx!=null&&(vx*q.vx+vy*q.vy<=0||speed<Math.hypot(q.vx,q.vy)*.45||speed>Math.hypot(q.vx,q.vy)*2.2))continue;
-        const e=Math.hypot(p.x-q.x-(q.vx||0)*gap,p.y-q.y-(q.vy||0)*gap);if(e<(q.vx==null?width*.16:width*.03)&&e<error){best={j,vx,vy,count:q.count+1};error=e;}}
-      if(best){used.add(best.j);next.push({...p,t,vx:best.vx,vy:best.vy,count:best.count});}else next.push({...p,t,count:1});
+        const pr=predict(q,t),e=Math.hypot(p.x-pr.x,p.y-pr.y);if(e<(q.vx==null?width*.16:width*.03)&&e<error){best=j;error=e;}}
+      if(best!=null){used.add(best);const pts=current[best].pts.concat([{x:p.x,y:p.y,t}]).slice(-10);next.push({...fitMotion(pts,g),pts,count:current[best].count+1});}
+      else next.push({x:p.x,y:p.y,t,vx:null,vy:null,ay:g,pts:[{x:p.x,y:p.y,t}],count:1});
     }
-    for(let j=0;j<current.length;j++){const q=current[j];if(used.has(j))continue;if(q.t===t||(q.count>=2&&q.vx!=null&&t-q.t<=.1+1e-6))next.push(q);}
+    // 1点だけの仮説も次のフレームまでは残す（同じ時刻の detect→adopt の順で呼ばれるため、
+    // 原寸の局所探索だけで見えている球が、640px の検出に頼らずに2点目とつながる）。
+    for(let j=0;j<current.length;j++){const q=current[j];if(used.has(j))continue;if(t-q.t<=.05+1e-6||(q.count>=2&&q.vx!=null&&t-q.t<=CARRY+1e-6))next.push(q);}
     return next;
   }
   // 原寸の小窓での局所探索。予測位置（または打音直後の手首）の周りだけ、縮小前の画素で色規則と
@@ -119,6 +154,7 @@
     const top=0,bottom=Math.max(...regions.map(r=>r.y+r.h*.95));
     const center=regions.map(r=>({x:r.x+r.w/2,y:r.y+r.h/2})),axis={x:center[1].x-center[0].x,y:center[1].y-center[0].y};
     const separation=Math.hypot(axis.x,axis.y);if(separation<1)return [];
+    const g=gravityFor(width,regions);
     const inside=p=>valid(p)&&p.x>=left&&p.x<=right&&p.y>=top&&p.y<=bottom;
     const active=[],finished=[];let id=0,lastTime=-Infinity;
     for(const frame of frames){
@@ -131,16 +167,17 @@
       for(let i=active.length-1;i>=0;i--)if(t-active[i].points.at(-1).t>MAX_GAP+1e-9)finished.push(...active.splice(i,1));
       const pairs=[];
       active.forEach((tr,i)=>{
-        const b=tr.points.at(-1),a=tr.points.at(-2),dt=t-b.t;if(dt<=0)return;
-        const vx=a?(b.x-a.x)/(b.t-a.t):0,vy=a?(b.y-a.y)/(b.t-a.t):0,oldSpeed=Math.hypot(vx,vy);
+        const b=tr.points.at(-1),dt=t-b.t;if(dt<=0)return;
+        // 直近の観測点に放物線（等速＋重力）を当てて次の位置を予測する。2点なら従来と同じ直線＋重力。
+        const m=fitMotion(tr.points,g),hasV=m.vx!=null,vx=m.vx||0,vy=m.vy||0,oldSpeed=Math.hypot(vx,vy),pr=predict(m,t);
         points.forEach((p,j)=>{
           const nx=(p.x-b.x)/dt,ny=(p.y-b.y)/dt,speed=Math.hypot(nx,ny);
           if(speed>width*3.5)return;
-          if(a&&(oldSpeed<width*.08||speed<oldSpeed*.45||speed>oldSpeed*2.2||(nx*vx+ny*vy)/(speed*oldSpeed)<.25))return;
-          const error=Math.hypot(p.x-b.x-vx*dt,p.y-b.y-vy*dt);
-          const tolerance=a?width*.018+oldSpeed*dt*.25:width*.16;
+          if(hasV&&(oldSpeed<width*.08||speed<oldSpeed*.45||speed>oldSpeed*2.2||(nx*vx+ny*vy)/(speed*oldSpeed)<.25))return;
+          const error=Math.hypot(p.x-pr.x,p.y-pr.y);
+          const tolerance=hasV?width*.018+oldSpeed*dt*.25:width*.16;
           if(error>tolerance)return;
-          pairs.push({i,j,cost:error/tolerance+(a?Math.abs(Math.log(speed/oldSpeed))*.15:0)});
+          pairs.push({i,j,cost:error/tolerance+(hasV?Math.abs(Math.log(speed/oldSpeed))*.15:0)});
         });
       });
       pairs.sort((a,b)=>a.cost-b.cost);const usedTracks=new Set(),usedPoints=new Set();
@@ -163,7 +200,8 @@
         const p=tr.points[i],previous=tr.points[i-1];
         if(previous){
           let lo=0,hi=frames.length;while(lo<hi){const m=(lo+hi)>>1;if(frames[m].t<=previous.t+1e-9)lo=m+1;else hi=m;}
-          for(let j=lo;j<frames.length&&frames[j].t<p.t-1e-9;j++){const time=frames[j].t,f=(time-previous.t)/(p.t-previous.t);expanded.push({t:time,x:previous.x+(p.x-previous.x)*f,y:previous.y+(p.y-previous.y)*f,kind:'interpolated',predicted:true});}
+          // 欠測フレームは両端を通る放物線（重力あり）で補う。0.12秒以内なので直線との差は数px。
+          for(let j=lo;j<frames.length&&frames[j].t<p.t-1e-9;j++){const time=frames[j].t,q=arc(previous,p,g,time);expanded.push({t:time,x:q.x,y:q.y,kind:'interpolated',predicted:true});}
         }
         expanded.push(p);
       }
@@ -189,8 +227,10 @@
   }
   // Display-only bridges between independently sustained tracks. Never feed
   // these points into contact or speed estimation; no endpoint extrapolation.
-  function displayTracks(tracks,events,width,frames=[]){
+  function displayTracks(tracks,events,width,frames=[],regions=null){
     if(!finite(width)||width<=0)return tracks||[];
+    // 選手枠があれば画像上の重力を換算し、欠測区間は放物線でつなぐ（山なりの返球でも弦で切らない）。
+    const g=gravityFor(width,regions);
     const result=(tracks||[]).slice(),observed= result.map(tr=>({id:tr.id,points:tr.points.filter(p=>!p.predicted)})).filter(tr=>tr.points.length>=4);
     const blocked=(a,b)=>(events||[]).some(e=>e.status!=='ignored'&&finite(e.t)&&e.t>a-.02&&e.t<b+.02);
     // Audio boundaries allow a longer display reconstruction within one flight.
@@ -201,29 +241,38 @@
       return i>0&&impacts[i].t>=b.t&&impacts[i].t-impacts[i-1].t<=1.2;
     };
     const used=new Set();
+    // 横ずれ: 予測位置 q から実際の点 p までの、速度 (wx,wy) と直交する成分
+    const cross=(p,q,wx,wy,s)=>Math.abs((p.x-q.x)*wy-(p.y-q.y)*wx)/s;
+    const cos=(ax,ay,bx,by)=>(ax*bx+ay*by)/(Math.hypot(ax,ay)*Math.hypot(bx,by)||1);
     for(const from of observed){
-      const a=from.points.at(-1),pa=from.points.at(-2),dtA=a.t-pa.t;
-      if(dtA<=0)continue;
-      const vx=(a.x-pa.x)/dtA,vy=(a.y-pa.y)/dtA,speed=Math.hypot(vx,vy);
+      const a=from.points.at(-1),mA=fitMotion(from.points,g);
+      if(!mA||mA.vx==null)continue;
+      const vx=mA.vx,vy=mA.vy,speed=Math.hypot(vx,vy);
+      if(speed<width*.18)continue;
       const candidates=observed.filter(to=>{
         if(to===from||used.has(to.id))return false;
-        const b=to.points[0],pb=to.points[1],gap=b.t-a.t,dtB=pb.t-b.t;
-        if(gap<=.03||gap>.9||dtB<=0||blocked(a.t,b.t))return false;
-        const ux=(pb.x-b.x)/dtB,uy=(pb.y-b.y)/dtB,nextSpeed=Math.hypot(ux,uy);
-        if(speed<width*.18||nextSpeed<speed*.65||nextSpeed>speed*1.5||(vx*ux+vy*uy)/(speed*nextSpeed)<.9)return false;
-        if(gap<=.24)return Math.hypot(b.x-a.x-vx*gap,b.y-a.y-vy*gap)<width*.035&&Math.hypot(a.x-b.x+ux*gap,a.y-b.y+uy*gap)<width*.035;
+        const b=to.points[0],gap=b.t-a.t;
+        if(gap<=.03||gap>.9||blocked(a.t,b.t))return false;
+        const mB=fitMotion(to.points,g,true);if(!mB||mB.vx==null)return false;
+        const ux=mB.vx,uy=mB.vy,nextSpeed=Math.hypot(ux,uy),ay=(mA.ay+mB.ay)/2;
+        // 出発側の速度を重力で b の時刻まで進めたものと到着側の実測速度を比べる（山なりでも縦成分が合う）
+        const pvx=vx,pvy=vy+ay*gap,pSpeed=Math.hypot(pvx,pvy);
+        if(nextSpeed<pSpeed*.65||nextSpeed>pSpeed*1.5||cos(pvx,pvy,ux,uy)<.9)return false;
+        const fwd=predict(mA,b.t),back=predict(mB,a.t);
+        if(gap<=.24)return Math.hypot(b.x-fwd.x,b.y-fwd.y)<width*.035&&Math.hypot(a.x-back.x,a.y-back.y)<width*.035;
         if(!sameFlight(a,b))return false;
-        const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy),bridgeSpeed=distance/gap;
-        if(!distance||bridgeSpeed<speed*.5||bridgeSpeed>speed*1.5||bridgeSpeed<nextSpeed*.5||bridgeSpeed>nextSpeed*1.5)return false;
-        return (dx*vx+dy*vy)/(distance*speed)>.94&&(dx*ux+dy*uy)/(distance*nextSpeed)>.94&&
-          Math.abs(dx*vy-dy*vx)/speed<width*.06&&Math.abs(dx*uy-dy*ux)/nextSpeed<width*.06;
+        // 長い欠測: 両端を通る放物線の弦の速さと向きが両端の実測と合い、両側からの予測に対する横ずれが小さいこと
+        const dx=b.x-a.x,dy=b.y-a.y;if(!dx&&!dy)return false;
+        const va={x:dx/gap,y:dy/gap-.5*ay*gap},vb={x:dx/gap,y:dy/gap+.5*ay*gap},sa=Math.hypot(va.x,va.y),sb=Math.hypot(vb.x,vb.y);
+        if(sa<speed*.5||sa>speed*1.5||sb<nextSpeed*.5||sb>nextSpeed*1.5)return false;
+        return cos(va.x,va.y,vx,vy)>.94&&cos(vb.x,vb.y,ux,uy)>.94&&cross(b,fwd,vx,vy,speed)<width*.06&&cross(a,back,ux,uy,nextSpeed)<width*.06;
       });
       if(candidates.length!==1)continue;
       const to=candidates[0],b=to.points[0];
       // An independently detected path in the missing interval is conflicting evidence.
       if(observed.some(other=>other!==from&&other!==to&&other.points.some(p=>p.t>a.t&&p.t<b.t)))continue;
-      const count=Math.ceil((b.t-a.t)*30),points=[a];used.add(to.id);
-      for(let i=1;i<count;i++){const f=i/count;points.push({t:a.t+(b.t-a.t)*f,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,predicted:true,kind:'display-bridge'});}
+      const ay=(mA.ay+fitMotion(to.points,g,true).ay)/2,count=Math.ceil((b.t-a.t)*30),points=[a];used.add(to.id);
+      for(let i=1;i<count;i++){const time=a.t+(b.t-a.t)*i/count,q=arc(a,b,ay,time);points.push({t:time,x:q.x,y:q.y,predicted:true,kind:'display-bridge'});}
       points.push({...b,predicted:true,kind:'display-bridge'});
       result.push({id:`bridge-${from.id}-${to.id}`,displayOnly:true,points});
     }
@@ -379,5 +428,5 @@
     }
     c.restore();return true;
   }
-  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,refineLocal,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
+  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,refineLocal,fitMotion,predict,gravityFor,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP,carrySeconds:CARRY};
 });

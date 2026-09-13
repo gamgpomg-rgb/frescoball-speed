@@ -104,7 +104,7 @@ window.FrescoShare = (() => {
     const controller=new AbortController();active=controller;
     const video=options.video,record=structuredClone(options.record),motion=options.motion?structuredClone(options.motion):null;
     let displayTracks=window.FrescoBallTracker&&motion?.frames?window.FrescoBallTracker.track(motion.frames,video.videoWidth,motion.regions):C.trajectoryTracks(motion?.tracks||(motion?.frames?window.FrescoMotion.track(motion.frames,video.videoWidth):[]),motion?.regions,video.videoWidth,video.videoHeight);
-    if(window.FrescoBallTracker?.displayTracks)displayTracks=window.FrescoBallTracker.displayTracks(displayTracks,motion?.events,video.videoWidth,motion?.frames||[]);
+    if(window.FrescoBallTracker?.displayTracks)displayTracks=window.FrescoBallTracker.displayTracks(displayTracks,motion?.events,video.videoWidth,motion?.frames||[],motion?.regions);
     const ownedSrc=video.src,ownedObject=video.srcObject;
     const ownsVideo=()=>active===controller&&video.src===ownedSrc&&video.srcObject===ownedObject;
     const check=()=>{if(controller.signal.aborted||!ownsVideo())throw new Error('保存を中止しました');};

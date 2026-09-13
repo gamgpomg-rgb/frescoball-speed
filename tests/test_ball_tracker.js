@@ -104,3 +104,24 @@ console.log('Hand-proximity rejection passed');
   assert.equal(B.trailRuns(tr,1.1,.5).length,1,'a shorter window keeps only the current flight');
   console.log('Multi-flight trail window passed');
 }
+
+{
+  // 放物線の橋渡し: 山なりの返球が途中で欠測しても、選手枠から換算した重力で弧としてつなぐ
+  const g=B.gravityFor(1000,regions);assert(g>1000&&g<1200,'gravity prior from the 800px player separation');
+  const lob=t=>({t,x:250+900*t,y:300-700*t+.5*g*t*t});   // 打ち上げてから落ちる（画像座標は下向きが正）
+  const early=Array.from({length:5},(_,i)=>lob(.1+i/30)),late=Array.from({length:5},(_,i)=>lob(.5+i/30));
+  const parts=[{id:1,points:early.map(p=>({...p,predicted:false}))},{id:2,points:late.map(p=>({...p,predicted:false}))}];
+  const hits=[{t:.05,status:'auto',player:'a',speed:50},{t:.7,status:'auto',player:'b',speed:55}];
+  const display=B.displayTracks(parts,hits,1000,[],regions);
+  assert.equal(display.length,3,'a lob with a long gap inside one flight is bridged when the boxes give the gravity scale');
+  const mid=B.at(display,.4),truth=lob(.4);
+  assert(mid?.predicted&&Math.abs(mid.point.y-truth.y)<4,'the bridge follows the parabola');
+  const a=early.at(-1),b=late[0],chordY=a.y+(b.y-a.y)*(.4-a.t)/(b.t-a.t);
+  assert(Math.abs(chordY-truth.y)>6,'the straight chord would have missed the arc');
+  assert.equal(B.at(parts,.4),null,'measured tracks are untouched');
+  // 追跡の欠測補間も放物線: 1フレーム欠けた山なりの飛行の補間点が弧の上に乗る
+  const frames=Array.from({length:8},(_,i)=>({t:.1+i/30,ballCandidates:i===4?[]:[lob(.1+i/30)]}));
+  const tr=B.track(frames,1000,regions);assert.equal(tr.length,1);
+  const gap=tr[0].points.find(p=>p.kind==='interpolated');assert(gap&&Math.abs(gap.y-lob(gap.t).y)<2,'interpolated point lies on the arc');
+  console.log('Parabolic display bridge and gap interpolation passed');
+}
