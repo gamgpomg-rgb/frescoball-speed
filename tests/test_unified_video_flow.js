@@ -2,19 +2,19 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const html=fs.readFileSync(require('path').join(__dirname,'../index.html'),'utf8');
 const elements=new Map();const el=id=>{
-  if(!elements.has(id))elements.set(id,{value:'7',classList:{toggle(){}},style:{},hidden:false,handlers:{},setAttribute(k,v){this[k]=v;},addEventListener(type,fn){this.handlers[type]=fn;},removeEventListener(type){delete this.handlers[type];},load(){queueMicrotask(()=>this.handlers.loadeddata?.());},click(){this.handlers.click?.();}});
+  if(!elements.has(id))elements.set(id,{value:'7',classList:{toggle(){}},style:{setProperty(){}},dataset:{},hidden:false,handlers:{},setAttribute(k,v){this[k]=v;},addEventListener(type,fn){this.handlers[type]=fn;},removeEventListener(type){delete this.handlers[type];},load(){queueMicrotask(()=>this.handlers.loadeddata?.());},click(){this.handlers.click?.();}});
   return elements.get(id);
 };
 Object.assign(el('upVideo'),{src:'',videoWidth:1920,videoHeight:1080,duration:20});
 let audioCalls=0,workflow;
 const c=vm.createContext({$:el,console,setTimeout,clearTimeout,URL:{createObjectURL:()=> 'blob:local-test'},
-  selectedVideoFile:null,uploadObjectUrl:null,uploadAnalysisGeneration:0,currentMotion:null,curStats:null,currentRecordMeta:{},currentVideoSettings:null,
+  videoMode:"simple",analysisActivity:{busy:false,percent:0},renderShotSummary:()=>{},selectedVideoFile:null,uploadObjectUrl:null,uploadAnalysisGeneration:0,currentMotion:null,curStats:null,currentRecordMeta:{},currentVideoSettings:null,
   validatedVideoDistance:Number,currentSettings:()=>({values:{distance:'7'}}),setVideoExportAvailability:()=>{},
   window:{FrescoMotionReview:{isBusy:()=>false}},updateAnalysisSteps:()=>{},renderDash:()=>{},syncLive:()=>{},saveCurrentRecord:()=>{},videoRallyGap:()=>2.5,
   FrescoMotion:require('../motion-core.js'),FrescoMotionReview:{open:options=>{workflow=options;}},
   analyzeFile:async()=>{audioCalls++;return{onsets:[1,1.5],aiRejected:0};},buildStats:times=>({hits:times.map(t=>({t}))})});
 c.resetUploadAnalysis=()=>{c.uploadAnalysisGeneration++;c.curStats=null;c.currentMotion=null;c.uploadObjectUrl=null;return c.uploadAnalysisGeneration;};
-for(const name of ['updateAnalysisSteps','openMotionWorkflow','updateFromMotion']){const a=html.indexOf(`function ${name}(`);vm.runInContext(html.slice(a,html.indexOf('\n}',a)+2),c);}
+for(const name of ['updateActivity','updateAnalysisSteps','openMotionWorkflow','updateFromMotion']){const a=html.indexOf(`function ${name}(`);vm.runInContext(html.slice(a,html.indexOf('\n}',a)+2),c);}
 const a=html.indexOf('$("upFile").addEventListener("change", async e => {'),b=html.indexOf('$("upDistanceApply").addEventListener',a);
 vm.runInContext(html.slice(a,b),c);
 (async()=>{
@@ -46,3 +46,14 @@ vm.runInContext(html.slice(a,b),c);
   assert.equal(el('upProg').hidden,false);
   console.log('Quick audio results, optional target analysis, no false drop and stale callback isolation passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+// Switching presentation modes must preserve the loaded analysis.
+{
+ const classes=new Map();for(const id of ['upView','tabUp','tabDetail','tabCam'])el(id).classList={add:n=>classes.set(id+':'+n,true),remove:n=>classes.delete(id+':'+n),toggle:(n,on)=>on?classes.set(id+':'+n,true):classes.delete(id+':'+n)};
+ c.exitCamera=()=>{};let modeSeen=null;c.window.FrescoMotionReview.setMode=m=>modeSeen=m;
+ const start=html.indexOf('function selectVideoMode(');vm.runInContext(html.slice(start,html.indexOf('\n}',start)+2),c);
+ const before=c.currentMotion;c.selectVideoMode('detail');assert.equal(modeSeen,'detail');assert.equal(c.currentMotion,before);c.selectVideoMode('simple');assert.equal(modeSeen,'simple');assert.equal(c.currentMotion,before);
+ c.updateActivity('motion',29,'running');assert.equal(el('activityBadge').hidden,false);assert.equal(el('activityPercent').textContent,'29%');assert.equal(el('tabCam').disabled,true);
+ c.updateActivity('motion',29,'error');assert.equal(el('activityTitle').textContent,'解析できませんでした');assert.equal(el('activityPercent').textContent,'!');
+ c.updateActivity('audio',0,'idle');
+ console.log('Simple/detail mode preserves analysis; fixed progress distinguishes running and error');
+}

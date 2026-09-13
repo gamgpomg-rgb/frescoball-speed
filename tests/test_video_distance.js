@@ -19,7 +19,7 @@ const context = vm.createContext({
   currentVideoSettings: { values: { distance: "7", micPos: "center", firstOnsetSide: "near", rallyGap: "2.5", maxTrust: "200", calib: "" } },
   curStats: null, curFlip: false, currentMotion: null, RECORD_SCHEMA_VERSION: 2,
   HBINS: [{label: "all"}], binIndex: () => 0, playerName: p => p,
-  resetUploadAnalysis: () => {}, renderPlayers: () => {}, renderDash: () => {}, setVideoExportAvailability: () => {}
+  renderShotSummary:()=>{},resetUploadAnalysis: () => {}, renderPlayers: () => {}, renderDash: () => {}, setVideoExportAvailability: () => {}
 });
 for (const name of ["validatedVideoDistance", "measureVideoInterval", "measureObservedInterval", "videoRallyGap", "buildStats", "rebuildTimeline", "aggregate", "defaultPlayerLabels", "normalizeRecord", "estimatedDrops", "makeRecord", "openRecord"]) {
   const start = html.indexOf(`function ${name}(`);

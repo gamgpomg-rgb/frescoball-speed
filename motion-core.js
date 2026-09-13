@@ -153,13 +153,13 @@
       const poses=rawPoses.map(ps=>{if(!Array.isArray(ps)||(ps.length!==0&&ps.length!==33))throw new Error('骨格の記録が不正です');return ps.map(p=>{if(!point(p)||!finite(p.visibility)||Math.abs(p.x)>video.width*3||Math.abs(p.y)>video.height*3)throw new Error('骨格座標が不正です');return {x:p.x,y:p.y,visibility:p.visibility,presence:finite(p.presence)?p.presence:null};});});
       const balls=legacy?f.ball_candidates:f.ballCandidates;
       if(!Array.isArray(balls)||balls.length>500||balls.some(p=>!point(p)||p.x<0||p.y<0||p.x>video.width||p.y>video.height))throw new Error('ボール座標が不正です');
-      return {t,poses,ballCandidates:balls.map(p=>({x:p.x,y:p.y}))};
+      return {t,poseSampleTime:finite(f.poseSampleTime)&&f.poseSampleTime<=t?f.poseSampleTime:t,poses,ballCandidates:balls.map(p=>({x:p.x,y:p.y}))};
     });
     const settings={distanceM:distance(data.settings?.distanceM??7),rule:['top','classic'].includes(data.settings?.rule)?data.settings.rule:'practice'};
     if(data.events!=null&&(!Array.isArray(data.events)||data.events.length>100000))throw new Error('打点記録が不正です');
     const events=(data.events||[]).map((e,i)=>{
       if(!e||!finite(e.t)||e.t<0||e.t>video.duration)throw new Error('打点時刻が不正です');
-      return {id:`e${i}`,t:e.t,reviewRequired:Boolean(e.reviewRequired),suspicious:Boolean(e.suspicious),player:['a','b'].includes(e.player)?e.player:null,status:['confirmed','auto','ignored'].includes(e.status)?e.status:'pending',distanceM:e.distanceM==null?null:distance(e.distanceM),origin:String(e.origin||'import').slice(0,80),provenance:String(e.provenance||'').slice(0,160),evidence:String(e.evidence||'').slice(0,300),reviewReason:String(e.reviewReason||'').slice(0,300),suggestedPlayer:['a','b'].includes(e.suggestedPlayer)?e.suggestedPlayer:null};
+      return {id:`e${i}`,t:e.t,shotOverride:["attack","defense"].includes(e.shotOverride)?e.shotOverride:null,reviewRequired:Boolean(e.reviewRequired),suspicious:Boolean(e.suspicious),player:['a','b'].includes(e.player)?e.player:null,status:['confirmed','auto','ignored'].includes(e.status)?e.status:'pending',distanceM:e.distanceM==null?null:distance(e.distanceM),origin:String(e.origin||'import').slice(0,80),provenance:String(e.provenance||'').slice(0,160),evidence:String(e.evidence||'').slice(0,300),reviewReason:String(e.reviewReason||'').slice(0,300),suggestedPlayer:['a','b'].includes(e.suggestedPlayer)?e.suggestedPlayer:null};
     });
     const rawRegions=data.regions??[];
     if(!Array.isArray(rawRegions)||(rawRegions.length!==0&&rawRegions.length!==2))throw new Error('対象範囲の記録が不正です');

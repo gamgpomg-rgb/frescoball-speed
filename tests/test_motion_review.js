@@ -9,6 +9,7 @@ class Element{
   getContext(){return new Proxy({},{get:(_,key)=>key==='getImageData'?()=>({data:new Uint8ClampedArray(640*320*4)}):()=>{}});}
 }
 const video=new Element('video');Object.assign(video,{videoWidth:1000,videoHeight:500,currentTime:0,duration:4,readyState:2,paused:true,addEventListener(){},pause(){},play:async()=>{}});
+let testTime=0;const listeners={};video.addEventListener=(type,fn)=>{listeners[type]=fn;};video.removeEventListener=type=>{delete listeners[type];};Object.defineProperty(video,'currentTime',{get:()=>testTime,set:value=>{testTime=value;queueMicrotask(()=>listeners.seeked?.());}});
 const context={window:{FrescoMotion:require('../motion-core.js')},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,URL,Blob,console};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../motion-review.js'),'utf8').replace('return {open,reset', 'return {poseAudioEstimates,open,reset').replace('if(models)return models;', 'if(window.__testDetector)return window.__testDetector;if(models)return models;'),context);
 const R=context.window.FrescoMotionReview,host=new Element('host'),source={name:'x.mov',size:100,width:1000,height:500,duration:4};let updates=0;
@@ -18,7 +19,7 @@ find('1人目を選ぶ').onclick();const canvas=host.walk().find(e=>e.tag==='can
 const tap=(x,y)=>{const e={clientX:x,clientY:y,pointerId:1};canvas.onpointerdown(e);canvas.onpointerup(e);};
 tap(20,20);tap(200,450);tap(700,20);tap(950,450);
 assert.equal(R.snapshot().regions.length,2,'two taps per person set two ROIs');
-find('1人目が打った').onclick();find('2人目が打った').onclick();
+const shotSelect=host.walk().find(e=>e.tag==='select');shotSelect.value='attack';shotSelect.onchange();assert.equal(R.snapshot().events[0].shotOverride,'attack');shotSelect.value='';shotSelect.onchange();assert.equal(R.snapshot().events[0].shotOverride,null);find('1人目が打った').onclick();find('2人目が打った').onclick();
 assert.equal(R.snapshot().events.filter(e=>e.status==='confirmed').length,2);
 const saved=R.snapshot();assert.equal(saved.settings.distanceM,7);assert(updates>=4);
 R.setDistance(10);assert.equal(R.snapshot().settings.distanceM,10);R.restore(saved);assert.equal(R.snapshot().settings.distanceM,7);
@@ -36,7 +37,7 @@ assert.equal(R.drawOverlay(canvas.getContext(),1000,500,.201,{skeleton:false,bal
 assert.equal(R.drawOverlay(canvas.getContext(),1000,500,.201,{skeleton:true,ball:false}),false,'ball switch is independent');
 R.restore({...saved,frames:ballFrames.map(f=>({...f,ballCandidates:f.ballCandidates.map(p=>({...p,y:490}))}))});assert.equal(R.snapshot().tracks.length,0,'movement below the selected players is rejected');
 assert.equal(R.drawOverlay(canvas.getContext(),1000,500,2),false,'do not invent skeleton outside analyzed range');
-assert.equal(R.isBusy(),false);R.reset();assert.equal(R.snapshot(),null,'reset must not expose previous video');
+assert.equal(R.isBusy(),false);const modeBefore=JSON.stringify(R.snapshot());R.setMode('simple');assert.equal(host.walk().find(e=>Object.hasOwn(e.dataset,'posture')).hidden,true);assert.equal(host.walk().find(e=>e.tag==='summary'&&e.textContent==='表示を調整する').parentNode.hidden,true);assert(find('選んだ2人で自動解析'));assert.equal(JSON.stringify(R.snapshot()),modeBefore,'mode changes preserve video analysis');R.setMode('detail');assert.equal(host.walk().find(e=>Object.hasOwn(e.dataset,'posture')).hidden,false);assert.throws(()=>R.setMode('other'));R.reset();assert.equal(R.snapshot(),null,'reset must not expose previous video');
 console.log('Motion review touch selection, confirmation, persistence and honest overlays passed');
 
 (async()=>{
@@ -51,16 +52,18 @@ console.log('Motion review touch selection, confirmation, persistence and honest
   const c=freshHost.walk().find(e=>e.tag==='canvas');const tap2=(x,y)=>{const e={clientX:x,clientY:y,pointerId:1};c.onpointerdown(e);c.onpointerup(e);};
   pick('1人目を選ぶ').onclick();tap2(10,10);tap2(200,400);tap2(700,10);tap2(900,400);
   const duration=freshHost.walk().find(e=>Object.hasOwn(e.dataset,'duration'));assert.equal(duration.value,4,'entire video is default');assert(pick('5秒戻る'));assert(pick('5秒進む'));assert(freshHost.walk().some(e=>e.tag==='input'&&e.type==='range'));assert(freshHost.walk().some(e=>e.tag==='summary'&&e.textContent==='打球の判定を確認・修正する')); duration.value=.05;
-  await pick('選んだ2人で自動解析').onclick();assert.equal(audioCalls,1);assert.equal(completed,1);assert.equal(R.snapshot().frames.length,1);assert(progressUpdates.length>=3);assert.equal(progressUpdates[0].percent,0);assert.equal(progressUpdates.at(-1).busy,false);assert.equal(progressUpdates.at(-1).percent,100);assert(progressUpdates.every(p=>p.phase==='motion'&&Number.isFinite(p.percent)));assert.equal(R.openReview(),true);assert.equal(freshHost.walk().find(e=>e.tag==='summary'&&e.textContent==='打球の判定を確認・修正する').parentNode.open,true);assert.equal(R.snapshot().events[0].status,'auto');
+  await pick('選んだ2人で自動解析').onclick();assert.equal(audioCalls,1);assert.equal(completed,1);assert.equal(R.snapshot().frames.length,2);assert.equal(R.snapshot().frames[1].poseSampleTime,0);assert(progressUpdates.length>=3);assert.equal(progressUpdates[0].percent,0);assert.equal(progressUpdates.at(-1).busy,false);assert.equal(progressUpdates.at(-1).percent,100);assert.equal(progressUpdates.at(-1).status,'complete');assert(progressUpdates.every(p=>p.phase==='motion'&&Number.isFinite(p.percent)));assert.equal(R.openReview(),true);assert.equal(freshHost.walk().find(e=>e.tag==='summary'&&e.textContent==='打球の判定を確認・修正する').parentNode.open,true);assert.equal(R.snapshot().events[0].status,'auto');
   const config=freshHost.walk().find(e=>e.tag==='summary'&&e.textContent==='解析条件を変更する').parentNode;assert.equal(config.open,false,'completed analysis collapses setup');
   assert.equal(await R.inspectTime(.25),true);assert(freshHost.walk().some(e=>e.tag==='button'&&e.textContent==='1人目が打った'),'inspectTime shows accepted event in same review card');
   assert(c.parentNode!==freshHost.children[0].children[3],'canvas remains present after review render');
   R.reset();
   let release;const pending=new Promise(r=>release=r);const cancelHost=new Element('host');
-  R.open({host:cancelHost,video,source,distance:7,analyzeAudio:()=>pending,onComplete:()=>completed++});
+  R.open({host:cancelHost,video,source,distance:7,analyzeAudio:()=>pending,onComplete:()=>completed++,onProgress:p=>progressUpdates.push(p)});
   const b=t=>cancelHost.walk().find(e=>e.tag==='button'&&e.textContent===t),cv=cancelHost.walk().find(e=>e.tag==='canvas');
   const pt=(x,y)=>{const e={clientX:x,clientY:y,pointerId:2};cv.onpointerdown(e);cv.onpointerup(e);};b('1人目を選ぶ').onclick();pt(10,10);pt(200,400);pt(700,10);pt(900,400);
-  const running=b('選んだ2人で自動解析').onclick();R.reset();release([{t:0}]);await running;assert.equal(R.snapshot(),null);assert.equal(completed,1,'cancelled audio must not complete into another video');
+  const running=b('選んだ2人で自動解析').onclick();R.reset();release([{t:0}]);await running;assert.equal(R.snapshot(),null);assert.equal(completed,1,'cancelled audio must not complete into another video');assert.equal(progressUpdates.at(-1).status,'cancelled');
+  const errHost=new Element('host');R.open({host:errHost,video,source,distance:7,analyzeAudio:async()=>{throw new Error('test failure');},onProgress:p=>progressUpdates.push(p)});R.restore(saved);
+  await errHost.walk().find(e=>e.tag==='button'&&e.textContent==='選んだ2人で自動解析').onclick();assert.equal(progressUpdates.at(-1).status,'error');assert.equal(progressUpdates.at(-1).busy,false);R.reset();
   context.window.FrescoMotion.autoReview=coreAuto;
   console.log('Motion automatic flow defers audio, processes frames and invokes completion');
 })().catch(e=>{console.error(e);process.exitCode=1;});

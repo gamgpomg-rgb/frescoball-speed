@@ -27,9 +27,9 @@ window.FrescoShare = (() => {
     return drawn;
   }
   function trajectory(g,tracks,t,width){
-    const points=C.trajectoryAt(tracks,t);if(points.length<2)return false;
-    g.strokeStyle='#ffce59';g.lineWidth=Math.max(3,width/480);g.beginPath();
-    points.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));g.stroke();
+    const points=window.FrescoBallTracker?(window.FrescoBallTracker.at(tracks,t)?.trail||[]):C.trajectoryAt(tracks,t);if(points.length<2)return false;
+    g.strokeStyle='#ffce59';g.lineWidth=Math.max(3,width/480);
+    for(let i=1;i<points.length;i++){g.globalAlpha=.2+.8*i/points.length;g.setLineDash?.(points[i].predicted?[5,5]:[]);g.beginPath();g.moveTo(points[i-1].x,points[i-1].y);g.lineTo(points[i].x,points[i].y);g.stroke();}g.globalAlpha=1;g.setLineDash?.([]);
     const last=points.at(-1);g.beginPath();g.arc(last.x,last.y,Math.max(4,width/240),0,Math.PI*2);g.stroke();return true;
   }
   function draw(canvas,video,state){
@@ -50,9 +50,11 @@ window.FrescoShare = (() => {
     g.drawImage(video,crop.x,crop.y,crop.w,crop.h,box.x,box.y,box.w,box.h);
     if(style==='skeleton'){
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
-      if(!drawn){g.fillStyle='rgba(0,0,0,.6)';g.fillRect(box.x,box.y,box.w,36*(W/1080));g.fillStyle='#fff';g.font=`${22*W/1080}px "Hiragino Sans", sans-serif`;g.textAlign='center';g.fillText('この瞬間は骨格を読み取れません',W/2,box.y+26*W/1080);}
+
     }
     if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth);g.restore();g.fillStyle='#ffce59';g.font=`${20*W/1080}px sans-serif`;g.fillText('球の軌跡候補',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    const shot=(state.shotEstimates||[]).filter(e=>e.t<=video.currentTime&&video.currentTime-e.t<.9).at(-1);
+    if(shot?.type){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*W/1080,box.y+120*W/1080,270*W/1080,42*W/1080);g.fillStyle='#ffd23f';g.font=`${24*W/1080}px "Hiragino Sans",sans-serif`;g.fillText(`${shot.type==='attack'?'アタック':'ディフェンス'}（推定）`,box.x+30*W/1080,box.y+149*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
@@ -78,7 +80,7 @@ window.FrescoShare = (() => {
     cancel();document.getElementById('sharePreview')?.remove();
     const controller=new AbortController();active=controller;
     const video=options.video,record=structuredClone(options.record),motion=options.motion?structuredClone(options.motion):null;
-    const displayTracks=C.trajectoryTracks(motion?.tracks||(motion?.frames?window.FrescoMotion.track(motion.frames,video.videoWidth):[]),motion?.regions,video.videoWidth,video.videoHeight);
+    const displayTracks=window.FrescoBallTracker&&motion?.frames?window.FrescoBallTracker.track(motion.frames,video.videoWidth,motion.regions):C.trajectoryTracks(motion?.tracks||(motion?.frames?window.FrescoMotion.track(motion.frames,video.videoWidth):[]),motion?.regions,video.videoWidth,video.videoHeight);
     const ownedSrc=video.src,ownedObject=video.srcObject;
     const ownsVideo=()=>active===controller&&video.src===ownedSrc&&video.srcObject===ownedObject;
     const check=()=>{if(controller.signal.aborted||!ownsVideo())throw new Error('保存を中止しました');};
@@ -99,6 +101,7 @@ window.FrescoShare = (() => {
     const sl=label('見た目'),style=e('select','',sl);for(const [value,text]of [['play','プレーと球速'],['skeleton','骨格付き']]){const o=e('option',text,style);o.value=value;if(value==='skeleton'&&!C.motionRange(motion))o.disabled=true;}
     if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで詳しく解析」で解析してください。',form);
     const trailLabel=label('球の軌跡'),trail=e('select','',trailLabel);for(const [value,text]of [['off','表示しない'],['on','軌跡候補を表示']]){const o=e('option',text,trail);o.value=value;if(value==='on'&&!displayTracks.length)o.disabled=true;}
+    if(displayTracks.length)trail.value='on';
     const measurementLabel=label('表示する記録'),measurement=e('select','',measurementLabel);
     const hasAudio=record?.analysisMode!=='motion'||Array.isArray(record?.audioHits);
     for(const [value,text]of [['audio','音から計算した記録'],['confirmed','対象2人の記録（自動・仮判定を含む）']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
@@ -136,7 +139,7 @@ window.FrescoShare = (() => {
         const distances=new Set(hits.filter(h=>h.t>=range.start&&h.t<=range.end&&h.usedDistanceM!=null).map(h=>h.usedDistanceM));
         selectedRecord={hits,playbackHits,settings:{values:{distance:distances.size===1?[...distances][0]:motion.settings.distanceM}},variedDistances:distances.size>1};
       }
-      state={format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
+      state={shotEstimates:window.FrescoShots&&motion?.frames?window.FrescoShots.classify(motion.events,motion.frames):[],format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
       const c=C.crop(video.videoWidth,video.videoHeight,motion?.regions,state.focus);
       if(options.format==='story'){canvas.width=1080;canvas.height=1920;}else{const scale=Math.min(1,1280/Math.max(c.w,c.h));canvas.width=Math.max(2,Math.round(c.w*scale/2)*2);canvas.height=Math.max(2,Math.round(c.h*scale/2)*2);}
       return state;

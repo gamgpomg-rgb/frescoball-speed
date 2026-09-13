@@ -4,11 +4,11 @@ window.FrescoMotionReview = (() => {
   const M = window.FrescoMotion;
   const edges = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
   let serial = 0, models = null, panel, video, source, frames = [], tracks = [], events = [], regions = [], selecting = null, origin = null, busy = false;
-  let overlay, view, status, rows, controls, currentDistance = 7, callbacks = {}, reviewIndex = 0, corner = null, clipEnd = null, previewFrame = null, viewHome = null, playback = null, showAll = false, conditions = null, showSkeleton = true, showBall = true, timeline = null, clockLabel = null, reviewSection = null, lastProgress = 0;
+  let overlay, view, status, rows, controls, currentDistance = 7, callbacks = {}, reviewIndex = 0, corner = null, clipEnd = null, previewFrame = null, viewHome = null, playback = null, showAll = false, conditions = null, showSkeleton = true, showBall = true, timeline = null, clockLabel = null, reviewSection = null, lastProgress = 0, uiMode = 'detail', detailNodes = [];
   const el = (tag, text, parent) => { const n=document.createElement(tag); if(text)n.textContent=text; if(parent)parent.append(n); return n; };
   const button = (text, parent, action) => {const b=el('button',text,parent);b.type='button';b.onclick=action;return b;};
   const say = text => {if(status)status.textContent=text;};
-  function reset(){serial++;if(busy)callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false});callbacks={};source=null;corner=null;clipEnd=null;previewFrame=null;showAll=false;showSkeleton=true;showBall=true;timeline=null;clockLabel=null;reviewSection=null;busy=false;selecting=null;origin=null;frames=[];tracks=[];events=[];regions=[];if(panel)panel.remove();panel=null;if(overlay)overlay.remove();overlay=null;}
+  function reset(){serial++;if(busy)callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});callbacks={};source=null;corner=null;clipEnd=null;previewFrame=null;showAll=false;showSkeleton=true;showBall=true;timeline=null;clockLabel=null;reviewSection=null;busy=false;selecting=null;origin=null;frames=[];tracks=[];events=[];regions=[];if(panel)panel.remove();panel=null;if(overlay)overlay.remove();overlay=null;}
   async function model(){
     if(models)return models;
     const {FilesetResolver,PoseLandmarker}=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs');
@@ -28,7 +28,13 @@ window.FrescoMotionReview = (() => {
     c.save();c.scale(w/source.width,h/source.height);c.lineWidth=Math.max(2,source.width/500);
     const confident=p=>p&&p.visibility>=.65&&(p.presence==null||p.presence>=.65);
     if((options.skeleton??showSkeleton)&&f)f.poses.forEach((ps,i)=>{c.strokeStyle=i?'#f4bf55':'#58d5ef';for(const [a,b] of edges)if(confident(ps[a])&&confident(ps[b])){c.beginPath();c.moveTo(ps[a].x,ps[a].y);c.lineTo(ps[b].x,ps[b].y);c.stroke();drawn=true;}});
-    const displayed=(options.ball??showBall)?tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t+.04&&p.t>=t-.25)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>Math.hypot(b.at(-1).x-b[0].x,b.at(-1).y-b[0].y)-Math.hypot(a.at(-1).x-a[0].x,a.at(-1).y-a[0].y)).slice(0,1):[];c.strokeStyle='#ff6cb5';for(const points of displayed){if(points.length){c.beginPath();points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();const p=points.at(-1);c.beginPath();c.arc(p.x,p.y,source.width/180,0,Math.PI*2);c.stroke();drawn=true;}}
+    if(options.ball??showBall){
+      const ball=window.FrescoBallTracker?.at(tracks,t);
+      const fallback=tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t&&p.t>=t-.22)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>b.length-a.length)[0];
+      const points=window.FrescoBallTracker?(ball?.trail||[]):(fallback||[]);
+      for(let i=1;i<points.length;i++){c.globalAlpha=.2+.8*i/points.length;c.strokeStyle='#ffcf59';c.setLineDash?.(points[i].predicted?[5,5]:[]);c.beginPath();c.moveTo(points[i-1].x,points[i-1].y);c.lineTo(points[i].x,points[i].y);c.stroke();drawn=true;}
+      c.globalAlpha=1;c.setLineDash?.([]);if(points.length){const p=points.at(-1);c.strokeStyle='#ffcf59';c.beginPath();c.arc(p.x,p.y,source.width/180,0,Math.PI*2);c.stroke();drawn=true;}
+    }
     c.restore();return drawn;
   }
   function draw(){
@@ -46,7 +52,7 @@ window.FrescoMotionReview = (() => {
     if(viewHome&&view&&view.parentNode!==viewHome){viewHome.append(view);if(playback)viewHome.append(playback);}rows.replaceChildren();let speeds;
     try{speeds=M.speeds(events,currentDistance);}catch(e){say(e.message);return;}
     const all=events.slice().sort((a,b)=>a.t-b.t),pending=all.filter(e=>e.status==='pending'||e.reviewRequired||e.suspicious),ordered=showAll?all:pending,byId=new Map(speeds.map(e=>[e.id,e]));
-    el('p',`球と動きで判定 ${events.filter(e=>e.status==='auto'&&e.provenance!=='pose-audio-estimate-v1').length}球・腕から仮判定 ${events.filter(e=>e.status==='auto'&&e.provenance==='pose-audio-estimate-v1').length}球・確認した打球 ${events.filter(e=>e.status==='confirmed'&&e.player).length}球・見直す音 ${pending.length}件`,rows);const list=el('details','',rows);el('summary','すべての判定を見る',list);button(showAll?'見直す音だけに戻る':'すべての音を見直す',list,()=>{showAll=!showAll;reviewIndex=0;renderEvents();});
+    el('p',`球と動きで判定 ${events.filter(e=>e.status==='auto'&&!['pose-audio-estimate-v1','rally-alternation-estimate-v1'].includes(e.provenance)).length}球・動き・ラリーから仮判定 ${events.filter(e=>e.status==='auto'&&['pose-audio-estimate-v1','rally-alternation-estimate-v1'].includes(e.provenance)).length}球・確認した打球 ${events.filter(e=>e.status==='confirmed'&&e.player).length}球・見直す音 ${pending.length}件`,rows);const list=el('details','',rows);el('summary','すべての判定を見る',list);button(showAll?'見直す音だけに戻る':'すべての音を見直す',list,()=>{showAll=!showAll;reviewIndex=0;renderEvents();});
     if(!ordered.length){el('p',events.length?'見直す音はありません。自動判定も「すべての判定を見る」から修正できます。':'解析後に判定した打球と、見直しが必要な音を表示します。',rows);if(frames.length&&reviewSection?.open){rows.append(view);rows.append(playback);}return;}
     reviewIndex=Math.min(Math.max(0,reviewIndex),ordered.length-1);const event=ordered[reviewIndex];
     if(frames.length&&!busy&&reviewSection?.open){video.pause();video.currentTime=Math.max(0,event.t-.25);}
@@ -54,13 +60,14 @@ window.FrescoMotionReview = (() => {
     el('strong',`確認箇所 ${reviewIndex+1} / ${ordered.length}・${timeText(event.t)}`,card);if(frames.length&&reviewSection?.open){card.append(view);card.append(playback);}el('p',event.reviewReason||event.evidence||'自動では判断しきれなかった音です。',card);
     el('p','映像を見て、誰が打った音か選んでください。隣の組の音や足音は「この2人の打球ではない」を選びます。',card);
     button('この前後を再生',card,async()=>{if(busy)return;try{const token=serial;video.pause();await seek(Math.max(0,event.t-.65));if(token!==serial)return;clipEnd=Math.min(video.duration,event.t+.65);await video.play();}catch(e){say(e.message);}});
+    const shotLabel=el('label','打ち方 ',card),shot=el('select','',shotLabel);shot.setAttribute('aria-label','打ち方の修正');for(const [value,text]of [['','自動推定'],['attack','アタック'],['defense','ディフェンス']]){const option=el('option',text,shot);option.value=value;}shot.value=event.shotOverride||'';shot.onchange=()=>{if(busy)return;event.shotOverride=shot.value||null;changed();};
     const choices=el('div','',card);
     const select=(player,state)=>{if(busy)return;event.player=player;event.status=state;event.reviewRequired=false;event.suspicious=false;event.origin='manual-review';reviewIndex=state==='pending'?(reviewIndex+1)%ordered.length:showAll?Math.min(reviewIndex+1,ordered.length-1):Math.min(reviewIndex,ordered.length-2);renderEvents();changed();};
     button('1人目が打った',choices,()=>select('a','confirmed'));
     button('2人目が打った',choices,()=>select('b','confirmed'));
     button('この2人の打球ではない',choices,()=>select(null,'ignored'));
     button('分からないので次へ',choices,()=>select(null,'pending'));
-    const state=event.status==='auto'?(event.provenance==='pose-audio-estimate-v1'?'腕の動きによる仮判定':'自動判定した打球'):event.status==='ignored'?'集計から外しました':event.status==='confirmed'?`${event.player==='a'?'1':'2'}人目の打球として確認済み`:'まだ確認していません';
+    const state=event.status==='auto'?(event.provenance==='pose-audio-estimate-v1'?'動き・ラリーによる仮判定':'自動判定した打球'):event.status==='ignored'?'集計から外しました':event.status==='confirmed'?`${event.player==='a'?'1':'2'}人目の打球として確認済み`:'まだ確認していません';
     const result=byId.get(event.id);el('p',state+(result?.averageKmh!=null?`・推定平均 ${result.averageKmh.toFixed(1)} km/h`:''),card);
     if(event.suggestedPlayer)el('p',`映像からは${event.suggestedPlayer==='a'?'1':'2'}人目の打球の可能性があります。上のボタンで確認してください。`,card);
     button('前の音',card,()=>{reviewIndex--;renderEvents();});button('次の音',card,()=>{reviewIndex++;renderEvents();});
@@ -112,7 +119,7 @@ window.FrescoMotionReview = (() => {
     });
     const ordered=result.filter(e=>e.status!=='ignored').slice().sort((a,b)=>a.t-b.t),rejected=new Set();
     for(let i=1;i<ordered.length;i++){const a=ordered[i-1],b=ordered[i],dt=b.t-a.t;
-      if(dt<.15||(dt<=2&&a.player&&a.player===b.player&&['auto','confirmed'].includes(a.status)&&['auto','confirmed'].includes(b.status)))for(const e of [a,b])if(e.provenance==='pose-audio-estimate-v1')rejected.add(e.id);
+      if(dt<.15||(dt<=2&&a.player&&a.player===b.player&&['auto','confirmed'].includes(a.status)&&['auto','confirmed'].includes(b.status)))for(const e of [a,b])if(['pose-audio-estimate-v1','rally-alternation-estimate-v1'].includes(e.provenance))rejected.add(e.id);
     }
     return result.map(e=>rejected.has(e.id)?{...e,status:'pending',player:null,reviewRequired:true,reviewReason:'打球の間隔または打者の順序を確認してください'}:e);
   }
@@ -122,42 +129,42 @@ window.FrescoMotionReview = (() => {
     if(!regions[0]||!regions[1]||regions.some(r=>r.w<20||r.h<20)){say('まず映像から2人を選んでください');return;}
     if(!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<=0||start+duration>video.duration+.01){say('動画の中に収まる開始時刻と長さを指定してください');return;}
     const token=++serial;busy=true;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=0),busy:true});controls.disabled=true;rows.inert=true;video.pause();clipEnd=null;
-    if(viewHome){viewHome.append(view);viewHome.append(playback);viewHome.append(status);}say('1 / 4：音を調べています');
-    const output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice();
+    if(viewHome){viewHome.append(view);viewHome.append(playback);viewHome.append(status);}say(uiMode==='simple'?'動画の音を調べています':'1 / 4：音を調べています');
+    const output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice(),outcome='error';
     try{
-      if(callbacks.analyzeAudio){const hits=await callbacks.analyzeAudio(p=>{if(token===serial){say(`1 / 4：音を調べています ${Math.round(Math.max(0,Math.min(1,p))*100)}%`);callbacks.onProgress?.({phase:'motion',percent:(lastProgress=Math.round(Math.max(0,Math.min(1,p))*15)),busy:true});}},()=>token===serial);
+      if(callbacks.analyzeAudio){const hits=await callbacks.analyzeAudio(p=>{if(token===serial){say(`${uiMode==='simple'?'動画の音を解析中':'1 / 4：音を調べています'} ${Math.round(Math.max(0,Math.min(1,p))*100)}%`);callbacks.onProgress?.({phase:'motion',percent:(lastProgress=Math.round(Math.max(0,Math.min(1,p))*15)),busy:true});}},()=>token===serial);
         if(token!==serial)return;
-        const manual=events.filter(e=>e.status==='confirmed'||e.origin==='manual-review'||e.origin==='manual');
+        const manual=events.filter(e=>e.status==='confirmed'||e.origin==='manual-review'||e.origin==='manual'||['attack','defense'].includes(e.shotOverride));
         workingEvents=(hits||[]).filter(h=>!manual.some(e=>Math.abs(e.t-h.t)<.01)).map((h,i)=>({id:`audio-${i}`,t:h.t,player:null,status:'pending',origin:'audio'})).concat(manual);
       }
-      say('2 / 4：骨格を読み取る準備をしています。初回は通信が必要です');
+      say(uiMode==='simple'?'映像を解析する準備をしています':'2 / 4：骨格を読み取る準備をしています。初回は通信が必要です');
       const detector=await model();if(token!==serial)return;
       const cv=document.createElement('canvas'),crop=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
-      const count=Math.ceil(duration*15);
+      const count=Math.ceil(duration*30);
       for(let n=0;n<count;n++){
-        if(token!==serial)return;const t=start+n/15;await seek(t);if(token!==serial)return;
-        const poses=[];for(let person=0;person<roi.length;person++){const r=roi[person];crop.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));crop.height=Math.max(8,Math.min(512,Math.round(crop.width*r.h/r.w)));crop.getContext('2d').drawImage(video,r.x,r.y,r.w,r.h,0,0,crop.width,crop.height);const result=detector.detect(crop);poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
-          if(n%3===0){callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true});previewFrame={t,poses:poses.concat(person===0?[[]]:[])};say(`2 / 4：${person+1}人目の骨格を読み取り中 ${Math.round((n+1)/count*100)}%`);draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;}}
+        if(token!==serial)return;const t=start+n/30;await seek(t);if(token!==serial)return;
+        const poses=n%2&&output.length?output.at(-1).poses:[];if(n%2===0)for(let person=0;person<roi.length;person++){const r=roi[person];crop.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));crop.height=Math.max(8,Math.min(512,Math.round(crop.width*r.h/r.w)));crop.getContext('2d').drawImage(video,r.x,r.y,r.w,r.h,0,0,crop.width,crop.height);const result=detector.detect(crop);poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
+          if(n%3===0){callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true});previewFrame={t,poses:poses.concat(person===0?[[]]:[])};say(uiMode==='simple'?`映像を解析中 ${Math.round((n+1)/count*100)}%`:`2 / 4：${person+1}人目の骨格を読み取り中 ${Math.round((n+1)/count*100)}%`);draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;}}
         cx.drawImage(video,0,0,cv.width,cv.height);const candidate=balls(cv,previous,poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale}))));previous=candidate.data;
-        output.push({t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
+        output.push({t,poseSampleTime:n%2&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
       }
-      if(token!==serial)return;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=96),busy:true});say('3 / 4：打音と2人の動きを照合しています');await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
-      const nextTracks=M.track(output,video.videoWidth).filter(trackForPair),nextEvents=M.autoReview(workingEvents,output,nextTracks,video.videoWidth,currentDistance);
-      if(token!==serial)return;frames=output;tracks=nextTracks;events=poseAudioEstimates(Array.isArray(nextEvents)?nextEvents:nextEvents.events,output,video.videoWidth);
+      if(token!==serial)return;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=96),busy:true});say(uiMode==='simple'?'解析結果をまとめています':'3 / 4：打音と2人の動きを照合しています');await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
+      const nextTracks=window.FrescoBallTracker?window.FrescoBallTracker.track(output,video.videoWidth,regions):M.track(output,video.videoWidth).filter(trackForPair),observedTracks=nextTracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),nextEvents=M.autoReview(workingEvents,output,observedTracks,video.videoWidth,currentDistance);
+      if(token!==serial)return;frames=output;tracks=nextTracks;events=poseAudioEstimates(Array.isArray(nextEvents)?nextEvents:nextEvents.events,output,video.videoWidth);if(window.FrescoShots)events=window.FrescoShots.inferAlternation(events,output,video.videoWidth);
       if(window.FrescoVideoQuality){const reviewed=window.FrescoVideoQuality.review(M.speeds(events,currentDistance).map(e=>({...e,speed:e.averageKmh})));const bad=new Set(reviewed.hits.filter(e=>e.qualityExcluded).map(e=>e.id));events=events.map(e=>bad.has(e.id)&&e.status==='auto'?{...e,status:'pending',player:null,reviewReason:'前後より速度が大きく違います',evidence:'前後より速度が大きく違います'}:e);}
       previewFrame=null;reviewIndex=0;showAll=false;renderEvents();changed();await seek(Math.max(0,(events.find(e=>e.status==='pending')?.t??start)-.25));if(token!==serial)return;draw();
-      say('4 / 4：解析完了。判断が難しかった音だけ、映像の下で見直せます。');conditions.open=false;viewHome.scrollIntoView({behavior:'smooth',block:'start'});callbacks.onProgress?.({phase:'motion',percent:(lastProgress=100),busy:true});callbacks.onComplete?.(snapshot());
-    }catch(e){if(token===serial)say(`解析できませんでした：${e.message}`);}finally{if(token===serial){previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false});controls.disabled=false;rows.inert=false;draw();}}
+      say(uiMode==='simple'?'解析が完了しました。結果と動画を保存できます':'4 / 4：解析完了。判断が難しかった音だけ、映像の下で見直せます。');conditions.open=uiMode==='simple';viewHome.scrollIntoView({behavior:'smooth',block:'start'});callbacks.onProgress?.({phase:'motion',percent:(lastProgress=100),busy:true});outcome='complete';callbacks.onComplete?.(snapshot());
+    }catch(e){outcome='error';if(token===serial)say(`解析できませんでした：${e.message}`);}finally{if(token===serial){previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:outcome});controls.disabled=false;rows.inert=false;draw();}}
   }
   function restore(raw){
     if(busy)throw new Error('解析が終わってから記録を戻してください');
     const data=M.normalize(raw,source);frames=data.frames;regions=data.regions||[];events=data.events;currentDistance=data.settings.distanceM;
-    tracks=M.track(frames,source.width).filter(trackForPair);events=M.evidence(events,frames,tracks,source.width);reviewIndex=0;
+    tracks=window.FrescoBallTracker?window.FrescoBallTracker.track(frames,source.width,regions):M.track(frames,source.width).filter(trackForPair);events=M.evidence(events,frames,tracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),source.width);reviewIndex=0;
     if(panel){panel.querySelector('[data-distance]').value=currentDistance;renderEvents();draw();}
     callbacks.onDistance?.(currentDistance);return snapshot();
   }
   function open(options){
-    reset();callbacks=options;video=options.video;source=options.source;currentDistance=M.distance(options.distance);
+    reset();detailNodes=[];callbacks=options;video=options.video;source=options.source;currentDistance=M.distance(options.distance);
     panel=el('section','',options.host);panel.className='motion-review';
     el('h3','映像で詳しく',panel);
     el('p','2人の動きと球の軌跡を、映像で確かめられます。',panel);
@@ -168,8 +175,8 @@ window.FrescoMotionReview = (() => {
     for(const [label,delta] of [['5秒戻る',-5],['0.1秒戻る',-.1],['0.1秒進む',.1],['5秒進む',5]])button(label,playback,()=>{if(!busy){video.pause();seek(Math.max(0,Math.min(video.duration-.001,video.currentTime+delta))).then(draw).catch(e=>say(e.message));}});
     clockLabel=el('p',`${timeText(video.currentTime)} / ${timeText(video.duration)}`,playback);clockLabel.setAttribute('aria-live','off');
     timeline=el('input','',playback);timeline.type='range';timeline.min=0;timeline.max=video.duration;timeline.step=.05;timeline.value=video.currentTime;timeline.style.width='100%';timeline.setAttribute('aria-label','動画の再生位置');timeline.oninput=()=>{if(busy)return;video.pause();clipEnd=null;video.currentTime=Number(timeline.value);};
-    const displayOptions=el('details','',playback);el('summary','表示を調整する',displayOptions);for(const [text,key]of [['骨格を表示','skeleton'],['球の軌跡候補を表示','ball']]){const label=el('label','',displayOptions),toggle=el('input','',label);toggle.type='checkbox';toggle.checked=true;toggle.dataset.overlay=key;el('span',text,label);toggle.onchange=()=>{if(key==='skeleton')showSkeleton=toggle.checked;else showBall=toggle.checked;draw();};}
-    el('small','球の線は対象2人の間で動いた候補です。見つからない区間は補っていません。',displayOptions);
+    const displayOptions=el('details','',playback);detailNodes.push(displayOptions);el('summary','表示を調整する',displayOptions);for(const [text,key]of [['骨格を表示','skeleton'],['球の軌跡候補を表示','ball']]){const label=el('label','',displayOptions),toggle=el('input','',label);toggle.type='checkbox';toggle.checked=true;toggle.dataset.overlay=key;el('span',text,label);toggle.onchange=()=>{if(key==='skeleton')showSkeleton=toggle.checked;else showBall=toggle.checked;draw();};}
+    el('small','球の線は対象2人の間で動いた候補です。短い見失いは前後の位置から補い、推定部分は破線で表示します。長く見失うと線を止めます。',displayOptions);
     conditions=el('details','',panel);conditions.open=true;el('summary','解析条件を変更する',conditions);const selector=el('div','',conditions);el('h4','1. 解析する2人を選ぶ',selector);
     el('p','選手の頭から足までが入るように、左上と右下をタップします。指でなぞって囲むこともできます。隣の選手を入れないようにしてください。',selector);
     for(let i=0;i<2;i++)button(`${i+1}人目を選ぶ`,selector,()=>{if(busy)return;video.pause();viewHome.append(view);viewHome.append(playback);selecting=i;corner=null;say(`${i+1}人目の全身を囲む左上をタップし、次に右下をタップしてください`);draw();});
@@ -184,18 +191,18 @@ window.FrescoMotionReview = (() => {
       const done=regions[0]&&regions[1];selecting=done?null:selecting===0?1:0;origin=null;corner=null;
       say(done?'2人を選びました。「選んだ2人で自動解析」を押すと骨格の線と球の軌跡を確認できます。':`${selecting+1}人目も、全身を囲む2か所をタップしてください`);draw();};
     controls=el('fieldset','',conditions);controls.style.border='0';el('legend','2. 動きを解析する',controls);
-    const advanced=el('details','',controls);el('summary','詳しく調整する',advanced);const input=(label,key,value,min,max)=>{const l=el('label',label,advanced),i=el('input','',l);i.type='number';i.value=value;i.min=min;i.max=max;i.step='any';i.dataset[key]='';i.style.width='90px';return i;};
+    const advanced=el('details','',controls);detailNodes.push(advanced);el('summary','詳しく調整する',advanced);const input=(label,key,value,min,max)=>{const l=el('label',label,advanced),i=el('input','',l);i.type='number';i.value=value;i.min=min;i.max=max;i.step='any';i.dataset[key]='';i.style.width='90px';return i;};
     input('開始する秒数 ','start',0,0,video.duration);
     input('解析する長さ（秒） ','duration',video.duration,.1,video.duration);
     el('p','動画全体を解析します。長い動画は時間がかかります。初回は解析の準備に通信しますが、動画は送信しません。',controls);
     const d=input('2人の距離（m） ','distance',currentDistance,7,100);d.step='0.1';d.onchange=()=>{try{const value=M.distance(d.value);if(value<7||Math.abs(value*10-Math.round(value*10))>1e-8)throw new Error('距離は7.0m以上、0.1m刻みで入力してください');currentDistance=value;renderEvents();options.onDistance?.(currentDistance);changed();}catch(e){d.value=currentDistance;say(`${e.message}。${currentDistance}m に戻しました`);}};
     button('選んだ2人で自動解析',controls,run);
-    button('解析を中止',panel,()=>{serial++;previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false});controls.disabled=false;rows.inert=false;draw();say('解析を中止しました。完了していた結果は残しています');});
+    button('解析を中止',panel,()=>{if(!busy)return;serial++;previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});controls.disabled=false;rows.inert=false;draw();say('解析を中止しました。完了していた結果は残しています');});
     status=el('p','まず「1人目を選ぶ」を押してください',viewHome);status.setAttribute('role','status');
-    el('p','',panel).dataset.posture='';
-    reviewSection=el('details','',panel);el('summary','打球の判定を確認・修正する',reviewSection);reviewSection.ontoggle=()=>renderEvents();
+    const posture=el('p','',panel);posture.dataset.posture='';detailNodes.push(posture);
+    reviewSection=el('details','',panel);detailNodes.push(reviewSection);el('summary','打球の判定を確認・修正する',reviewSection);reviewSection.ontoggle=()=>renderEvents();
     el('p','気になる判定だけ、映像を見ながら修正できます。',reviewSection);rows=el('div','',reviewSection);
-    const further=el('details','',panel);el('summary','さらに詳しく調整する',further);const manual=el('details','',further);el('summary','見つからなかった打球を追加する',manual);
+    const further=el('details','',panel);detailNodes.push(further);el('summary','さらに詳しく調整する',further);const manual=el('details','',further);el('summary','見つからなかった打球を追加する',manual);
     el('p','上の映像を打った瞬間で止めて、打った人を選んでください。',manual);
     for(const player of ['a','b'])button(`${player==='a'?'1':'2'}人目の打球を追加`,manual,()=>{if(busy)return;events.push({id:`manual-${Date.now()}-${events.length}`,t:video.currentTime,player,status:'confirmed',origin:'manual'});reviewIndex=events.slice().sort((a,b)=>a.t-b.t).findIndex(e=>e.id===events.at(-1).id);renderEvents();changed();});
     const notes=el('details','',further);el('summary','表示される数値について',notes);
@@ -206,13 +213,14 @@ window.FrescoMotionReview = (() => {
     const label=el('label','バックアップから戻す ',backup),file=el('input','',label);file.type='file';file.accept='.json,application/json';file.onchange=async()=>{const token=serial;try{if(busy)throw new Error('解析を中止してから戻してください');if(!file.files[0])return;const raw=JSON.parse(await file.files[0].text());if(token!==serial||busy)return;restore(raw);changed();if(frames.length)await seek(frames[0].t);if(token!==serial)return;draw();say('記録を戻しました');}catch(e){if(token===serial)say(e.message);}};
     events=(options.hits||[]).map((h,i)=>({id:`audio-${i}`,t:h.t,player:null,status:'pending',origin:'audio'}));
     if(options.initialData){try{restore(options.initialData);say('保存していた解析を表示しました');}catch(e){say(`保存した解析を戻せませんでした：${e.message}`);}}
-    renderEvents();draw();if(frames.length)conditions.open=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
+    renderEvents();draw();setMode(options.mode||uiMode);if(frames.length&&uiMode==='detail')conditions.open=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
   }
   document.getElementById('upVideo').addEventListener('timeupdate',()=>{if(clipEnd!=null&&video?.currentTime>=clipEnd){video.pause();clipEnd=null;}if(!busy)draw();});
-  function openReview(){if(!panel||busy)return false;reviewSection.open=true;renderEvents();reviewSection.scrollIntoView({behavior:'smooth',block:'start'});return true;}
+  function setMode(mode){if(!['simple','detail'].includes(mode))throw new Error('表示モードが不正です');uiMode=mode;if(!panel)return;for(const n of detailNodes)n.hidden=mode==='simple';if(conditions){conditions.children[0].hidden=mode==='simple';if(mode==='simple')conditions.open=true;}if(mode==='simple'&&reviewSection){reviewSection.open=false;if(viewHome){viewHome.append(view);viewHome.append(playback);}}draw();}
+  function openReview(){if(!panel||busy)return false;setMode('detail');reviewSection.open=true;renderEvents();reviewSection.scrollIntoView({behavior:'smooth',block:'start'});return true;}
   async function inspectTime(t){
-    if(!panel||busy||!Number.isFinite(t))return false;const token=serial;reviewSection.open=true;showAll=true;const ordered=events.slice().sort((a,b)=>a.t-b.t);reviewIndex=ordered.reduce((best,e,i)=>Math.abs(e.t-t)<Math.abs(ordered[best].t-t)?i:best,0);renderEvents();video.pause();clipEnd=null;await seek(Math.max(0,Math.min(video.duration-.001,t-.25)));if(token!==serial)return false;draw();rows.scrollIntoView({behavior:'smooth',block:'start'});return true;
+    if(!panel||busy||!Number.isFinite(t))return false;const token=serial;setMode('detail');reviewSection.open=true;showAll=true;const ordered=events.slice().sort((a,b)=>a.t-b.t);reviewIndex=ordered.reduce((best,e,i)=>Math.abs(e.t-t)<Math.abs(ordered[best].t-t)?i:best,0);renderEvents();video.pause();clipEnd=null;await seek(Math.max(0,Math.min(video.duration-.001,t-.25)));if(token!==serial)return false;draw();rows.scrollIntoView({behavior:'smooth',block:'start'});return true;
   }
   function setDistance(value){if(!panel)return;currentDistance=M.distance(value);panel.querySelector('[data-distance]').value=currentDistance;renderEvents();changed();}
-  return {open,reset,setDistance,snapshot,restore,drawOverlay,inspectTime,openReview,range:()=>frames.length?{start:frames[0].t,end:frames.at(-1).t}:null,isBusy:()=>busy};
+  return {open,reset,setDistance,snapshot,restore,drawOverlay,inspectTime,openReview,setMode,range:()=>frames.length?{start:frames[0].t,end:frames.at(-1).t}:null,isBusy:()=>busy};
 })();

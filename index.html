@@ -300,8 +300,9 @@
 </script>
 
 <div id="modeTabs">
-  <button id="tabUp" class="active">動画解析</button>
-  <button id="tabCam">カメラモード</button>
+  <button id="tabUp" class="active">シンプル</button>
+  <button id="tabDetail">詳細</button>
+  <button id="tabCam">カメラ</button>
 </div>
 
 <!-- ===== 数値モード ===== -->
@@ -411,6 +412,7 @@
 #upStage { position: relative; border-radius: 14px; overflow: hidden; background: #000; margin-bottom: 12px; }
 .analysis-steps {display:flex;gap:6px;margin:8px 0}.analysis-steps button{flex:1;min-width:0;padding:12px 5px;font-size:13px;border-bottom:4px solid var(--line)}.analysis-steps small{display:block;font-size:11px;margin-top:5px}.analysis-steps [aria-current="step"]{border-bottom-color:var(--aqua);background:rgba(22,230,195,.15)}
 .video-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font-size:12px;color:var(--muted)}#selectedVideoName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.video-meta button{border:0;background:none;color:var(--muted);font-size:12px;white-space:nowrap;padding:6px 0}#distanceDialog{background:#261d3e;color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:24px;max-width:92vw}#distanceDialog::backdrop{background:#000a}.analysis-steps button{background:transparent!important;border:0!important;border-bottom:3px solid var(--line)!important;border-radius:0!important;font-weight:normal!important;padding:7px 3px!important;font-size:12px!important}.analysis-steps .completed{color:var(--muted);border-bottom-color:#756b86!important}.analysis-steps [aria-current="step"]{border-bottom-color:var(--aqua)!important;color:var(--aqua)}.distribution-details{margin:12px 0 22px;padding:12px;border:1px solid var(--line);border-radius:12px}.distribution-details summary{cursor:pointer}#upPick{width:100%;text-align:center;padding:20px;background:var(--aqua);color:#092a25;font-weight:bold}#upPick.compact{width:auto;font-size:12px;padding:7px 12px;background:transparent;color:var(--muted)}#vidBtn{margin-top:24px!important;border-color:#16e6c350!important}#upDash .advanced-results{margin-top:14px}#upView .share-primary{grid-template-columns:1fr 1fr}#upView .share-primary button{font-size:16px;padding:20px 8px}#upView .share-primary small{font-size:12px}
+.activity-badge{position:fixed;z-index:80;left:max(12px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px;max-width:calc(100vw - 24px);padding:10px 14px;border-radius:16px;background:#241c36f5;color:white;border:1px solid #16e6c370;box-shadow:0 4px 20px #0006;text-align:left;font-size:13px}.activity-badge small{display:block;font-size:10px;color:#c7c0d5}.activity-ring{flex:none;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:conic-gradient(#16e6c3 var(--progress,0%),#554a68 0)}.activity-ring>span{display:grid;place-items:center;width:34px;height:34px;background:#241c36;border-radius:50%;font-size:11px}.activity-badge[data-status="error"],.activity-badge[data-status="cancelled"]{border-color:#efc06a}body:has(#activityBadge:not([hidden])){padding-top:85px}.simple-mode .advanced-results,.simple-mode #stepReview,.simple-mode #analysisNote,.simple-mode .analysis-steps{display:none}.shot-summary{margin:12px 0;padding:14px;border-radius:12px;background:#ffffff09}.shot-counts{display:flex;justify-content:space-between;margin:8px 0}.shot-summary small{color:var(--muted)}
 #upVideo { width: 100%; display: block; max-height: 60vh; }
 #upLive { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between;
   align-items: flex-start; padding: 8px 12px; pointer-events: none; }
@@ -468,7 +470,8 @@
 #histList .rec .open { background: rgba(22,230,195,.15); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 5px 10px; }
 #histList .rec .del { background: none; border: none; color: var(--muted); font-size: 16px; }
 </style>
-<div id="upView">
+<button id="activityBadge" class="activity-badge" hidden aria-label="解析状況。押すと解析画面に戻ります"><span id="activityRing" class="activity-ring"><span id="activityPercent"></span></span><span><b id="activityTitle"></b><small id="activityMessage"></small></span></button>
+<div id="upView" class="simple-mode">
   <nav class="analysis-steps" aria-label="解析の段階">
     <button id="stepQuick" type="button">1. 計測<small id="stateQuick">動画を選択</small></button>
     <button id="stepMotion" type="button" disabled>2. 映像で詳しく<small id="stateMotion">任意・2人を指定</small></button>
@@ -494,7 +497,7 @@
     <canvas id="motionOverlay" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none" hidden></canvas>
     <div id="upLive">
       <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
-      <div class="ul-meta">ラリー <b id="ulR">0</b> ・ 打数 <b id="ulH">0</b></div>
+      <div class="ul-meta"><span id="ulShot" style="display:block;color:var(--yellow)"></span>ラリー <b id="ulR">0</b> ・ 打数 <b id="ulH">0</b></div>
     </div>
     <div class="ul-p left"><small>LEFT PLAYER</small><span id="ulPA">0</span></div>
     <div class="ul-p right"><small>RIGHT PLAYER</small><span id="ulPB">0</span></div>
@@ -503,6 +506,7 @@
   <div id="upDash" hidden>
     <p id="analysisNote" style="font-size:12px;color:var(--muted)"></p>
     <div class="dashGrid" id="dashSummary"></div>
+    <div id="shotSummary" class="shot-summary" hidden></div>
     <details id="distributionDetails" class="distribution-details"><summary>速度分布を見る</summary>
     <div class="players2">
       <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
@@ -621,6 +625,8 @@
 <script src="detection-engine.js"></script>
 <script src="result-utils.js"></script>
 <script src="motion-core.js"></script>
+<script src="shot-analysis.js"></script>
+<script src="ball-tracker.js"></script>
 <script src="motion-review.js"></script>
 <script src="video-quality.js"></script>
 <script src="share-core.js"></script>
@@ -1539,18 +1545,20 @@ function exitCamera() {
   if (wasActive && running && ctx) beginLiveDetectorWarmup("モード切替");
 }
 function exitUpload() {
-  if ($("upView").classList.contains("show")) resetUploadAnalysis();
+  $("upVideo").pause();
   $("upView").classList.remove("show");
 }
-$("tabCam").addEventListener("click", () => { exitUpload(); $("tabUp").classList.remove("active"); enterCamera(); });
-$("hudClose").addEventListener("click", () => $("tabUp").click());
-$("tabUp").addEventListener("click", () => {
-  exitCamera();
-  resetUploadAnalysis();
-  $("numView").style.display = "none";
-  $("upView").classList.add("show");
-  $("tabUp").classList.add("active"); $("tabCam").classList.remove("active");
-});
+let videoMode='simple';
+function selectVideoMode(mode){
+  videoMode=mode;exitCamera();$("numView").style.display="none";$("upView").classList.add("show");
+  $("upView").classList.toggle("simple-mode",mode==='simple');
+  $("tabUp").classList.toggle("active",mode==='simple');$("tabDetail").classList.toggle("active",mode==='detail');$("tabCam").classList.remove("active");
+  window.FrescoMotionReview?.setMode?.(mode);$("activityBadge").hidden=analysisActivity.status==='idle';
+}
+$("tabCam").addEventListener("click",()=>{if(analysisActivity.busy)return;$("activityBadge").hidden=true;exitUpload();$("tabUp").classList.remove("active");$("tabDetail").classList.remove("active");enterCamera();});
+$("hudClose").addEventListener("click",()=>selectVideoMode(videoMode));
+$("tabUp").addEventListener("click",()=>selectVideoMode('simple'));
+$("tabDetail").addEventListener("click",()=>selectVideoMode('detail'));
 // 動画解析を初期表示にする。
 // ハンドラが参照する後方定義（camStream等）の初期化後に呼ぶため、スクリプト評価後へ遅延。
 setTimeout(() => $("tabUp").click(), 0);
@@ -1974,7 +1982,7 @@ function aggregate(hits, flip) {
 }
 
 // --- ダッシュボード描画 ---
-let curStats = null, curFlip = false, currentMotion = null;
+let curStats = null, curFlip = false, currentMotion = null, currentShotEstimates = [];
 let uploadAnalysisGeneration = 0, uploadObjectUrl = null, selectedVideoFile = null;
 
 function applySpeedReview() {
@@ -2020,7 +2028,7 @@ function resetUploadAnalysis() {
   const generation = ++uploadAnalysisGeneration;
   window.FrescoShare?.cancel();
   window.FrescoMotionReview?.reset();
-  currentMotion = null; selectedVideoFile = null;
+  currentMotion = null; currentShotEstimates=[]; selectedVideoFile = null;
   curStats = null; curFlip = false; currentVideoSettings = null;
   $("quickAnalyze").disabled=true; $("quickAnalyze").hidden=true; $("motionDetails").open=false; $("motionOverlay").hidden=true; $("overlayOptions").hidden=true; $("motionDetails").hidden=true;
   $("upDistanceApply").disabled = true; $("upDistance").disabled = false;
@@ -2042,7 +2050,7 @@ function resetUploadAnalysis() {
   video.removeAttribute("src");
   try { video.load(); } catch (_) {}
   $("upFile").value = "";
-  $("dropStatus").textContent="";updateAnalysisSteps();
+  $("dropStatus").textContent="";updateActivity(null,0,"idle");$("shotSummary").hidden=true;updateAnalysisSteps();
   return generation;
 }
 
@@ -2054,8 +2062,21 @@ function estimatedDrops(stats,duration,gap=2.5) {
   const corrected=Number.isInteger(stats?.dropOverride)&&stats.dropOverride>=0;
   return {estimated,corrected,value:corrected?stats.dropOverride:estimated};
 }
+let analysisActivity={busy:false,phase:null,percent:0,status:'idle'};
+function updateActivity(phase,percent,status='running'){
+  const busy=status==='running';analysisActivity={busy,phase,percent:Math.max(0,Math.min(100,Number(percent)||0)),status};
+  const badge=$("activityBadge");badge.hidden=status==='idle';
+  badge.dataset.status=status;$("activityRing").style.setProperty('--progress',analysisActivity.percent+'%');
+  $("activityPercent").textContent=busy?Math.round(analysisActivity.percent)+'%':status==='complete'?'✓':'!';
+  $("activityTitle").textContent=busy?(phase==='audio'?'音から計測中':'映像を解析中'):status==='complete'?'解析が完了しました':status==='cancelled'?'解析を中止しました':'解析できませんでした';
+  $("activityMessage").textContent=busy?'この画面を開いたままお待ちください':status==='complete'?'結果の確認・保存ができます':'押して解析画面を確認';
+  badge.setAttribute("aria-label",$("activityTitle").textContent+(busy?` ${Math.round(analysisActivity.percent)}%`:"")+"。押すと解析画面へ戻ります");
+  $("tabCam").disabled=busy;
+}
+$("activityBadge").addEventListener('click',()=>{if(analysisActivity.phase==='motion'&&FrescoMotionReview.snapshot()){$("motionDetails").open=true;$("motionHost").scrollIntoView({behavior:'smooth',block:'start'});}else $("upStage").scrollIntoView({behavior:'smooth',block:'start'});});
 function updateAnalysisSteps(phase,percent) {
-  const audio=Boolean(curStats?.audioReady), motion=Boolean(currentMotion?.frames?.length),busy=phase==='audio'||phase==='motion';
+  if(phase==='audio'||phase==='motion')updateActivity(phase,percent);
+  const audio=Boolean(curStats?.audioReady), motion=Boolean(currentMotion?.frames?.length),busy=analysisActivity.busy;
   $("stepMotion").disabled=!selectedVideoFile||busy;
   $("stepReview").disabled=!selectedVideoFile||!motion||busy;
   $("stateQuick").textContent=phase==='audio'?'計測中':audio?'✓ 計測済み':'動画を選んで計測';
@@ -2070,11 +2091,11 @@ function updateAnalysisSteps(phase,percent) {
   $("distanceOpen").textContent=`選手間 ${Number($("upDistance").value||7).toFixed(1)} m · 変更`;
   $("distanceOpen").disabled=busy;
   $("upPick").classList.toggle("compact",Boolean(selectedVideoFile));
-  $("videoReady").textContent=selectedVideoFile?'動画選択済み。①だけでも結果の確認・保存ができます。':'動画を選ぶと、まず音から球速と打数を計測できます。';
+  $("videoReady").textContent=selectedVideoFile?'音からの計測だけでも結果の確認・保存ができます。2人を選ぶと映像を詳しく解析します。':'動画を選ぶと、まず音から球速と打数を計測できます。';
 }
 $("stepQuick").addEventListener('click',()=>{if(!selectedVideoFile)$("upFile").click();else if(!curStats?.audioReady)$("quickAnalyze").click();else $("upStage").scrollIntoView({behavior:'smooth'});});
 $("stepMotion").addEventListener('click',()=>openMotionWorkflow());
-$("stepReview").addEventListener('click',()=>{if(window.FrescoMotionReview?.isBusy())return;if(!selectedVideoFile)return;if(!FrescoMotionReview.snapshot())openMotionWorkflow();$("motionDetails").hidden=false;$("motionDetails").open=true;FrescoMotionReview.openReview?.();updateAnalysisSteps('review');});
+$("stepReview").addEventListener('click',()=>{selectVideoMode("detail");if(window.FrescoMotionReview?.isBusy())return;if(!selectedVideoFile)return;if(!FrescoMotionReview.snapshot())openMotionWorkflow();$("motionDetails").hidden=false;$("motionDetails").open=true;FrescoMotionReview.openReview?.();updateAnalysisSteps('review');});
 $("saveDropCount").addEventListener('click',()=>{if(!curStats)return;const raw=$("dropCount").value.trim(),n=Number(raw);if(!raw||!Number.isInteger(n)||n<0){$("dropStatus").textContent='0以上の整数を入力してください';return;}curStats.dropOverride=n;renderDash();saveCurrentRecord();$("dropStatus").textContent='落球数を修正しました。ラリー本数や打数は変わりません。';});
 $("resetDropCount").addEventListener('click',()=>{if(!curStats)return;delete curStats.dropOverride;renderDash();saveCurrentRecord();$("dropStatus").textContent='推定値に戻しました';});
 function renderDash() {
@@ -2137,6 +2158,7 @@ function renderSpeedButterfly() {
 function syncLive() {
   if (!curStats) return;
   const t = $("upVideo").currentTime;
+  const shot=currentShotEstimates.filter(e=>e.t<=t&&t-e.t<.9).at(-1);$("ulShot").textContent=shot?.type?`${shot.type==="attack"?"アタック":"ディフェンス"}（推定）`:"";
   let cur = null, hitsTo = 0, lastH = null;
   for (const h of curStats.hits) {
     if (h.t <= t) { hitsTo++; lastH = h; if (h.speed != null) cur = h; } else break;
@@ -2210,9 +2232,9 @@ async function runQuickAnalysis() {
     if(generation!==uploadAnalysisGeneration)return;
     const stats=buildStats(onsets);
     curStats={...stats,dropOverride:curStats?.dropOverride??null,audioHits:stats.hits,audioReady:true,analysisMode:"audio",aiRejected:aiRejected||0};
-    renderDash();syncLive();$("upDash").hidden=false;$("upProg").hidden=true;
+    renderDash();syncLive();$("upDash").hidden=false;$("upProg").hidden=true;updateActivity("audio",100,"complete");
     await saveCurrentRecord();
-  }catch(error){if(generation===uploadAnalysisGeneration){$("upProg").hidden=false;$("upProg").textContent=error.message;$("quickAnalyze").hidden=false;}}
+  }catch(error){if(generation===uploadAnalysisGeneration){$("upProg").hidden=false;$("upProg").textContent=error.message;$("quickAnalyze").hidden=false;updateActivity("audio",analysisActivity.percent,"error");}}
   finally{if(generation===uploadAnalysisGeneration){$("quickAnalyze").disabled=false;$("vidBtn").disabled=false;updateAnalysisSteps();}}
 }
 $("quickAnalyze").addEventListener("click",runQuickAnalysis);
@@ -2278,7 +2300,7 @@ function openMotionWorkflow() {
   const generation = uploadAnalysisGeneration;
   try {
     const f = selectedVideoFile;
-    FrescoMotionReview.open({video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
+    FrescoMotionReview.open({mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
       source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
       hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion,
       onDistance:value => { $("upDistance").value=String(value); currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(value);if(curStats?.audioHits)curStats.audioHits=rebuildTimeline(curStats.audioHits).hits; },
@@ -2290,9 +2312,9 @@ function openMotionWorkflow() {
         const stats=buildStats(onsets);curStats.audioHits=stats.hits;curStats.audioReady=true;curStats.aiRejected=aiRejected||0;
         return curStats.audioHits;
       },
-      onProgress:progress=>{if(generation===uploadAnalysisGeneration)updateAnalysisSteps(progress.busy?"motion":undefined,progress.percent);},
+      onProgress:progress=>{if(generation===uploadAnalysisGeneration){updateActivity("motion",progress.percent,progress.busy?"running":progress.status||"cancelled");updateAnalysisSteps();}},
       onComplete:()=>{$("motionDetails").open=false;$("upStage").scrollIntoView({behavior:"smooth",block:"start"});},
-      onChange:snapshot => { if(generation!==uploadAnalysisGeneration)return;currentMotion=snapshot;if(snapshot?.frames?.length){updateFromMotion(snapshot);$("upDash").hidden=false;}else if(curStats?.audioReady){curStats={...curStats,...rebuildTimeline(curStats.audioHits),analysisMode:"audio"};renderDash();$("upDash").hidden=false;}saveCurrentRecord(); }
+      onChange:snapshot => { if(generation!==uploadAnalysisGeneration)return;currentMotion=snapshot;renderShotSummary(snapshot);if(snapshot?.frames?.length){updateFromMotion(snapshot);$("upDash").hidden=false;}else if(curStats?.audioReady){curStats={...curStats,...rebuildTimeline(curStats.audioHits),analysisMode:"audio"};renderDash();$("upDash").hidden=false;}saveCurrentRecord(); }
     });
     $("upStage").hidden=false; $("motionDetails").hidden=false; $("motionDetails").open=true; $("motionOverlay").hidden=false; $("overlayOptions").hidden=false;
   } catch(e) { $("upProg").hidden=false;$("upProg").textContent=e.message; }
@@ -2312,7 +2334,12 @@ function updateFromMotion(snapshot) {
     hits.push({t:event.t,idx:hits.length,player:event.player,speed:event.averageKmh,rNow:run});previous=event.t;
   }
   curStats={...curStats,hits,total:hits.length,rMax:best,rallies,analysisMode:"motion",qualityRejected:0,excluded:0};
-  renderDash();syncLive();
+  renderShotSummary(snapshot);renderDash();syncLive();
+}
+function renderShotSummary(snapshot){
+  const panel=$("shotSummary");if(!window.FrescoShots||!snapshot?.frames?.length){currentShotEstimates=[];panel.hidden=true;return;}
+  const items=FrescoShots.classify(snapshot.events,snapshot.frames);currentShotEstimates=items;const summary=FrescoShots.summary(items);
+  panel.hidden=false;panel.innerHTML=`<b>打ち方の傾向（推定）</b><div class="shot-counts"><span>アタック <strong>${summary.attack}</strong> 球</span><span>ディフェンス <strong>${summary.defense}</strong> 球</span></div><small>体と腕の位置から分類した ${summary.classified} / ${summary.total} 球の集計です。</small>`;
 }
 
 // --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---
@@ -2496,7 +2523,7 @@ function openRecord(raw) {
     splitRemoved: r.splitRemoved || 0,
     aiRejected: r.aiRejected, review: r.review || null
   };
-  currentMotion = r.motion || null;
+  currentMotion = r.motion || null;renderShotSummary(currentMotion);
   curFlip = Boolean(r.flip);
   currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration };
   renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
