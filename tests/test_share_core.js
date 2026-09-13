@@ -49,16 +49,16 @@ const motion={settings:{distanceM:7},events:[
   {t:.8,player:null,status:'pending'},
   {t:1,player:'a',status:'confirmed'},
 ]};
-const selection=vm.createContext({record:{hits:[]},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M,FrescoMeasurement:require('../measurement-spec.js')},range:{start:0,end:2}});
+const selection=vm.createContext({record:{audioHits:motion.events.map(e=>({t:e.t})),hits:[]},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M,FrescoMeasurement:require('../measurement-spec.js')},range:{start:0,end:2}});
 const selectionStart=code.indexOf('      let selectedRecord=record;');
 const selectionEnd=code.indexOf('      state={',selectionStart);
 vm.runInContext(code.slice(selectionStart,selectionEnd)+'\nresult=selectedRecord;',selection);
-assert.equal(selection.result.hits.length,3);
+assert.equal(selection.result.hits.length,4);
 assert.equal(selection.result.hits[1].status,'auto');
 assert.equal(selection.result.hits[1].speed,require('../measurement-spec.js').measureInterval({observedSeconds:.5,lengthM:7}).initialSpeedKmh);
-assert.equal(selection.result.hits[2].speed,null);
-assert.equal(C.stats(selection.result.hits,0,2).total,3);
-assert.equal(C.hitAt(selection.result.playbackHits,.85,0),null);
+assert(selection.result.hits[2].speed>0,'audio interval remains usable without pose');
+assert.equal(C.stats(selection.result.hits,0,2).total,4);
+assert(C.hitAt(selection.result.playbackHits,.85,0),'audio-derived speed remains visible');
 let strokes=0;
 const graphics={beginPath(){},moveTo(){},lineTo(){},stroke(){strokes++;}};
 const landmarks=Array.from({length:33},()=>({x:0,y:0,visibility:0,presence:0}));

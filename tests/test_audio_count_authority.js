@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('assert'),M=require('../motion-core'),S=require('../shot-analysis');
+const audio=Array.from({length:30},(_,i)=>({t:1+i*.5,player:i%2?'b':'a'}));
+const events=audio.map((h,i)=>({...h,id:i,status:i%8===0?'auto':'pending',player:i%8===0?'a':null,origin:'audio'}));
+const result=M.countedEvents(audio,events);assert.equal(result.length,30,'pose misses never lower audio count');assert.equal(result.filter(e=>e.player==='a').length,15);assert.equal(result.filter(e=>e.player==='b').length,15);assert(result.every(e=>['auto','confirmed'].includes(e.status)));
+assert.equal(result.slice(1).filter((e,i)=>e.t-result[i].t>2.5).length,0,'pose gaps cannot create false rally breaks');
+assert(events.some(e=>e.status==='pending'),'visual evidence remains untouched');
+const ignored=events.map(e=>e.id===3?{...e,status:'ignored',origin:'manual-review'}:e);assert.equal(M.countedEvents(audio,ignored).length,29,'explicit noise exclusions respected');
+const added=M.countedEvents(audio,[...events,{id:'manual',t:20,status:'confirmed',player:'a',origin:'manual'}]);assert.equal(added.length,31);assert.equal(added.at(-1).countSource,'manual');
+const roles=S.resolveRoles(result.map((e,i)=>({...e,type:i===0||i===28?'attack':null,basis:'pose'})));assert.equal(roles.filter(e=>e.type==='attack').length,15);assert.equal(roles.filter(e=>e.type==='defense').length,15);
+const unknown=S.resolveRoles(result.map(e=>({...e,type:null})));assert(unknown.every(e=>e.type===null),'no pose evidence does not fabricate an A/D anchor');
+console.log('Audio count authority: 30 sounds retained despite 26 pose misses, explicit exclusions, manual additions, role interpolation, no artificial rally gaps');

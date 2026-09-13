@@ -134,6 +134,27 @@
     });
   }
   // The same initial-speed physics and quality gates as the audio quick result.
+  // Audio is the count authority. Missing visual evidence is an annotation,
+  // not a reason to discard an onset. Explicit exclusions remain authoritative.
+  function countedEvents(audioHits,events,gap=2.5){
+    const source=Array.isArray(audioHits)&&audioHits.length?audioHits:(events||[]).filter(e=>e.origin==='audio'||['auto','confirmed'].includes(e.status));
+    const matched=new Set();
+    const out=source.map((h,i)=>{
+      const e=(events||[]).find(e=>Math.abs(e.t-h.t)<.001);if(e)matched.add(e);
+      if(e?.status==='ignored')return null;
+      const known=e&&['auto','confirmed'].includes(e.status)&&['a','b'].includes(e.player);
+      return {...h,...e,id:e?.id||`audio-${i}`,t:h.t,status:known?e.status:'auto',player:known?e.player:null,
+        countSource:'audio',playerEstimated:!known,visualStatus:e?.status||'pending',reviewRequired:!known||e.reviewRequired};
+    }).filter(Boolean);
+    for(const e of events||[])if(!matched.has(e)&&e.status==='confirmed'&&['a','b'].includes(e.player))out.push({...e,countSource:'manual',playerEstimated:false});
+    out.sort((a,b)=>a.t-b.t);
+    for(let first=0;first<out.length;){let end=first+1;while(end<out.length&&out[end].t-out[end-1].t<=gap)end++;
+      const anchors=[];for(let i=first;i<end;i++)if(out[i].player)anchors.push(i);
+      for(let i=first;i<end;i++)if(!out[i].player){const anchor=anchors.reduce((a,j)=>a==null||Math.abs(j-i)<Math.abs(a-i)?j:a,null);const base=anchor==null?'a':out[anchor].player,offset=anchor==null?i-first:Math.abs(i-anchor);out[i].player=offset%2?(base==='a'?'b':'a'):base;}
+      first=end;
+    }
+    return out;
+  }
   function estimatedSpeeds(events,fallback,settings,measurement,audioHits=[]){
     const values=settings?.values||settings||{};
     return speeds(events,fallback).map(event=>{
@@ -185,5 +206,5 @@
     });
     return {schema:'frescoball-motion-v1',source,settings,frames,events,regions,legacy:Boolean(legacy)};
   }
-  return {distance,posture,track,nearestFrame,evidence,autoReview,speeds,estimatedSpeeds,normalize};
+  return {countedEvents,distance,posture,track,nearestFrame,evidence,autoReview,speeds,estimatedSpeeds,normalize};
 });

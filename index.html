@@ -439,6 +439,7 @@
   .ul-p.left { left: 12px; } .ul-p.right { right: 12px; }
   .ul-p small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #fff; opacity: .85; }
   .ul-p span { font-family: var(--num); font-weight: 800; font-size: 30px; color: #fff; }
+.player-counts{display:flex;align-items:center;gap:12px;background:#130d27b8;border-radius:8px;padding:5px 8px}.role-counts{font-size:11px;line-height:1.5;text-align:left}.role-counts b{font-size:14px}
 .dashGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .dashGrid .cell { background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 8px; text-align: center; }
@@ -510,8 +511,8 @@
       <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
       <div class="ul-meta">連続 <b id="ulR">0</b>回 ・ 累計 <b id="ulH">0</b>回</div>
     </div>
-    <div class="ul-p left"><small>LEFT PLAYER</small><span id="ulPA">0</span></div>
-    <div class="ul-p right"><small>RIGHT PLAYER</small><span id="ulPB">0</span></div>
+    <div class="ul-p left"><small>LEFT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPA">0</span></div><div class="role-counts"><div>A <b id="ulAAttack">0</b></div><div>D <b id="ulADefense">0</b></div></div></div></div>
+    <div class="ul-p right"><small>RIGHT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPB">0</span></div><div class="role-counts"><div>A <b id="ulBAttack">0</b></div><div>D <b id="ulBDefense">0</b></div></div></div></div>
   </div>
   <div id="overlayOptions" hidden style="display:none"><label><input id="showSkeleton" type="checkbox" checked> 骨格</label> <label><input id="showBall" type="checkbox" checked> ボールの軌跡（推定）</label></div>
   <div id="upDash" hidden>
@@ -552,14 +553,14 @@
   <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px;display:none">2人を選んで軌跡と打ち方を見る<small style="display:block;font-weight:normal">動きとボールの軌跡を動画に重ねる・任意</small></button>
   <button id="reviewCurrent" class="advanced-results ghost" type="button">今の場面の判定を直す</button>
   <details id="motionDetails" hidden><summary>2人の動き・判定の確認</summary><div id="motionHost"></div></details>
-    <details class="advanced-results"><summary>詳しい記録・調整</summary>
-    <details><summary>落球数を修正する</summary>
+    <details><summary>落球数を実測値に合わせる</summary>
       <p id="dropEstimateNote"></p>
       <label>実際の落球数 <input id="dropCount" type="number" min="0" step="1" style="width:90px"></label>
       <button id="saveDropCount" type="button">修正を反映</button>
       <button id="resetDropCount" type="button">推定に戻す</button>
       <p id="dropStatus" role="status"></p>
     </details>
+    <details class="advanced-results"><summary>詳しい記録・調整</summary>
 
     <section class="speed-review">
       <h3>気になる速度を見直す</h3>
@@ -2123,7 +2124,7 @@ function renderDash() {
   $("dropCount").value=String(drops);
   $("dropEstimateNote").textContent=`打球の間が空いた区切りと、最後の打球後の空白から ${dropInfo.estimated} 回と推定しています。休憩や検出漏れも含まれるため、必要なときだけ実際の回数に直してください。`;
   updateAnalysisSteps();
-  $("analysisNote").textContent = curStats.analysisMode === "motion" ? "選んだ2人の映像から推定した結果です。腕の動きによる仮判定を含み、詳細から修正できます。落球とラリー本数は推定です。" : "音から求めた速報です。左右は交互の推定で、隣の組の音が含まれることがあります。2人を選ぶと映像でも詳しく調べられます。";
+  $("analysisNote").textContent = curStats.analysisMode === "motion" ? "打数・球速は音を基準に計測。映像で読み取れない打球も含みます。左右とA／Dは推定、落球数は音の区切りからの推定です。" : "音から求めた速報です。左右は交互の推定で、隣の組の音が含まれることがあります。2人を選ぶと映像でも詳しく調べられます。";
   $("dashSummary").innerHTML = [
     ["打数", curStats.total], ["最高速", ag.maxSpeed ? ag.maxSpeed.toFixed(1) : "--"], ["平均速", ag.avgAll ? ag.avgAll.toFixed(1) : "--"],
     ["最長ラリー", curStats.rMax], ["ラリー本数（推定）", curStats.rallies], [dropInfo.corrected ? "落球数（修正済み）" : "落球数（推定）", drops]
@@ -2162,7 +2163,7 @@ function renderSpeedButterfly() {
     <div class="sb-track right"><div class="fill" style="width:${row.r / mx * 100}%"></div></div>
     <div class="sb-band right">${row.label}</div>
   </div>`).join("");
-  $("sbNote").textContent = curStats.analysisMode === "motion" ? "選んだ2人の映像から推定した集計です。詳細から判定を修正できます。" : curStats.review
+  $("sbNote").textContent = curStats.analysisMode === "motion" ? "音を基準にした集計です。左右は映像と交互の打順から推定しています。" : curStats.review
     ? "旧方式で推定した左右の分布です。打者の正しさは未確認です。"
     : "音から推定した左右の集計です。周囲の打音によってずれることがあります。";
   wrap.hidden = false;
@@ -2187,6 +2188,11 @@ function syncLive() {
   }
   $("ulPA").textContent = pa;
   $("ulPB").textContent = pb;
+  for(const [key,player] of [['A',curFlip?'b':'a'],['B',curFlip?'a':'b']]){
+    const items=currentShotEstimates.filter(e=>e.t<=t&&e.player===player);
+    $("ul"+key+"Attack").textContent=items.filter(e=>e.type==='attack').length;
+    $("ul"+key+"Defense").textContent=items.filter(e=>e.type==='defense').length;
+  }
 }
 
 // 動画の有無で動画系の出力ボタンを切り替える（無反応に見える状態を作らない）
@@ -2344,7 +2350,7 @@ $("reviewCurrent").addEventListener("click",async()=>{
 function updateFromMotion(snapshot) {
   if(!curStats||!snapshot)return;
   currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(snapshot.settings.distanceM);
-  const measured=FrescoMotion.estimatedSpeeds(snapshot.events,snapshot.settings.distanceM,currentVideoSettings,MEASUREMENT,curStats.audioHits||[]);
+  const measured=FrescoMotion.estimatedSpeeds(FrescoMotion.countedEvents(curStats.audioHits,snapshot.events,videoRallyGap()),snapshot.settings.distanceM,currentVideoSettings,MEASUREMENT,curStats.audioHits||[]);
   const hits=[];let run=0,best=0,rallies=0,previous=null;
   for(const event of measured){
     if(!["auto","confirmed"].includes(event.status)||!event.player)continue;
@@ -2358,8 +2364,8 @@ function updateFromMotion(snapshot) {
 }
 function renderShotSummary(snapshot){
   const panel=$("shotSummary");if(!window.FrescoShots||!snapshot?.frames?.length){currentShotEstimates=[];panel.hidden=true;return;}
-  const items=FrescoShots.classify(snapshot.events,snapshot.frames);currentShotEstimates=items;const summary=FrescoShots.summary(items);
-  panel.hidden=false;panel.innerHTML=`<b>打ち方の傾向（推定）</b><div class="shot-counts"><span>アタック <strong>${summary.attack}</strong> 球</span><span>ディフェンス <strong>${summary.defense}</strong> 球</span></div><div>1人目：アタック ${summary.byPlayer.a.attack}球 ／ ディフェンス ${summary.byPlayer.a.defense}球</div><div>2人目：アタック ${summary.byPlayer.b.attack}球 ／ ディフェンス ${summary.byPlayer.b.defense}球</div><small>腕の位置と2人の役割の入れ替わりから推定。分類した ${summary.classified} / ${summary.total} 球の集計です。</small>`;
+  const items=FrescoShots.classify(FrescoMotion.countedEvents(curStats?.audioHits,snapshot.events,videoRallyGap()),snapshot.frames);currentShotEstimates=items;const summary=FrescoShots.summary(items);
+  panel.hidden=false;panel.innerHTML=`<b>打ち方の傾向（推定）</b><div class="shot-counts"><span>アタック <strong>${summary.attack}</strong> 球</span><span>ディフェンス <strong>${summary.defense}</strong> 球</span></div><div>1人目：アタック ${summary.byPlayer.a.attack}球 ／ ディフェンス ${summary.byPlayer.a.defense}球</div><div>2人目：アタック ${summary.byPlayer.b.attack}球 ／ ディフェンス ${summary.byPlayer.b.defense}球</div><small>A＝アタック、D＝ディフェンス。前後の打ち方と2人の役割から推定。分類した ${summary.classified} / ${summary.total} 球の集計です。</small>`;
 }
 
 // --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---
