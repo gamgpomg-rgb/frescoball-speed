@@ -135,6 +135,13 @@
     if(!finite(width)||width<=0)return tracks||[];
     const result=(tracks||[]).slice(),observed= result.map(tr=>({id:tr.id,points:tr.points.filter(p=>!p.predicted)})).filter(tr=>tr.points.length>=4);
     const blocked=(a,b)=>(events||[]).some(e=>e.status!=='ignored'&&finite(e.t)&&e.t>a-.02&&e.t<b+.02);
+    // Audio boundaries allow a longer display reconstruction within one flight.
+    // Missing boundaries, competing paths or a reversal leave the gap untouched.
+    const impacts=(events||[]).filter(e=>e.status!=='ignored'&&finite(e.t)).slice().sort((a,b)=>a.t-b.t);
+    const sameFlight=(a,b)=>{
+      const i=impacts.findIndex(e=>e.t>a.t);
+      return i>0&&impacts[i].t>=b.t&&impacts[i].t-impacts[i-1].t<=1.2;
+    };
     const used=new Set();
     for(const from of observed){
       const a=from.points.at(-1),pa=from.points.at(-2),dtA=a.t-pa.t;
@@ -143,13 +150,21 @@
       const candidates=observed.filter(to=>{
         if(to===from||used.has(to.id))return false;
         const b=to.points[0],pb=to.points[1],gap=b.t-a.t,dtB=pb.t-b.t;
-        if(gap<=.03||gap>.24||dtB<=0||blocked(a.t,b.t))return false;
+        if(gap<=.03||gap>.9||dtB<=0||blocked(a.t,b.t))return false;
         const ux=(pb.x-b.x)/dtB,uy=(pb.y-b.y)/dtB,nextSpeed=Math.hypot(ux,uy);
         if(speed<width*.18||nextSpeed<speed*.65||nextSpeed>speed*1.5||(vx*ux+vy*uy)/(speed*nextSpeed)<.9)return false;
-        return Math.hypot(b.x-a.x-vx*gap,b.y-a.y-vy*gap)<width*.035&&Math.hypot(a.x-b.x+ux*gap,a.y-b.y+uy*gap)<width*.035;
+        if(gap<=.24)return Math.hypot(b.x-a.x-vx*gap,b.y-a.y-vy*gap)<width*.035&&Math.hypot(a.x-b.x+ux*gap,a.y-b.y+uy*gap)<width*.035;
+        if(!sameFlight(a,b))return false;
+        const dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy),bridgeSpeed=distance/gap;
+        if(!distance||bridgeSpeed<speed*.5||bridgeSpeed>speed*1.5||bridgeSpeed<nextSpeed*.5||bridgeSpeed>nextSpeed*1.5)return false;
+        return (dx*vx+dy*vy)/(distance*speed)>.94&&(dx*ux+dy*uy)/(distance*nextSpeed)>.94&&
+          Math.abs(dx*vy-dy*vx)/speed<width*.06&&Math.abs(dx*uy-dy*ux)/nextSpeed<width*.06;
       });
       if(candidates.length!==1)continue;
-      const to=candidates[0],b=to.points[0],count=Math.ceil((b.t-a.t)*30),points=[a];used.add(to.id);
+      const to=candidates[0],b=to.points[0];
+      // An independently detected path in the missing interval is conflicting evidence.
+      if(observed.some(other=>other!==from&&other!==to&&other.points.some(p=>p.t>a.t&&p.t<b.t)))continue;
+      const count=Math.ceil((b.t-a.t)*30),points=[a];used.add(to.id);
       for(let i=1;i<count;i++){const f=i/count;points.push({t:a.t+(b.t-a.t)*f,x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,predicted:true,kind:'display-bridge'});}
       points.push({...b,predicted:true,kind:'display-bridge'});
       result.push({id:`bridge-${from.id}-${to.id}`,displayOnly:true,points});
@@ -201,9 +216,11 @@
     if(!points?.length)return false;
     const unit=Math.max(1,width/640),colorAt=time=>speedColor(speedAt(hits,time));
     c.save();c.lineCap='round';c.lineJoin='round';
+    let trailLength=0;
     for(let i=1;i<points.length;i++){
       const a=points[i-1],b=points[i],predicted=a.predicted||b.predicted,color=colorAt((a.t+b.t)/2),fade=.25+.75*i/points.length;
       c.setLineDash?.(predicted?[9*unit,18*unit]:[]);
+      c.lineDashOffset=-trailLength;trailLength+=Math.hypot(b.x-a.x,b.y-a.y);
       const line=()=>{c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();};
       c.shadowBlur=0;c.strokeStyle='#081421';c.globalAlpha=.55*fade;c.lineWidth=14.4*unit;line();
       c.strokeStyle=color;c.shadowColor=color;c.shadowBlur=predicted?0:5*unit;c.globalAlpha=(predicted?.7:1)*fade;c.lineWidth=8.4*unit;line();

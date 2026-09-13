@@ -53,3 +53,26 @@ console.log('Hand-proximity rejection passed');
  assert.equal(B.at(out,-.01),null);
  console.log('Short contact display estimates require a known hitter and a visible, direction-consistent wrist');
 }
+{
+ const segment=(id,t,x)=>({id,points:Array.from({length:4},(_,i)=>({t:t+i*.03,x:x+i*25,y:100,predicted:false}))});
+ const parts=[segment(1,.1,100),segment(2,.7,600)];
+ const hits=[{t:0,status:'auto',player:'a',speed:55},{t:.85,status:'auto',player:'b',speed:60}];
+ const before=JSON.stringify({parts,hits});
+ const display=B.displayTracks(parts,hits,1000);
+ assert.equal(display.length,3,'reconstruct a long gap inside one audio flight');
+ const middle=B.at(display,.445);
+ assert(middle?.predicted);assert(Math.abs(middle.point.x-387.5)<.001);
+ assert.equal(JSON.stringify({parts,hits}),before,'audio speeds, counts and measured evidence are immutable');
+ assert.equal(B.at(parts,.445),null);
+ assert.equal(B.at(display,.05),null);assert.equal(B.at(display,.81),null);
+ assert.equal(B.displayTracks(parts,[],1000).length,2,'no long bridge without audio boundaries');
+ assert.equal(B.displayTracks(parts,[hits[0]],1000).length,2,'no reconstruction without the arrival impact');
+ assert.equal(B.displayTracks(parts,[...hits,{t:.4,status:'pending'}],1000).length,2,'never cross a possible impact');
+ const offLine=segment(2,.7,600);offLine.points.forEach(p=>p.y=300);
+ assert.equal(B.displayTracks([parts[0],offLine],hits,1000).length,2,'reject sideways displacement');
+ const reverse=segment(2,.7,600);reverse.points.forEach((p,i)=>p.x=600-i*25);
+ assert.equal(B.displayTracks([parts[0],reverse],hits,1000).length,2,'reject reversed direction');
+ assert.equal(B.displayTracks([...parts,segment(3,.7,605)],hits,1000).length,3,'ambiguous endpoints stay missing');
+ assert.equal(B.speedAt(hits,.445),60);
+ console.log('Whole-flight display reconstruction: bounded audio interval, ambiguity and reversal rejection, unchanged measurements');
+}
