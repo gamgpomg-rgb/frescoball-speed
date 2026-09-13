@@ -434,12 +434,13 @@
 #upLive .ul-meta { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 12px;
   padding: 6px 10px; font-size: 13px; backdrop-filter: blur(6px); }
 #upLive .ul-meta b { font-family: var(--num); color: var(--yellow); font-size: 17px; }
-  .ul-p { position: absolute; bottom: 46px; text-align: center; line-height: 1.05; pointer-events: none;
+  .ul-p { position: absolute; bottom: 44px; text-align: center; line-height: 1.05; pointer-events: none;
     text-shadow: 0 1px 6px rgba(0,0,0,.75); }
-  .ul-p.left { left: 12px; } .ul-p.right { right: 12px; }
-  .ul-p small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #fff; opacity: .85; }
-  .ul-p span { font-family: var(--num); font-weight: 800; font-size: 30px; color: #fff; }
-.player-counts{display:flex;align-items:center;gap:12px;background:#130d27b8;border-radius:8px;padding:5px 8px}.role-counts{font-size:11px;line-height:1.5;text-align:left}.role-counts b{font-size:14px}
+  .ul-p.left { left: 6px; } .ul-p.right { right: 6px; }
+  #upStage[data-playing="true"] .ul-p { bottom: 8px; }
+  .ul-p small { display: block; font-size: 8px; font-weight: 800; letter-spacing: .08em; color: #fff; opacity: .85; }
+  .ul-p span { font-family: var(--num); font-weight: 800; font-size: 22px; color: #fff; }
+.player-counts{display:flex;align-items:center;gap:8px;background:#130d279e;border-radius:6px;padding:3px 5px}.role-counts{font-size:9px;line-height:1.35;text-align:left}.role-counts b{font-size:11px}
 .dashGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .dashGrid .cell { background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 8px; text-align: center; }
@@ -2173,6 +2174,7 @@ function renderSpeedButterfly() {
 // --- 再生に同期したライブ表示 ---
 function syncLive() {
   if (!curStats) return;
+  $("upStage").setAttribute?.("data-playing",String(!$("upVideo").paused));
   const t = $("upVideo").currentTime;
   let cur = null, hitsTo = 0, lastH = null;
   for (const h of curStats.hits) {
@@ -2286,6 +2288,8 @@ $("dSwap").addEventListener("click", () => {
   saveCurrentRecord(); // A/Bの手動入替も同じレコードへ保存
 });
 $("upVideo").addEventListener("timeupdate", syncLive);
+$("upVideo").addEventListener("play", syncLive);
+$("upVideo").addEventListener("pause", syncLive);
 let overlayDrawKey="";
 function refreshMotionOverlay(){
   const v=$("upVideo"),c=$("motionOverlay");

@@ -61,11 +61,13 @@ window.FrescoShare = (() => {
     const visibleHits=(record?.playbackHits||record?.hits||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.status!=='ignored');
     for(const [i,side] of ['a','b'].entries()){
       const player=record?.flip?(side==='a'?'b':'a'):side;
-      const x=i?box.x+box.w-248*u:box.x+18*u,y=box.y+box.h-130*u;
+      const x=i?box.x+box.w-180*u:box.x+8*u;
+      const bottomClearance=story?(state.showTrajectory?34:8):44;
+      const y=box.y+box.h-(68+bottomClearance)*u;
       const shots=(state.shotEstimates||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.player===player);
-      g.fillStyle='rgba(9,6,25,.78)';g.fillRect(x,y,230*u,94*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${18*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+12*u,y+23*u);
-      g.fillStyle='#fff';g.font=`${15*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+12*u,y+44*u);g.fillText('推定',x+174*u,y+44*u);g.font=`800 ${32*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+12*u,y+79*u);
-      g.font=`${18*u}px "Hiragino Sans", sans-serif`;g.fillText('A '+shots.filter(e=>e.type==='attack').length,x+118*u,y+51*u);g.fillText('D '+shots.filter(e=>e.type==='defense').length,x+118*u,y+78*u);
+      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(x,y,172*u,68*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+8*u,y+16*u);
+      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+8*u,y+32*u);g.fillText('推定',x+133*u,y+32*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+8*u,y+59*u,68*u);
+      g.font=`${13*u}px "Hiragino Sans", sans-serif`;g.fillText('A '+shots.filter(e=>e.type==='attack').length,x+86*u,y+39*u,76*u);g.fillText('D '+shots.filter(e=>e.type==='defense').length,x+86*u,y+59*u,76*u);
     }
     if(story){
       if(closeups)motion.regions.forEach((region,i)=>{
