@@ -18,7 +18,7 @@
     --ui:  "DIN Alternate", "Saira", -apple-system, "Hiragino Sans", sans-serif;
     --pink:#FF2E7E; --orange:#FF7A18; --yellow:#FFD23F;
     --aqua:#16E6C3; --blue:#2EC5FF; --purple:#9B5CFF;
-    --ink:#FFFFFF; --muted: rgba(234,240,255,.62);
+    --ink:#FFFFFF; --muted: rgba(234,240,255,.86);
     --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.13);
     --grad-hot:  linear-gradient(135deg,#FF2E7E 0%, #FF7A18 60%, #FFD23F 100%);
     --grad-cool: linear-gradient(135deg,#16E6C3 0%, #2EC5FF 100%);
@@ -271,6 +271,17 @@
   }
   #bigOverlay .bigTime:empty { display: none; }
 </style>
+<style>
+#upView button,#upView summary,.motion-review button,.share-dialog button{min-height:44px}
+#upView summary{display:list-item;padding-top:10px;padding-bottom:10px}
+.video-meta button{padding:10px 12px;border:1px solid #8b809d;border-radius:10px;color:#fff}
+.activity-badge{max-width:calc(100vw - 24px);background:#21182e;border-color:#b8a9cc}
+.activity-badge small{color:#f2eafa;white-space:normal}
+#upView button:focus-visible,#upView summary:focus-visible{outline:3px solid #ffe46b;outline-offset:3px}
+#upView input[type=checkbox]{min-width:24px;min-height:24px;vertical-align:middle}
+#upView .shot-summary{line-height:1.65}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body>
 <button id="gearBtn" aria-label="設定">⚙</button>
@@ -480,7 +491,7 @@
   <p id="videoReady" role="status">動画を選ぶと、まず音から球速と打数を計測できます。</p>
   <progress id="analysisProgress" max="100" value="0" hidden aria-label="現在の解析の進み具合" style="width:100%"></progress>
   <div class="video-meta"><span id="selectedVideoName">動画を選んで自動計測</span><button id="distanceOpen" type="button">選手間 7.0 m · 変更</button></div>
-  <dialog id="distanceDialog"><h3>選手間の距離</h3>
+  <dialog id="distanceDialog"><h3>選手間の距離</h3><p>選手どうしの距離を指定します。ラケットの打点間距離とは異なるため、球速は目安です。</p>
     <label for="upDistance">距離 [m]</label>
     <input type="number" id="upDistance" value="7.0" step="0.1" min="7" required aria-describedby="upDistanceNote" style="width:100px">
     <p id="upDistanceNote" role="status">7.0mから0.1m単位で指定します。</p>
@@ -506,6 +517,7 @@
   <div id="upDash" hidden>
     <p id="analysisNote" style="font-size:12px;color:var(--muted)"></p>
     <div class="dashGrid" id="dashSummary"></div>
+    <p style="font-size:13px;color:var(--muted)">球速は選手間距離と打球間隔から求めた推定初速です。スピードガンの実測値ではありません。</p>
     <div id="shotSummary" class="shot-summary" hidden></div>
     <details id="distributionDetails" class="distribution-details"><summary>速度分布を見る</summary>
     <div class="players2">
@@ -537,7 +549,8 @@
       <p id="shareStatus" role="status"></p>
 
     </section>
-  <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px;display:none">2人を選んでもっと詳しく<small style="display:block;font-weight:normal">動きとボールの軌跡を動画に重ねる・任意</small></button>
+  <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px;display:none">2人を選んで軌跡と打ち方を見る<small style="display:block;font-weight:normal">動きとボールの軌跡を動画に重ねる・任意</small></button>
+  <button id="reviewCurrent" class="advanced-results ghost" type="button">今の場面の判定を直す</button>
   <details id="motionDetails" hidden><summary>2人の動き・判定の確認</summary><div id="motionHost"></div></details>
     <details class="advanced-results"><summary>詳しい記録・調整</summary>
     <details><summary>落球数を修正する</summary>
@@ -2056,11 +2069,12 @@ function resetUploadAnalysis() {
 
 function estimatedDrops(stats,duration,gap=2.5) {
   const hits=(stats?.hits||[]).filter(h=>Number.isFinite(h.t)).slice().sort((a,b)=>a.t-b.t);
-  let estimated=0;
-  for(let i=1;i<hits.length;i++)if(hits[i].t-hits[i-1].t>gap)estimated++;
-  if(hits.length&&Number.isFinite(duration)&&duration-hits.at(-1).t>gap)estimated++;
+  let rallyBreaks=0;
+  for(let i=1;i<hits.length;i++)if(hits[i].t-hits[i-1].t>gap)rallyBreaks++;
+  const trailingPause=Boolean(hits.length&&Number.isFinite(duration)&&duration-hits.at(-1).t>gap);
+  const estimated=rallyBreaks+Number(trailingPause);
   const corrected=Number.isInteger(stats?.dropOverride)&&stats.dropOverride>=0;
-  return {estimated,corrected,value:corrected?stats.dropOverride:estimated};
+  return {estimated,corrected,value:corrected?stats.dropOverride:estimated,rallyBreaks,trailingPause,confirmedDrops:corrected?stats.dropOverride:null,method:corrected?"manual":"gap-estimate"};
 }
 let analysisActivity={busy:false,phase:null,percent:0,status:'idle'};
 function updateActivity(phase,percent,status='running'){
@@ -2069,7 +2083,7 @@ function updateActivity(phase,percent,status='running'){
   badge.dataset.status=status;$("activityRing").style.setProperty('--progress',analysisActivity.percent+'%');
   $("activityPercent").textContent=busy?Math.round(analysisActivity.percent)+'%':status==='complete'?'✓':'!';
   $("activityTitle").textContent=busy?(phase==='audio'?'音から計測中':'映像を解析中'):status==='complete'?'解析が完了しました':status==='cancelled'?'解析を中止しました':'解析できませんでした';
-  $("activityMessage").textContent=busy?'この画面を開いたままお待ちください':status==='complete'?'結果の確認・保存ができます':'押して解析画面を確認';
+  $("activityMessage").textContent=busy?(phase==='motion'?'速度・打数は確認できます。軌跡を準備中':'速度・打数を計算しています'):status==='complete'?'結果の確認・保存ができます':'押して解析画面を確認';
   badge.setAttribute("aria-label",$("activityTitle").textContent+(busy?` ${Math.round(analysisActivity.percent)}%`:"")+"。押すと解析画面へ戻ります");
   $("tabCam").disabled=busy;
 }
@@ -2183,7 +2197,7 @@ function setVideoExportAvailability(available) {
     btn.disabled = !available;
     btn.style.opacity = available ? "" : ".45";
   }
-  $("noVideoNote").hidden = available;
+  $("noVideoNote").hidden = available;$("reviewCurrent").disabled=!available;
 }
 
 // --- ファイル選択→解析 ---
@@ -2300,8 +2314,8 @@ function openMotionWorkflow() {
   const generation = uploadAnalysisGeneration;
   try {
     const f = selectedVideoFile;
-    FrescoMotionReview.open({getSpeedHits:()=>curStats?.hits||[],mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
-      source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
+    FrescoMotionReview.open({getSpeedHits:()=>curStats?.hits||[],measureEvents:events=>FrescoMotion.estimatedSpeeds(events,validatedVideoDistance($("upDistance").value),currentVideoSettings,MEASUREMENT,curStats?.audioHits||[]),mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
+      source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,lastModified:f?.lastModified,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
       hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion,
       onDistance:value => { $("upDistance").value=String(value); currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(value);if(curStats?.audioHits)curStats.audioHits=rebuildTimeline(curStats.audioHits).hits; },
       analyzeAudio:async (onProgress,shouldContinue) => {
@@ -2312,7 +2326,7 @@ function openMotionWorkflow() {
         const stats=buildStats(onsets);curStats.audioHits=stats.hits;curStats.audioReady=true;curStats.aiRejected=aiRejected||0;
         return curStats.audioHits;
       },
-      onProgress:progress=>{if(generation===uploadAnalysisGeneration){updateActivity("motion",progress.percent,progress.busy?"running":progress.status||"cancelled");updateAnalysisSteps();}},
+      onProgress:progress=>{if(generation===uploadAnalysisGeneration){updateActivity("motion",progress.percent,progress.busy?"running":progress.status||"cancelled");if(progress.message)$("activityMessage").textContent=progress.message;updateAnalysisSteps();}},
       onComplete:()=>{$("motionDetails").open=false;$("upStage").scrollIntoView({behavior:"smooth",block:"start"});},
       onChange:snapshot => { if(generation!==uploadAnalysisGeneration)return;currentMotion=snapshot;renderShotSummary(snapshot);if(snapshot?.frames?.length){updateFromMotion(snapshot);$("upDash").hidden=false;}else if(curStats?.audioReady){curStats={...curStats,...rebuildTimeline(curStats.audioHits),analysisMode:"audio"};renderDash();$("upDash").hidden=false;}saveCurrentRecord(); }
     });
@@ -2320,18 +2334,25 @@ function openMotionWorkflow() {
   } catch(e) { $("upProg").hidden=false;$("upProg").textContent=e.message; }
 }
 $("vidBtn").addEventListener("click",openMotionWorkflow);
+$("reviewCurrent").addEventListener("click",async()=>{
+  if(window.FrescoMotionReview?.isBusy())return;
+  const t=$("upVideo").currentTime;selectVideoMode('detail');
+  if(!window.FrescoMotionReview?.snapshot())openMotionWorkflow();
+  if(!currentMotion?.frames?.length){$("motionDetails").open=true;$("motionHost").scrollIntoView({behavior:'smooth'});return;}
+  try{await FrescoMotionReview.inspectTime(t);}catch(e){$("upProg").hidden=false;$("upProg").textContent=e.message;}
+});
 
 function updateFromMotion(snapshot) {
   if(!curStats||!snapshot)return;
   currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(snapshot.settings.distanceM);
-  const measured=FrescoMotion.speeds(snapshot.events,snapshot.settings.distanceM);
+  const measured=FrescoMotion.estimatedSpeeds(snapshot.events,snapshot.settings.distanceM,currentVideoSettings,MEASUREMENT,curStats.audioHits||[]);
   const hits=[];let run=0,best=0,rallies=0,previous=null;
   for(const event of measured){
     if(!["auto","confirmed"].includes(event.status)||!event.player)continue;
     if(previous==null||event.t-previous>videoRallyGap())run=0;
     if(!run)rallies++;
     run++;best=Math.max(best,run);
-    hits.push({t:event.t,idx:hits.length,player:event.player,speed:event.averageKmh,rNow:run});previous=event.t;
+    hits.push({t:event.t,idx:hits.length,player:event.player,speed:event.initialKmh,rNow:run});previous=event.t;
   }
   curStats={...curStats,hits,total:hits.length,rMax:best,rallies,analysisMode:"motion",qualityRejected:0,excluded:0};
   renderShotSummary(snapshot);renderDash();syncLive();
@@ -2419,11 +2440,11 @@ function makeRecord(meta = {}) {
     settings: currentVideoSettings || { captured: false, values: {} },
     playerLabels: { a: playerName("a"), b: playerName("b") },
     review: curStats.review || null,
-    analysisMode: curStats.analysisMode || "audio", audioHits: curStats.audioHits || null, audioReady: Boolean(curStats.audioReady),
+    speedDefinition:"estimated-initial", analysisMode: curStats.analysisMode || "audio", audioHits: curStats.audioHits || null, audioReady: Boolean(curStats.audioReady),
     motion: currentMotion, speedReview: curStats.speedReview || null,
     total: curStats.total, rMax: curStats.rMax, rallies: curStats.rallies,
     dropOverride: curStats.dropOverride ?? null,
-    drops: estimatedDrops(curStats,meta.duration,videoRallyGap()).value, excluded: curStats.excluded || 0,
+    dropDetails:estimatedDrops(curStats,meta.duration,videoRallyGap()),drops: estimatedDrops(curStats,meta.duration,videoRallyGap()).value, excluded: curStats.excluded || 0,
     splitRemoved: curStats.splitRemoved || 0,
     qualityRejected: curStats.qualityRejected || 0, aiRejected: curStats.aiRejected || 0,
     pHits: ag.pHits, avgA: ag.avgA, avgB: ag.avgB, avgAll: ag.avgAll,
@@ -2494,7 +2515,8 @@ async function loadHistory() {
   el.innerHTML = recs.map(r => {
     const d = new Date(r.dateISO), ds = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     const reviewed = r.review ? " ・ 映像精査済" : "";
-    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}${reviewed}</div><div class="meta">${escapeHtml(r.playerLabels.a)}${r.pHits.a} ${escapeHtml(r.playerLabels.b)}${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
+    const legacySpeed=r.analysisMode==="motion"&&r.speedDefinition!=="estimated-initial"?"（旧計算）":"";
+    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}${reviewed}</div><div class="meta">${escapeHtml(r.playerLabels.a)}${r.pHits.a} ${escapeHtml(r.playerLabels.b)}${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h${legacySpeed}</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
   }).join("");
   el.querySelectorAll(".rec").forEach(div => {
     const id = +div.dataset.id, r = recs.find(x => x.id === id);
@@ -2526,6 +2548,7 @@ function openRecord(raw) {
   currentMotion = r.motion || null;renderShotSummary(currentMotion);
   curFlip = Boolean(r.flip);
   currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration };
+  if(currentMotion?.frames?.length)updateFromMotion(currentMotion);
   renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
   $("vidBtn").style.display = "none";   // 過去記録は動画がないため再精査は不可
   setVideoExportAvailability(false);

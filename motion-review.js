@@ -53,7 +53,7 @@ window.FrescoMotionReview = (() => {
   }
   function renderEvents(){
     if(viewHome&&view&&view.parentNode!==viewHome){viewHome.append(view);if(playback)viewHome.append(playback);}rows.replaceChildren();let speeds;
-    try{speeds=M.speeds(events,currentDistance);}catch(e){say(e.message);return;}
+    try{speeds=callbacks.measureEvents?callbacks.measureEvents(events):M.speeds(events,currentDistance);}catch(e){say(e.message);return;}
     const all=events.slice().sort((a,b)=>a.t-b.t),pending=all.filter(e=>e.status==='pending'||e.reviewRequired||e.suspicious),ordered=showAll?all:pending,byId=new Map(speeds.map(e=>[e.id,e]));
     el('p',`球と動きで判定 ${events.filter(e=>e.status==='auto'&&!['pose-audio-estimate-v1','rally-alternation-estimate-v1'].includes(e.provenance)).length}球・動き・ラリーから仮判定 ${events.filter(e=>e.status==='auto'&&['pose-audio-estimate-v1','rally-alternation-estimate-v1'].includes(e.provenance)).length}球・確認した打球 ${events.filter(e=>e.status==='confirmed'&&e.player).length}球・見直す音 ${pending.length}件`,rows);const list=el('details','',rows);el('summary','すべての判定を見る',list);button(showAll?'見直す音だけに戻る':'すべての音を見直す',list,()=>{showAll=!showAll;reviewIndex=0;renderEvents();});
     if(!ordered.length){el('p',events.length?'見直す音はありません。自動判定も「すべての判定を見る」から修正できます。':'解析後に判定した打球と、見直しが必要な音を表示します。',rows);if(frames.length&&reviewSection?.open){rows.append(view);rows.append(playback);}return;}
@@ -71,7 +71,7 @@ window.FrescoMotionReview = (() => {
     button('この2人の打球ではない',choices,()=>select(null,'ignored'));
     button('分からないので次へ',choices,()=>select(null,'pending'));
     const state=event.status==='auto'?(event.provenance==='pose-audio-estimate-v1'?'動き・ラリーによる仮判定':'自動判定した打球'):event.status==='ignored'?'集計から外しました':event.status==='confirmed'?`${event.player==='a'?'1':'2'}人目の打球として確認済み`:'まだ確認していません';
-    const result=byId.get(event.id);el('p',state+(result?.averageKmh!=null?`・推定平均 ${result.averageKmh.toFixed(1)} km/h`:''),card);
+    const result=byId.get(event.id);el('p',state+(result?.initialKmh!=null?`・推定初速 ${result.initialKmh.toFixed(1)} km/h`:''),card);
     if(event.suggestedPlayer)el('p',`映像からは${event.suggestedPlayer==='a'?'1':'2'}人目の打球の可能性があります。上のボタンで確認してください。`,card);
     button('前の音',card,()=>{reviewIndex--;renderEvents();});button('次の音',card,()=>{reviewIndex++;renderEvents();});
     const details=el('details','',rows);el('summary','確認した音を一覧で見る',details);
@@ -135,6 +135,50 @@ window.FrescoMotionReview = (() => {
     }
     return result.map(e=>rejected.has(e.id)?{...e,status:'pending',player:null,reviewRequired:true,reviewReason:'打球の間隔または打者の順序を確認してください'}:e);
   }
+  let checkpointDB=null;
+  async function checkpointStore(){
+    if(!window.indexedDB)return null;
+    if(!checkpointDB)checkpointDB=new Promise((resolve,reject)=>{
+      const request=window.indexedDB.open('frescoMotionProgress',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('chunks',{keyPath:['job','index']});
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+    }).catch(e=>{checkpointDB=null;throw e;});
+    return checkpointDB;
+  }
+  async function readCheckpoint(job){
+    const db=await checkpointStore();if(!db)return [];
+    return new Promise((resolve,reject)=>{
+      const request=db.transaction('chunks','readonly').objectStore('chunks').getAll(window.IDBKeyRange.bound([job,0],[job,Infinity]));
+      request.onerror=()=>reject(request.error);request.onsuccess=()=>{
+        const output=[];for(const chunk of request.result){if(chunk.index!==output.length)break;output.push(...chunk.frames);}resolve(output);
+      };
+    });
+  }
+  async function writeCheckpoint(job,index,records){
+    const db=await checkpointStore();if(!db)return false;
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction('chunks','readwrite');tx.objectStore('chunks').put({job,index,frames:records,updatedAt:Date.now()});
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('途中保存が中断されました'));
+    });return true;
+  }
+  async function findCheckpoint(videoSource,mode){
+    const db=await checkpointStore();if(!db)return null;
+    const identity=s=>JSON.stringify([s.name,s.size,s.lastModified,s.width,s.height,Math.round(s.duration*100)]);
+    const keys=await new Promise((resolve,reject)=>{const r=db.transaction('chunks','readonly').objectStore('chunks').getAllKeys();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    const matches=[];
+    for(const [job,index] of keys){
+      if(index!==0)continue;
+      let meta;try{meta=JSON.parse(job);}catch{continue;}
+      if(meta.version!==1||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
+      const chunk=await new Promise((resolve,reject)=>{const r=db.transaction('chunks','readonly').objectStore('chunks').get([job,0]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      if(chunk)matches.push({meta,updatedAt:chunk.updatedAt||0});
+    }
+    return matches.sort((a,b)=>b.updatedAt-a.updatedAt)[0]?.meta||null;
+  }
+  async function clearCheckpoints(){
+    const db=await checkpointStore();if(!db)return;
+    await new Promise((resolve,reject)=>{const tx=db.transaction('chunks','readwrite');tx.objectStore('chunks').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  }
   // Keep ball samples at 30 fps. Spend pose inference on contact windows,
   // with 5 fps posture updates elsewhere. Never change detail-mode sampling.
   function poseSchedule(start,count,hits,mode){
@@ -155,19 +199,31 @@ window.FrescoMotionReview = (() => {
     if(!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<=0||start+duration>video.duration+.01){say('動画の中に収まる開始時刻と長さを指定してください');return;}
     const token=++serial;busy=true;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=0),busy:true});controls.disabled=true;rows.inert=true;video.pause();clipEnd=null;
     if(viewHome){viewHome.append(view);viewHome.append(playback);viewHome.append(status);}say(uiMode==='simple'?'動画の音を調べています':'1 / 4：音を調べています');
-    const runMode=uiMode,output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice(),outcome='error';
+    const runMode=uiMode,output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice(),outcome='error',job=null,saved=0,storageFailed=false,screenLock=null;
+    const persist=async()=>{if(!job||storageFailed||saved>=output.length)return;try{if(await writeCheckpoint(job,saved,output.slice(saved)))saved=output.length;else storageFailed=true;}catch(e){storageFailed=true;}};
     try{
+      try{screenLock=await window.navigator?.wakeLock?.request('screen');}catch{}
+      if(token!==serial)return;
       if(callbacks.analyzeAudio){const hits=await callbacks.analyzeAudio(p=>{if(token===serial){say(`${uiMode==='simple'?'動画の音を解析中':'1 / 4：音を調べています'} ${Math.round(Math.max(0,Math.min(1,p))*100)}%`);callbacks.onProgress?.({phase:'motion',percent:(lastProgress=Math.round(Math.max(0,Math.min(1,p))*15)),busy:true});}},()=>token===serial);
         if(token!==serial)return;
         const manual=events.filter(e=>e.status==='confirmed'||e.origin==='manual-review'||e.origin==='manual'||['attack','defense'].includes(e.shotOverride));
         workingEvents=(hits||[]).filter(h=>!manual.some(e=>Math.abs(e.t-h.t)<.01)).map((h,i)=>({id:`audio-${i}`,t:h.t,player:null,status:'pending',origin:'audio'})).concat(manual);
       }
       say(uiMode==='simple'?'映像を解析する準備をしています':'2 / 4：骨格を読み取る準備をしています。初回は通信が必要です');
-      const detector=await model();if(token!==serial)return;
+      let detector=null;
       const cv=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
       const count=Math.ceil(duration*30),schedule=poseSchedule(start,count,workingEvents,runMode);
+      job=JSON.stringify({version:1,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
+      try{
+        const stored=await readCheckpoint(job);if(token!==serial)return;
+        if(stored.length<=count&&stored.every((f,i)=>Math.abs(f.t-(start+i/30))<.001&&Array.isArray(f.poses)&&Array.isArray(f.ballCandidates))){for(const frame of stored)output.push(frame);saved=stored.length;}
+      }catch(e){storageFailed=true;}
+      if(output.length&&output.length<count){await seek(output.at(-1).t);if(token!==serial)return;cx.drawImage(video,0,0,cv.width,cv.height);previous=cx.getImageData(0,0,cv.width,cv.height).data;}
+      const resumed=output.length;
+      if(output.length<count){detector=await model();if(token!==serial)return;}
+      const began=Date.now();
       const crops=roi.map(r=>{const c=document.createElement('canvas');c.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));c.height=Math.max(8,Math.min(512,Math.round(c.width*r.h/r.w)));return {canvas:c,context:c.getContext('2d')};});
-      for(let n=0;n<count;n++){
+      for(let n=output.length;n<count;n++){
         if(token!==serial)return;const t=start+n/30;await seek(t);if(token!==serial)return;
         const samplePose=!!schedule[n],poses=!samplePose&&output.length?output.at(-1).poses:[];
         if(samplePose)for(let person=0;person<roi.length;person++){
@@ -177,20 +233,23 @@ window.FrescoMotionReview = (() => {
           poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
         }
         if(n%6===0||n===count-1){
-          callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true});previewFrame={t,poses};
+          const elapsed=(Date.now()-began)/1000,remaining=n>resumed&&elapsed>5?Math.ceil(elapsed/(n-resumed)*(count-n)):null;
+          const message=`速度・打数は確認できます。${resumed?'続きから':''}軌跡を準備中${remaining!=null?'・残り約'+Math.ceil(remaining/60)+'分':''}${storageFailed?'・途中保存できません':''}`;
+          callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true,message});previewFrame={t,poses};
           say(`映像を解析中 ${Math.round((n+1)/count*100)}%：完了すると骨格とボールの軌跡が動画に加わります。速度・打数は先に確認できます。`);
           draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
         }
         cx.drawImage(video,0,0,cv.width,cv.height);const candidate=balls(cv,previous,poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale}))));previous=candidate.data;
         output.push({t,poseSampleTime:!samplePose&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
+        if(output.length-saved>=90||n===count-1){await persist();if(token!==serial)return;}
       }
       if(token!==serial)return;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=96),busy:true});say(uiMode==='simple'?'解析結果をまとめています':'3 / 4：打音と2人の動きを照合しています');await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
       const nextTracks=window.FrescoBallTracker?window.FrescoBallTracker.track(output,video.videoWidth,regions):M.track(output,video.videoWidth).filter(trackForPair),observedTracks=nextTracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),nextEvents=M.autoReview(workingEvents,output,observedTracks,video.videoWidth,currentDistance);
       if(token!==serial)return;frames=output;tracks=nextTracks;events=poseAudioEstimates(Array.isArray(nextEvents)?nextEvents:nextEvents.events,output,video.videoWidth);if(window.FrescoShots)events=window.FrescoShots.inferAlternation(events,output,video.videoWidth);
-      if(window.FrescoVideoQuality){const reviewed=window.FrescoVideoQuality.review(M.speeds(events,currentDistance).map(e=>({...e,speed:e.averageKmh})));const bad=new Set(reviewed.hits.filter(e=>e.qualityExcluded).map(e=>e.id));events=events.map(e=>bad.has(e.id)&&e.status==='auto'?{...e,status:'pending',player:null,reviewReason:'前後より速度が大きく違います',evidence:'前後より速度が大きく違います'}:e);}
+      if(window.FrescoVideoQuality){const reviewed=window.FrescoVideoQuality.review(callbacks.measureEvents?callbacks.measureEvents(events):M.speeds(events,currentDistance).map(e=>({...e,speed:e.averageKmh})));const bad=new Set(reviewed.hits.filter(e=>e.qualityExcluded).map(e=>e.id));events=events.map(e=>bad.has(e.id)&&e.status==='auto'?{...e,suspicious:true,reviewRequired:true,reviewReason:'打球は数えています。前後より速度が大きく違うため確認できます'}:e);}
       previewFrame=null;reviewIndex=0;showAll=false;renderEvents();changed();await seek(Math.max(0,(events.find(e=>e.status==='pending')?.t??start)-.25));if(token!==serial)return;draw();
       say(uiMode==='simple'?'解析が完了しました。結果と動画を保存できます':'4 / 4：解析完了。判断が難しかった音だけ、映像の下で見直せます。');conditions.open=uiMode==='simple';viewHome.scrollIntoView({behavior:'smooth',block:'start'});callbacks.onProgress?.({phase:'motion',percent:(lastProgress=100),busy:true});outcome='complete';callbacks.onComplete?.(snapshot());
-    }catch(e){outcome='error';if(token===serial)say(`解析できませんでした：${e.message}`);}finally{if(token===serial){previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:outcome});controls.disabled=false;rows.inert=false;draw();}}
+    }catch(e){outcome='error';if(token===serial)say(`解析できませんでした：${e.message}`);}finally{await persist();if(screenLock)try{await screenLock.release();}catch{}if(token===serial){previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:outcome,...(storageFailed?{message:outcome==='complete'?'解析は完了しました。途中保存は利用できませんでした':saved?'途中保存に失敗しました。最後に保存できた位置から再開します':'途中保存できませんでした。次回は最初から解析します'}:{})});controls.disabled=false;rows.inert=false;draw();}}
   }
   function restore(raw){
     if(busy)throw new Error('解析が終わってから記録を戻してください');
@@ -202,9 +261,9 @@ window.FrescoMotionReview = (() => {
   function open(options){
     reset();detailNodes=[];callbacks=options;video=options.video;source=options.source;currentDistance=M.distance(options.distance);
     panel=el('section','',options.host);panel.className='motion-review';
-    el('h3','映像で詳しく',panel);
+    el('h3','2人の軌跡と打ち方を見る',panel);
     el('p','2人の動きと球の軌跡を、映像で確かめられます。',panel);
-    el('p','気になる場面を再生し、必要なところだけ判定を直せます。',panel);
+    const reviewHelp=el('p','気になる場面を再生し、必要なところだけ判定を直せます。',panel);detailNodes.push(reviewHelp);
     viewHome=el('div','',panel);view=el('canvas','',viewHome);view.style.cssText='width:auto;max-width:100%;max-height:36svh;display:block;margin:auto;object-fit:contain;touch-action:none;background:#000';view.setAttribute('aria-label','選手の全身を囲む映像。対角の2か所をタップして範囲を指定します');
     playback=el('div','',viewHome);
     button('再生 / 一時停止',playback,()=>{if(busy)return;clipEnd=null;if(video.paused)video.play().catch(e=>say(e.message));else video.pause();});
@@ -223,7 +282,7 @@ window.FrescoMotionReview = (() => {
       if(!dragged&&!corner){corner=p;origin=null;say('次に、選手の全身を囲む反対側の角をタップしてください');draw();return;}
       const from=dragged?origin:corner,r={x:Math.min(p.x,from.x),y:Math.min(p.y,from.y),w:Math.abs(p.x-from.x),h:Math.abs(p.y-from.y)};
       if(r.w<20||r.h<20){origin=null;corner=null;say('範囲が小さすぎます。頭から足までを囲んでください');draw();return;}
-      serial++;regions[selecting]=r;frames=[];tracks=[];drawingTracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();
+      serial++;runButton.textContent='選んだ2人で自動解析';regions[selecting]=r;frames=[];tracks=[];drawingTracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();
       const done=regions[0]&&regions[1];selecting=done?null:selecting===0?1:0;origin=null;corner=null;
       say(done?'2人を選びました。「選んだ2人で自動解析」を押すと骨格の線と球の軌跡を確認できます。':`${selecting+1}人目も、全身を囲む2か所をタップしてください`);draw();};
     controls=el('fieldset','',conditions);controls.style.border='0';el('legend','2. 動きを解析する',controls);
@@ -232,7 +291,8 @@ window.FrescoMotionReview = (() => {
     input('解析する長さ（秒） ','duration',video.duration,.1,video.duration);
     el('p','速度・打数は先に確認できます。この追加解析が完了すると、動画に骨格とボールの軌跡が表示されます。ボールが読み取れない区間には軌跡は出ません。初回は準備に通信しますが、動画は送信しません。',controls);
     const d=input('2人の距離（m） ','distance',currentDistance,7,100);d.step='0.1';d.onchange=()=>{try{const value=M.distance(d.value);if(value<7||Math.abs(value*10-Math.round(value*10))>1e-8)throw new Error('距離は7.0m以上、0.1m刻みで入力してください');currentDistance=value;renderEvents();options.onDistance?.(currentDistance);changed();}catch(e){d.value=currentDistance;say(`${e.message}。${currentDistance}m に戻しました`);}};
-    button('選んだ2人で自動解析',controls,run);
+    const runButton=button('選んだ2人で自動解析',controls,run);
+    el('p','解析中は画面を開いたままお待ちください。途中経過はこの端末に自動保存します。中断後は同じ動画を開くと前回の2人を復元して再開できます。',controls);
     button('解析を中止',panel,()=>{if(!busy)return;serial++;previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});controls.disabled=false;rows.inert=false;draw();say('解析を中止しました。完了していた結果は残しています');});
     status=el('p','まず「1人目を選ぶ」を押してください',viewHome);status.setAttribute('role','status');
     const posture=el('p','',panel);posture.dataset.posture='';detailNodes.push(posture);
@@ -242,7 +302,8 @@ window.FrescoMotionReview = (() => {
     el('p','上の映像を打った瞬間で止めて、打った人を選んでください。',manual);
     for(const player of ['a','b'])button(`${player==='a'?'1':'2'}人目の打球を追加`,manual,()=>{if(busy)return;events.push({id:`manual-${Date.now()}-${events.length}`,t:video.currentTime,player,status:'confirmed',origin:'manual'});reviewIndex=events.slice().sort((a,b)=>a.t-b.t).findIndex(e=>e.id===events.at(-1).id);renderEvents();changed();});
     const notes=el('details','',further);el('summary','表示される数値について',notes);
-    el('p','骨格の角度は画面上の推定で、腰の立体的な回転ではありません。球の軌跡は赤い球の候補で、誤って表示されることがあります。短い途切れや打球付近を、前後の軌跡・手首の位置から推定した部分は破線です。球速は確認した連続する打球の時間と距離から求める平均の推定値です。',notes);
+    el('p','骨格の角度は画面上の推定で、腰の立体的な回転ではありません。球の軌跡は赤い球の候補で、誤って表示されることがあります。短い途切れや打球付近を、前後の軌跡・手首の位置から推定した部分は破線です。球速は選手間距離と打球間隔に、音の到達時間と空気抵抗のモデルを適用した推定初速です。実際の打点間距離とは異なる場合があります。',notes);
+    button('途中保存をすべて削除',further,async()=>{if(busy)return;try{await clearCheckpoints();say('途中保存を削除しました。完成した解析結果は残っています');}catch(e){say('途中保存を削除できませんでした');}});
     const backup=el('details','',further);el('summary','記録のバックアップ・復元',backup);
     el('p','機種変更や記録の消失に備える解析結果の控えです。元動画は含まれません。通常の解析には必要ありません。',backup);
     button('バックアップを保存',backup,()=>{if(busy){say('解析が終わってから保存してください');return;}const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot())],{type:'application/json'}));const a=el('a');a.href=url;a.download='frescoball-motion.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
@@ -250,6 +311,13 @@ window.FrescoMotionReview = (() => {
     events=(options.hits||[]).map((h,i)=>({id:`audio-${i}`,t:h.t,player:null,status:'pending',origin:'audio'}));
     if(options.initialData){try{restore(options.initialData);say('保存していた解析を表示しました');}catch(e){say(`保存した解析を戻せませんでした：${e.message}`);}}
     renderEvents();draw();setMode(options.mode||uiMode);if(frames.length&&uiMode==='detail')conditions.open=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
+    const opened=serial;
+    if(!frames.length)findCheckpoint(source,uiMode).then(savedJob=>{
+      if(!savedJob||savedJob.mode!==uiMode||opened!==serial||busy||selecting!=null)return;
+      regions=savedJob.roi;panel.querySelector('[data-start]').value=savedJob.start;panel.querySelector('[data-duration]').value=savedJob.duration;
+      runButton.textContent='前回の続きから解析';say('前回選んだ2人を復元しました。続きから解析できます。範囲を選び直すと新しく解析します。');draw();
+    }).catch(()=>{if(opened===serial&&!busy)say('途中保存を読み込めません。新しく解析することはできます。');});
+
   }
   document.getElementById('upVideo').addEventListener('timeupdate',()=>{if(clipEnd!=null&&video?.currentTime>=clipEnd){video.pause();clipEnd=null;}if(!busy)draw();});
   function setMode(mode){if(!['simple','detail'].includes(mode))throw new Error('表示モードが不正です');uiMode=mode;if(!panel)return;for(const n of detailNodes)n.hidden=mode==='simple';if(conditions){conditions.children[0].hidden=mode==='simple';if(mode==='simple')conditions.open=true;}if(mode==='simple'&&reviewSection){reviewSection.open=false;if(viewHome){viewHome.append(view);viewHome.append(playback);}}draw();}

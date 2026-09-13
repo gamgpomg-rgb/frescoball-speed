@@ -11,7 +11,7 @@ const c=vm.createContext({$:el,console,setTimeout,clearTimeout,URL:{createObject
   videoMode:"simple",analysisActivity:{busy:false,percent:0},renderShotSummary:()=>{},selectedVideoFile:null,uploadObjectUrl:null,uploadAnalysisGeneration:0,currentMotion:null,curStats:null,currentRecordMeta:{},currentVideoSettings:null,
   validatedVideoDistance:Number,currentSettings:()=>({values:{distance:'7'}}),setVideoExportAvailability:()=>{},
   window:{FrescoMotionReview:{isBusy:()=>false}},updateAnalysisSteps:()=>{},renderDash:()=>{},syncLive:()=>{},saveCurrentRecord:()=>{},videoRallyGap:()=>2.5,
-  FrescoMotion:require('../motion-core.js'),FrescoMotionReview:{open:options=>{workflow=options;}},
+  MEASUREMENT:require('../measurement-spec.js'),FrescoMotion:require('../motion-core.js'),FrescoMotionReview:{open:options=>{workflow=options;}},
   analyzeFile:async()=>{audioCalls++;return{onsets:[1,1.5],aiRejected:0};},buildStats:times=>({hits:times.map(t=>({t}))})});
 c.resetUploadAnalysis=()=>{c.uploadAnalysisGeneration++;c.curStats=null;c.currentMotion=null;c.uploadObjectUrl=null;return c.uploadAnalysisGeneration;};
 for(const name of ['updateActivity','updateAnalysisSteps','openMotionWorkflow','updateFromMotion']){const a=html.indexOf(`function ${name}(`);vm.runInContext(html.slice(a,html.indexOf('\n}',a)+2),c);}
@@ -36,7 +36,7 @@ vm.runInContext(html.slice(a,b),c);
     {t:2,status:'pending',player:null},{t:2.5,status:'confirmed',player:'a'}]};
   workflow.onChange(snapshot);
   assert.equal(c.curStats.analysisMode,'motion');assert.equal(c.curStats.total,3);
-  assert.equal(c.curStats.hits[1].speed,50.4);assert.equal(c.curStats.hits[2].speed,null);
+  assert.equal(c.curStats.hits[1].speed,require('../measurement-spec.js').measureInterval({observedSeconds:.5,lengthM:7}).initialSpeedKmh);assert.equal(c.curStats.hits[2].speed,null);
   assert.equal(c.curStats.hits[2].rNow,3,'unresolved events must not invent a drop');
   const before=c.currentMotion;c.uploadAnalysisGeneration++;workflow.onChange({...snapshot,settings:{distanceM:10}});
   assert.equal(c.currentMotion,before,'old workflow cannot overwrite another video');

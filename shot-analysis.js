@@ -21,14 +21,15 @@ function observations(events,frames){
   if(!before||!after||!center||after.t<=before.t)return base;
   const wrists=[15,16].map(k=>{const a=geometry(before.poses[side],k),b=geometry(after.poses[side],k);return {k,movement:a&&b?Math.hypot(b.x-a.x,b.y-a.y):-1};}).sort((a,b)=>b.movement-a.movement);
   if(wrists[0].movement<.04)return base;
-  const chosen=wrists[0];if(wrists[1].movement>0&&chosen.movement<wrists[1].movement*1.2)return {...base,basis:'both-arms-moving'};
+  const chosen=wrists[0],cp=center.poses[side],twoHands=wrists[1].movement>=.04&&visible(cp?.[15])&&visible(cp?.[16])&&Math.hypot(cp[15].x-cp[16].x,cp[15].y-cp[16].y)<Math.max(12,Math.hypot(cp[11].x-cp[12].x,cp[11].y-cp[12].y)*.6);
+  if(!twoHands&&wrists[1].movement>0&&chosen.movement<wrists[1].movement*1.2)return {...base,basis:'both-arms-moving'};
   const values=[before,center,after].map(f=>geometry(f.poses[side],chosen.k)).filter(Boolean);
   if(values.length<2)return base;const lateral=median(values.map(g=>g.lateral)),height=median(values.map(g=>g.height));
   if(height<-.2||height>1.65)return {...base,basis:'outside-stroke-height'};
   // Shoulder-relative position is a 2D approximation. A side-on view can hide depth.
   const sides=values.map(g=>g.ownSide).filter(v=>v!=null),ownSide=sides.length>=2?median(sides):null;
-  const type=lateral<=.52?'defense':ownSide!=null&&ownSide<=-.52?'defense':ownSide!=null&&ownSide>=.72?'attack':null;
-  return {...base,type,basis:type?'body-wrist-position-v1':'boundary-position',lateral,hand:chosen.k===15?'left':'right'};
+  const type=twoHands?(lateral>=.72?'attack':lateral<=.52?'defense':null):lateral<=.52?'defense':ownSide!=null&&ownSide<=-.52?'defense':ownSide!=null&&ownSide>=.72?'attack':null;
+  return {...base,type,basis:type?'body-wrist-position-v1':'boundary-position',lateral,hand:twoHands?'both':chosen.k===15?'left':'right'};
  });
 }
 // Two complementary roles within a rally. Pose observations anchor the roles;

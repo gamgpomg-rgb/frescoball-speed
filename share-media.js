@@ -59,7 +59,7 @@ window.FrescoShare = (() => {
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
-    g.font=`${20*u}px "Hiragino Sans", sans-serif`;g.fillStyle='#ddd8ef';g.fillText(confirmed?'対象打点の区間平均':'音から推定した初速',box.x+34*u,box.y+94*u);
+    g.font=`${20*u}px "Hiragino Sans", sans-serif`;g.fillStyle='#ddd8ef';g.fillText(confirmed?'対象打球の推定初速':'音から推定した初速',box.x+34*u,box.y+94*u);
     if(story){
       if(closeups)motion.regions.forEach((region,i)=>{
         const area={x:64+i*496,y:1120,w:456,h:300};
@@ -69,12 +69,12 @@ window.FrescoShare = (() => {
         if(style==='skeleton'){g.save();g.beginPath();g.rect(fitted.x,fitted.y,fitted.w,fitted.h);g.clip();g.translate(fitted.x,fitted.y);g.scale(fitted.w/region.w,fitted.h/region.h);g.translate(-region.x,-region.y);skeleton(g,motion,video.currentTime);g.restore();}
         g.fillStyle=i?'#ffd23f':'#16e6c3';g.font='700 24px "Hiragino Sans", sans-serif';g.fillText(record?.playerLabels?.[i?'b':'a']||`${i+1}人目`,area.x,area.y-18,area.w);
       });
-      const cells=[[confirmed?'対象の打数':'連続した打数',`${confirmed?stats.total:stats.rally} 回`],[confirmed?'区間平均球速':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
+      const cells=[[confirmed?'対象の打数':'連続した打数',`${confirmed?stats.total:stats.rally} 回`],[confirmed?'推定初速の平均':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
       cells.forEach(([label,value],i)=>{const x=64+i*328;g.fillStyle='#bcb4d3';g.font='500 27px "Hiragino Sans", sans-serif';g.fillText(label,x,1540);g.fillStyle=i===0?'#ffd23f':'#fff';g.font='800 49px "Hiragino Sans", sans-serif';g.fillText(value,x,1615,304);});
-      g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の区間平均（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1700,952);
+      g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の推定初速（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1700,952);
       g.fillStyle='#9c92b3';g.font='400 24px "Hiragino Sans", sans-serif';g.fillText('FRESCOBALL  /  PRACTICE',64,1770);
     }
-    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed?'対象2人の記録（自動・仮判定を含む）・設定距離による区間平均':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
+    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed?'対象2人の記録（自動・仮判定を含む）・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
     return canvas;
   }
   function open(options){
@@ -101,14 +101,14 @@ window.FrescoShare = (() => {
     const note=e('p','保存する見た目と区間を選び、プレビューで確認できます。');
     const form=e('fieldset');const label=(text)=>e('label',text,form);
     const sl=label('見た目'),style=e('select','',sl);for(const [value,text]of [['play','プレーと球速'],['skeleton','骨格付き']]){const o=e('option',text,style);o.value=value;if(value==='skeleton'&&!C.motionRange(motion))o.disabled=true;}
-    if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで詳しく解析」で解析してください。',form);
+    if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで軌跡と打ち方を見る」で解析してください。',form);
     const trailLabel=label('球の軌跡'),trail=e('select','',trailLabel);for(const [value,text]of [['off','表示しない'],['on','軌跡候補を表示']]){const o=e('option',text,trail);o.value=value;if(value==='on'&&!displayTracks.length)o.disabled=true;}
     if(displayTracks.length)trail.value='on';
     const measurementLabel=label('表示する記録'),measurement=e('select','',measurementLabel);
     const hasAudio=record?.analysisMode!=='motion'||Array.isArray(record?.audioHits);
     for(const [value,text]of [['audio','音から計算した記録'],['confirmed','対象2人の記録（自動・仮判定を含む）']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
     if(record?.analysisMode==='motion')measurement.value='confirmed';
-    e('p','音からの候補と、映像で自動判定または手動確認した対象2人の記録を切り替えます。腕の動きによる仮判定も含み、打者不明の音は含みません。映像の球速は区間平均の推定です。',form);
+    e('p','音からの候補と、映像で自動判定または手動確認した対象2人の記録を切り替えます。腕の動きによる仮判定も含み、打者不明の音は含みません。どちらも同じ計算方法の推定初速です。',form);
     const tl=label('タイトル'),title=e('input','',tl);title.value='今日のラリー';title.maxLength=24;tl.hidden=options.format!=='story';
     const startLabel=label('開始位置（秒）'),start=e('input','',startLabel);start.type='number';start.min=0;start.max=video.duration;start.step='.1';start.value=Math.min(video.currentTime,Math.max(0,video.duration-.1)).toFixed(2);
     const lengthLabel=label('長さ'),length=e('select','',lengthLabel);for(const n of [8,15,30,60]){const o=e('option',`${n}秒`,length);o.value=n;}length.value='15';lengthLabel.hidden=Boolean(options.image);if(options.format!=='story'){const all=e('option','全編',length);all.value=video.duration;all.dataset.full='';}
@@ -132,9 +132,9 @@ window.FrescoShare = (() => {
         selectedRecord={...record,hits:reviewed,playbackHits:reviewed};
       }
       if(measurement.value==='confirmed'){
-        const estimates=window.FrescoMotion.speeds(motion?.events||[],motion?.settings?.distanceM);
+        const estimates=window.FrescoMotion.estimatedSpeeds(motion?.events||[],motion?.settings?.distanceM,record.settings,window.FrescoMeasurement,record.audioHits||record.hits||[]);
         const verified=event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player);
-        const measured=estimates.filter(verified).map(event=>({...event,speed:event.averageKmh}));
+        const measured=estimates.filter(verified).map(event=>({...event,speed:event.initialKmh}));
         const hits=window.FrescoVideoQuality?window.FrescoVideoQuality.review(measured,record.speedReview||{}).hits:measured;
         const reviewedByTime=new Map(hits.map(h=>[h.t,h]));
         const playbackHits=estimates.map(event=>({...event,speed:verified(event)?reviewedByTime.get(event.t)?.speed??null:null}));

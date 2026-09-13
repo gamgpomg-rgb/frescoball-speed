@@ -49,13 +49,13 @@ const motion={settings:{distanceM:7},events:[
   {t:.8,player:null,status:'pending'},
   {t:1,player:'a',status:'confirmed'},
 ]};
-const selection=vm.createContext({record:{hits:[]},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M},range:{start:0,end:2}});
+const selection=vm.createContext({record:{hits:[]},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M,FrescoMeasurement:require('../measurement-spec.js')},range:{start:0,end:2}});
 const selectionStart=code.indexOf('      let selectedRecord=record;');
 const selectionEnd=code.indexOf('      state={',selectionStart);
 vm.runInContext(code.slice(selectionStart,selectionEnd)+'\nresult=selectedRecord;',selection);
 assert.equal(selection.result.hits.length,3);
 assert.equal(selection.result.hits[1].status,'auto');
-assert.equal(selection.result.hits[1].speed,50.4);
+assert.equal(selection.result.hits[1].speed,require('../measurement-spec.js').measureInterval({observedSeconds:.5,lengthM:7}).initialSpeedKmh);
 assert.equal(selection.result.hits[2].speed,null);
 assert.equal(C.stats(selection.result.hits,0,2).total,3);
 assert.equal(C.hitAt(selection.result.playbackHits,.85,0),null);
@@ -63,7 +63,7 @@ let strokes=0;
 const graphics={beginPath(){},moveTo(){},lineTo(){},stroke(){strokes++;}};
 const landmarks=Array.from({length:33},()=>({x:0,y:0,visibility:0,presence:0}));
 landmarks[11]={x:1,y:1,visibility:1,presence:.2};landmarks[12]={x:2,y:1,visibility:1,presence:1};
-const skeletonContext=vm.createContext({window:{FrescoMotion:M},edges:[[11,12]]});
+const skeletonContext=vm.createContext({window:{FrescoMotion:M,FrescoMeasurement:require('../measurement-spec.js')},edges:[[11,12]]});
 const skeletonStart=code.indexOf('  function skeleton('),skeletonEnd=code.indexOf('  function draw(',skeletonStart);
 vm.runInContext(code.slice(skeletonStart,skeletonEnd),skeletonContext);
 skeletonContext.skeleton(graphics,{source:{width:1000},frames:[{t:0,poses:[landmarks]}]},0);
@@ -82,10 +82,10 @@ audioSelection.record={analysisMode:'motion',hits:[{t:0,speed:20}]};
 assert.throws(()=>vm.runInContext('{'+code.slice(selectionStart,selectionEnd)+'}',audioSelection),/音から計算した速度/);
 console.log('Motion versus audio export provenance and saved speed review checks passed');
 
-const targetReview=vm.createContext({record:{speedReview:{overrides:{'0.5':'drop'}}},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M,FrescoVideoQuality:require('../video-quality.js')},range:{start:0,end:2}});
+const targetReview=vm.createContext({record:{speedReview:{overrides:{'0.5':'drop'}}},measurement:{value:'confirmed'},motion,window:{FrescoMotion:M,FrescoMeasurement:require('../measurement-spec.js'),FrescoVideoQuality:require('../video-quality.js')},range:{start:0,end:2}});
 vm.runInContext(code.slice(selectionStart,selectionEnd)+'\nresult=selectedRecord;',targetReview);
 assert.equal(targetReview.result.hits[1].speed,null,'target export must retain user exclusions');
-assert.equal(targetReview.result.hits[1].originalSpeed,50.4);
+assert.equal(targetReview.result.hits[1].originalSpeed,require('../measurement-spec.js').measureInterval({observedSeconds:.5,lengthM:7}).initialSpeedKmh);
 assert.equal(targetReview.result.playbackHits[1].speed,null);
 console.log('Target export preserves saved manual speed exclusions');
 

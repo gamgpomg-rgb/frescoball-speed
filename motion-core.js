@@ -133,6 +133,22 @@
       return {...event,previousTime:previous?.t??null,launchPlayer:previous?.player??null,averageKmh:kmh,usedDistanceM:meters,reason};
     });
   }
+  // The same initial-speed physics and quality gates as the audio quick result.
+  function estimatedSpeeds(events,fallback,settings,measurement,audioHits=[]){
+    const values=settings?.values||settings||{};
+    return speeds(events,fallback).map(event=>{
+      if(event.averageKmh==null)return {...event,initialKmh:null,speed:null};
+      if(!measurement?.measureInterval)return {...event,initialKmh:null,speed:null,reason:'速度モデルを読み込めません'};
+      const index=audioHits.findIndex(h=>Math.abs(h.t-event.previousTime)<.001);
+      if(values.micPos==='near'&&(index<0||audioHits[index+1]?.t!==event.t))return {...event,initialKmh:null,speed:null,reason:'マイク側を確認してください'};
+      const calibration=Number(values.calib),limit=Number(values.maxTrust);
+      const result=measurement.measureInterval({observedSeconds:event.t-event.previousTime,lengthM:event.usedDistanceM,
+        pairStartIndex:Math.max(0,index),micPosition:values.micPos||'center',firstOnsetSide:values.firstOnsetSide||'near',
+        calibrationFactor:calibration>0?calibration:null,maxInitialSpeedKmh:limit>0?limit:undefined});
+      return {...event,averageKmh:result.averageSpeedKmh??null,initialKmh:result.accepted?result.initialSpeedKmh:null,
+        speed:result.accepted?result.initialSpeedKmh:null,reason:result.accepted?'':result.reason,speedDefinition:'estimated-initial'};
+    });
+  }
   function normalize(data,video){
     if(!data||typeof data!=='object')throw new Error('対応するモーション解析JSONではありません');
     const legacy=Array.isArray(data.frames)&&data.summary;
@@ -169,5 +185,5 @@
     });
     return {schema:'frescoball-motion-v1',source,settings,frames,events,regions,legacy:Boolean(legacy)};
   }
-  return {distance,posture,track,nearestFrame,evidence,autoReview,speeds,normalize};
+  return {distance,posture,track,nearestFrame,evidence,autoReview,speeds,estimatedSpeeds,normalize};
 });

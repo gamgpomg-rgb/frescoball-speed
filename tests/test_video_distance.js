@@ -84,3 +84,6 @@ assert.equal(dropRecord.drops,4);assert.equal(dropRecord.dropOverride,4);
 context.openRecord(dropRecord);
 assert.equal(context.curStats.dropOverride,4,'manual drop correction survives history');
 console.log('Estimated end-of-rally drops and manual correction history passed');
+const separate=context.estimatedDrops({hits:[{t:1},{t:2},{t:6},{t:7}]},10,2.5);
+assert.equal(separate.rallyBreaks,1);assert.equal(separate.trailingPause,true);assert.equal(separate.confirmedDrops,null);
+assert.equal(context.estimatedDrops({hits:[{t:1}],dropOverride:0},20,2.5).confirmedDrops,0);

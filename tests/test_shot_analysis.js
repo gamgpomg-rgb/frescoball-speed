@@ -27,3 +27,8 @@ const mirrored=frames(155).map(f=>({...f,poses:f.poses.map(ps=>ps.map(p=>({...p,
 assert.equal(S.classify(e,mirrored)[0].type,'attack','anatomical shoulder side works with mirrored video');
 assert.equal(S.summary(roles).byPlayer.a.attack,3);
 console.log('Complementary player roles, mid-rally swaps, manual corrections, cross-body and mirrored strokes passed');
+const bothHands=x=>frames(x).map(f=>{const p=f.poses[0];p[15]={...p[16],x:p[16].x-4};return f;});
+assert.equal(S.classify(e,bothHands(155))[0].type,'attack');
+assert.equal(S.classify(e,bothHands(108))[0].type,'defense');
+assert.equal(S.classify(e,bothHands(155))[0].hand,'both');
+console.log('Two-handed outside strokes are attack; two-handed front strokes are defense');

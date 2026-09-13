@@ -91,3 +91,19 @@ const noReverse=[splitTracks[0],{points:splitTracks[1].points.map((p,i)=>({...p,
 assert.equal(M.autoReview([event(1,null,'pending')],splitFixture.frames,noReverse,1000,7)[0].status,'pending');
 assert.equal(M.autoReview([event(1,null,'pending')],splitFixture.frames,[splitTracks[0]],1000,7)[0].status,'pending');
 console.log('Separate sustained track convergence accepted; missing, mismatched and straight tracks rejected');
+{
+ const P=require('../measurement-spec');
+ for(const length of [7,8.5,10])for(const dt of [.25,.5,.8]){
+  const hits=[{t:0},{t:dt}],events=[event(0,'a'),event(dt,'b')];
+  const actual=M.estimatedSpeeds(events,length,{values:{distance:String(length)}},P,hits)[1];
+  const expected=P.measureInterval({observedSeconds:dt,lengthM:length});
+  assert.equal(actual.speed,expected.accepted?expected.initialSpeedKmh:null,'audio and motion use identical initial speed');
+ }
+ const hits=[{t:0},{t:.5},{t:1}],settings={values:{micPos:'near',firstOnsetSide:'near'}};
+ const actual=M.estimatedSpeeds([event(.5,'b'),event(1,'a')],7,settings,P,hits)[1];
+ assert.equal(actual.speed,P.measureInterval({observedSeconds:.5,lengthM:7,pairStartIndex:1,micPosition:'near',firstOnsetSide:'near'}).initialSpeedKmh,'use original audio onset side rather than selected-player order');
+ assert.equal(M.estimatedSpeeds([event(.4,'a'),event(.9,'b')],7,settings,P,hits)[1].speed,null,'unknown manual microphone side cannot fabricate a corrected speed');
+ const slow=M.estimatedSpeeds([event(0,'a'),event(1.5,'b')],7,{},P);
+ assert.equal(slow.length,2);assert.equal(slow[1].speed,null,'slow contact remains counted without a speed');
+ console.log('Unified initial speed, distance changes, microphone direction and count versus speed acceptance passed');
+}
