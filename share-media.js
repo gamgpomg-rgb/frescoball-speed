@@ -28,10 +28,7 @@ window.FrescoShare = (() => {
   }
   function trajectory(g,tracks,t,width,hits){
     const points=window.FrescoBallTracker?(window.FrescoBallTracker.at(tracks,t)?.trail||[]):C.trajectoryAt(tracks,t);if(points.length<2)return false;
-    const colorAt=time=>window.FrescoBallTracker?.speedColor(window.FrescoBallTracker.speedAt(hits,time))||'#c6cad3';
-    g.strokeStyle=colorAt(t);g.lineWidth=Math.max(3,width/480);
-    for(let i=1;i<points.length;i++){g.globalAlpha=.2+.8*i/points.length;g.strokeStyle=colorAt((points[i-1].t+points[i].t)/2);g.setLineDash?.(points[i].predicted?[5,5]:[]);g.beginPath();g.moveTo(points[i-1].x,points[i-1].y);g.lineTo(points[i].x,points[i].y);g.stroke();}g.globalAlpha=1;g.setLineDash?.([]);
-    const last=points.at(-1);g.strokeStyle=colorAt(t);g.beginPath();g.arc(last.x,last.y,Math.max(4,width/240),0,Math.PI*2);g.stroke();return true;
+    return window.FrescoBallTracker?.drawTrail(g,points,width,t,hits)||false;
   }
   function draw(canvas,video,state){
     const {format,style,motion,record,start,end,title,focus,measurementSource,statsLabel}=state;
@@ -49,11 +46,12 @@ window.FrescoShare = (() => {
       g.fillStyle='#d7d4e6';g.font='400 30px "Hiragino Sans", sans-serif';g.fillText(style==='skeleton'?'ふたりの動きを見返す':'ふたりでつないだラリー',64,198);
     }
     g.drawImage(video,crop.x,crop.y,crop.w,crop.h,box.x,box.y,box.w,box.h);
+    if(state.showTrajectory&&state.trajectoryTracks?.length){g.fillStyle='rgba(5,10,22,.12)';g.fillRect(box.x,box.y,box.w,box.h);}
     if(style==='skeleton'){
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;g.fillText('軌跡：90km/h以上は金色・破線は推定',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('軌跡：90km/h以上は金色・破線は推定',box.x+20*W/1080,box.y+box.h-18*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);

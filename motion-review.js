@@ -27,16 +27,15 @@ window.FrescoMotionReview = (() => {
     if(!source||!source.width||!source.height)return false;
     const f=previewFrame&&Math.abs(previewFrame.t-t)<.1?previewFrame:M.nearestFrame(frames,t);let drawn=false;
     c.save();c.scale(w/source.width,h/source.height);c.lineWidth=Math.max(2,source.width/500);
+    if((options.ball??showBall)&&drawingTracks.length){c.fillStyle='rgba(5,10,22,.12)';c.fillRect(0,0,source.width,source.height);}
     const confident=p=>p&&p.visibility>=.65&&(p.presence==null||p.presence>=.65);
     if((options.skeleton??showSkeleton)&&f)f.poses.forEach((ps,i)=>{c.strokeStyle=i?'#f4bf55':'#58d5ef';for(const [a,b] of edges)if(confident(ps[a])&&confident(ps[b])){c.beginPath();c.moveTo(ps[a].x,ps[a].y);c.lineTo(ps[b].x,ps[b].y);c.stroke();drawn=true;}});
     if(options.ball??showBall){
       const speedHits=callbacks.getSpeedHits?.()||[];
-      const colorAt=time=>window.FrescoBallTracker?.speedColor(window.FrescoBallTracker.speedAt(speedHits,time))||'#c6cad3';
       const ball=window.FrescoBallTracker?.at(drawingTracks,t);
       const fallback=tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t&&p.t>=t-.22)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>b.length-a.length)[0];
       const points=window.FrescoBallTracker?(ball?.trail||[]):(fallback||[]);
-      for(let i=1;i<points.length;i++){c.globalAlpha=.2+.8*i/points.length;c.strokeStyle=colorAt((points[i-1].t+points[i].t)/2);c.setLineDash?.(points[i].predicted?[5,5]:[]);c.beginPath();c.moveTo(points[i-1].x,points[i-1].y);c.lineTo(points[i].x,points[i].y);c.stroke();drawn=true;}
-      c.globalAlpha=1;c.setLineDash?.([]);if(points.length){const p=points.at(-1);c.strokeStyle=colorAt(t);c.beginPath();c.arc(p.x,p.y,source.width/180,0,Math.PI*2);c.stroke();drawn=true;}
+      if(window.FrescoBallTracker?.drawTrail)drawn=window.FrescoBallTracker.drawTrail(c,points,source.width,t,speedHits)||drawn;
     }
     c.restore();return drawn;
   }
