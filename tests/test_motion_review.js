@@ -11,7 +11,17 @@ class Element{
 const video=new Element('video');Object.assign(video,{videoWidth:1000,videoHeight:500,currentTime:0,duration:4,readyState:2,paused:true,addEventListener(){},pause(){},play:async()=>{}});
 let testTime=0;const listeners={};video.addEventListener=(type,fn)=>{listeners[type]=fn;};video.removeEventListener=type=>{delete listeners[type];};Object.defineProperty(video,'currentTime',{get:()=>testTime,set:value=>{testTime=value;queueMicrotask(()=>listeners.seeked?.());}});
 const context={window:{FrescoMotion:require('../motion-core.js')},document:{createElement:t=>new Element(t),getElementById:()=>video},setTimeout,clearTimeout,URL,Blob,console};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../motion-review.js'),'utf8').replace('return {open,reset', 'return {poseAudioEstimates,open,reset').replace('if(models)return models;', 'if(window.__testDetector)return window.__testDetector;if(models)return models;'),context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../motion-review.js'),'utf8').replace('return {open,reset', 'return {poseSchedule,poseAudioEstimates,open,reset').replace('if(models)return models;', 'if(window.__testDetector)return window.__testDetector;if(models)return models;'),context);
+const schedule=context.window.FrescoMotionReview.poseSchedule;
+const detailed=schedule(0,300,[{t:1},{t:2.43}], 'detail'), simple=schedule(0,300,[{t:1},{t:2.43}], 'simple');
+assert.equal(detailed.reduce((a,b)=>a+b,0),150);
+assert(simple.reduce((a,b)=>a+b,0)<75,'sparse contact windows reduce inference substantially');
+for(let n=0;n<300;n++){
+  if(n%2===0&&[1,2.43].some(t=>Math.abs(n/30-t)<=.18))assert.equal(simple[n],1,'retain all detail samples around contacts');
+  if(n%6===0)assert.equal(simple[n],1,'maintain posture updates outside contacts');
+  assert(simple[n]<=detailed[n],'never increase work compared with detail');
+}
+assert.equal(schedule(0,300,[{t:NaN}], 'simple').reduce((a,b)=>a+b,0),50);
 const R=context.window.FrescoMotionReview,host=new Element('host'),source={name:'x.mov',size:100,width:1000,height:500,duration:4};let updates=0;
 R.open({host,video,source,distance:7,hits:[{t:0},{t:.5}],onChange:()=>updates++});
 const find=t=>host.walk().find(e=>e.tag==='button'&&e.textContent===t);

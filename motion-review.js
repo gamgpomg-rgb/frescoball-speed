@@ -96,9 +96,18 @@ window.FrescoMotionReview = (() => {
   function balls(canvas,prev,poses){
     const w=canvas.width,h=canvas.height,data=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,w,h).data;
     const mask=new Uint8Array(w*h),found=[];
-    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){if(!prev||!inPairArea(x*source.width/w,y*source.height/h))continue;const i=(y*w+x)*4,r=data[i],g=data[i+1],b=data[i+2];if(r<95||r<g*1.45||r<b*1.25||r-g<38)continue;if(prev&&Math.abs(r-prev[i])+Math.abs(g-prev[i+1])+Math.abs(b-prev[i+2])<45)continue;
+    if(!prev||regions.length!==2||!regions[0]||!regions[1])return {data,candidates:[]};
+    // Compute the court bounds once, not once per pixel. Resolution and colour
+    // thresholds stay identical to the previous tracker.
+    const scaleX=w/source.width,scaleY=h/source.height;
+    const x0=Math.max(1,Math.ceil(Math.min(...regions.map(r=>r.x))*scaleX));
+    const x1=Math.min(w-2,Math.floor(Math.max(...regions.map(r=>r.x+r.w))*scaleX));
+    const y0=Math.max(1,Math.ceil(Math.max(0,Math.min(...regions.map(r=>r.y-r.h*.15)))*scaleY));
+    const y1=Math.min(h-2,Math.floor(Math.max(...regions.map(r=>r.y+r.h*.92))*scaleY));
+    const bodyPoints=poses.flatMap(ps=>ps.filter((p,k)=>[0,7,8,13,14,15,16].includes(k)&&p.visibility>.65));
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const i=(y*w+x)*4,r=data[i],g=data[i+1],b=data[i+2];if(r<95||r<g*1.45||r<b*1.25||r-g<38)continue;if(prev&&Math.abs(r-prev[i])+Math.abs(g-prev[i+1])+Math.abs(b-prev[i+2])<45)continue;
       // Suppress skin near the detected face and limbs, without declaring all ROI motion a ball.
-      if(poses.some(ps=>ps.some((p,k)=>[0,7,8,13,14,15,16].includes(k)&&p.visibility>.65&&Math.hypot(p.x-x,p.y-y)<w*.012)))continue;mask[y*w+x]=1;
+      if(bodyPoints.some(p=>Math.hypot(p.x-x,p.y-y)<w*.012))continue;mask[y*w+x]=1;
     }
     for(let i=0;i<mask.length;i++)if(mask[i]){const queue=[i];mask[i]=0;let sx=0,sy=0,n=0,minX=w,maxX=0,minY=h,maxY=0;while(queue.length){const j=queue.pop();const x=j%w,y=Math.floor(j/w);sx+=x;sy+=y;n++;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);for(const z of [j-1,j+1,j-w,j+w])if(z>=0&&z<mask.length&&mask[z]){mask[z]=0;queue.push(z);}}const bw=maxX-minX+1,bh=maxY-minY+1;if(n>=2&&n<=45&&Math.max(bw,bh)/Math.min(bw,bh)<=3&&n/(bw*bh)>=.3)found.push({x:sx/n,y:sy/n});}
     return {data,candidates:found.slice(0,100)};
@@ -125,6 +134,19 @@ window.FrescoMotionReview = (() => {
     }
     return result.map(e=>rejected.has(e.id)?{...e,status:'pending',player:null,reviewRequired:true,reviewReason:'打球の間隔または打者の順序を確認してください'}:e);
   }
+  // Keep ball samples at 30 fps. Spend pose inference on contact windows,
+  // with 5 fps posture updates elsewhere. Never change detail-mode sampling.
+  function poseSchedule(start,count,hits,mode){
+    const mask=new Uint8Array(count);
+    for(let n=0;n<count;n+=mode==='simple'?6:2)mask[n]=1;
+    if(mode==='simple')for(const hit of hits){
+      if(!Number.isFinite(hit.t))continue;
+      const first=Math.max(0,Math.ceil((hit.t-start-.18)*30));
+      const last=Math.min(count-1,Math.floor((hit.t-start+.18)*30));
+      for(let n=first+(first%2);n<=last;n+=2)mask[n]=1;
+    }
+    return mask;
+  }
   async function run(){
     if(busy)return;
     const start=Number(panel.querySelector('[data-start]').value),duration=Number(panel.querySelector('[data-duration]').value);
@@ -132,7 +154,7 @@ window.FrescoMotionReview = (() => {
     if(!Number.isFinite(start)||start<0||!Number.isFinite(duration)||duration<=0||start+duration>video.duration+.01){say('動画の中に収まる開始時刻と長さを指定してください');return;}
     const token=++serial;busy=true;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=0),busy:true});controls.disabled=true;rows.inert=true;video.pause();clipEnd=null;
     if(viewHome){viewHome.append(view);viewHome.append(playback);viewHome.append(status);}say(uiMode==='simple'?'動画の音を調べています':'1 / 4：音を調べています');
-    const output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice(),outcome='error';
+    const runMode=uiMode,output=[],roi=regions.map(r=>({...r}));let previous=null,workingEvents=events.slice(),outcome='error';
     try{
       if(callbacks.analyzeAudio){const hits=await callbacks.analyzeAudio(p=>{if(token===serial){say(`${uiMode==='simple'?'動画の音を解析中':'1 / 4：音を調べています'} ${Math.round(Math.max(0,Math.min(1,p))*100)}%`);callbacks.onProgress?.({phase:'motion',percent:(lastProgress=Math.round(Math.max(0,Math.min(1,p))*15)),busy:true});}},()=>token===serial);
         if(token!==serial)return;
@@ -141,14 +163,25 @@ window.FrescoMotionReview = (() => {
       }
       say(uiMode==='simple'?'映像を解析する準備をしています':'2 / 4：骨格を読み取る準備をしています。初回は通信が必要です');
       const detector=await model();if(token!==serial)return;
-      const cv=document.createElement('canvas'),crop=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
-      const count=Math.ceil(duration*30);
+      const cv=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
+      const count=Math.ceil(duration*30),schedule=poseSchedule(start,count,workingEvents,runMode);
+      const crops=roi.map(r=>{const c=document.createElement('canvas');c.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));c.height=Math.max(8,Math.min(512,Math.round(c.width*r.h/r.w)));return {canvas:c,context:c.getContext('2d')};});
       for(let n=0;n<count;n++){
         if(token!==serial)return;const t=start+n/30;await seek(t);if(token!==serial)return;
-        const poses=n%2&&output.length?output.at(-1).poses:[];if(n%2===0)for(let person=0;person<roi.length;person++){const r=roi[person];crop.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));crop.height=Math.max(8,Math.min(512,Math.round(crop.width*r.h/r.w)));crop.getContext('2d').drawImage(video,r.x,r.y,r.w,r.h,0,0,crop.width,crop.height);const result=detector.detect(crop);poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
-          if(n%3===0){callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true});previewFrame={t,poses:poses.concat(person===0?[[]]:[])};say(uiMode==='simple'?`映像を解析中 ${Math.round((n+1)/count*100)}%`:`2 / 4：${person+1}人目の骨格を読み取り中 ${Math.round((n+1)/count*100)}%`);draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;}}
+        const samplePose=!!schedule[n],poses=!samplePose&&output.length?output.at(-1).poses:[];
+        if(samplePose)for(let person=0;person<roi.length;person++){
+          const r=roi[person],{canvas:crop,context:cropContext}=crops[person];
+          cropContext.drawImage(video,r.x,r.y,r.w,r.h,0,0,crop.width,crop.height);
+          const result=detector.detect(crop);
+          poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
+        }
+        if(n%6===0||n===count-1){
+          callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true});previewFrame={t,poses};
+          say(`映像を解析中 ${Math.round((n+1)/count*100)}%：完了すると骨格とボールの軌跡が動画に加わります。速度・打数は先に確認できます。`);
+          draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
+        }
         cx.drawImage(video,0,0,cv.width,cv.height);const candidate=balls(cv,previous,poses.map(ps=>ps.map(p=>({...p,x:p.x*scale,y:p.y*scale}))));previous=candidate.data;
-        output.push({t,poseSampleTime:n%2&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
+        output.push({t,poseSampleTime:!samplePose&&output.length?output.at(-1).poseSampleTime:t,poses,ballCandidates:candidate.candidates.map(p=>({x:p.x/scale,y:p.y/scale}))});
       }
       if(token!==serial)return;callbacks.onProgress?.({phase:'motion',percent:(lastProgress=96),busy:true});say(uiMode==='simple'?'解析結果をまとめています':'3 / 4：打音と2人の動きを照合しています');await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
       const nextTracks=window.FrescoBallTracker?window.FrescoBallTracker.track(output,video.videoWidth,regions):M.track(output,video.videoWidth).filter(trackForPair),observedTracks=nextTracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),nextEvents=M.autoReview(workingEvents,output,observedTracks,video.videoWidth,currentDistance);
@@ -196,7 +229,7 @@ window.FrescoMotionReview = (() => {
     const advanced=el('details','',controls);detailNodes.push(advanced);el('summary','詳しく調整する',advanced);const input=(label,key,value,min,max)=>{const l=el('label',label,advanced),i=el('input','',l);i.type='number';i.value=value;i.min=min;i.max=max;i.step='any';i.dataset[key]='';i.style.width='90px';return i;};
     input('開始する秒数 ','start',0,0,video.duration);
     input('解析する長さ（秒） ','duration',video.duration,.1,video.duration);
-    el('p','動画全体を解析します。長い動画は時間がかかります。初回は解析の準備に通信しますが、動画は送信しません。',controls);
+    el('p','速度・打数は先に確認できます。この追加解析が完了すると、動画に骨格とボールの軌跡が表示されます。ボールが読み取れない区間には軌跡は出ません。初回は準備に通信しますが、動画は送信しません。',controls);
     const d=input('2人の距離（m） ','distance',currentDistance,7,100);d.step='0.1';d.onchange=()=>{try{const value=M.distance(d.value);if(value<7||Math.abs(value*10-Math.round(value*10))>1e-8)throw new Error('距離は7.0m以上、0.1m刻みで入力してください');currentDistance=value;renderEvents();options.onDistance?.(currentDistance);changed();}catch(e){d.value=currentDistance;say(`${e.message}。${currentDistance}m に戻しました`);}};
     button('選んだ2人で自動解析',controls,run);
     button('解析を中止',panel,()=>{if(!busy)return;serial++;previewFrame=null;busy=false;callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});controls.disabled=false;rows.inert=false;draw();say('解析を中止しました。完了していた結果は残しています');});
