@@ -17,6 +17,11 @@
     // 頭〜膝の狭い枠を引くと山なりの球が枠より上を飛ぶ区間で候補が消え、軌跡が分断された
     // （IMG_9997 98.5〜102.5s で再現。広い枠では全返球を追跡できていた）。
     const y0=1,y1=Math.min(height-2,Math.ceil(Math.max(...regions.map(r=>r.y+r.h*.92))));
+    // 空を背景にした暗い球の規則（skyDark）を使う高さ。選手枠の上6割より上＝頭上〜空。砂地の影や
+    // 通行人の脚を拾わないよう、足元側では使わない。
+    const skyLimit=Math.max(...regions.map(r=>r.y+r.h*.6));
+    const skyAt=(x,y)=>{if(x<0||y<0||x>=width||y>=height)return false;const j=(y*width+x)*4,R=background[j],G=background[j+1],Bl=background[j+2];return R+G+Bl>=480&&Bl>=R-4&&Math.max(R,G,Bl)-Math.min(R,G,Bl)<=40;};
+    const skyAround=(x,y)=>skyAt(x,y)&&skyAt(x-3,y)&&skyAt(x+3,y)&&skyAt(x,y-3)&&skyAt(x,y+3);
     return {detect(data,t,poses=[]){
       if(!previous||lastTime==null||t<=lastTime||t-lastTime>.15){previous=new Uint8ClampedArray(data);background=Float32Array.from(data);lastTime=t;hypotheses=[];return [];}
       const dt=t-lastTime,predictions=hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t<=.1).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));
@@ -26,14 +31,20 @@
       for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
         const i=(y*width+x)*4,r=data[i],g=data[i+1],b=data[i+2],chroma=Math.max(r,g,b)-Math.min(r,g,b);
         const delta=Math.abs(r-previous[i])+Math.abs(g-previous[i+1])+Math.abs(b-previous[i+2]);
-        const bgDelta=Math.abs(r-background[i])+Math.abs(g-background[i+1])+Math.abs(b-background[i+2]);
+        const bgR=background[i],bgG=background[i+1],bgB=background[i+2],bgDelta=Math.abs(r-bgR)+Math.abs(g-bgG)+Math.abs(b-bgB);
         for(let k=0;k<3;k++)background[i+k]+=(data[i+k]-background[i+k])*.04;
         const red=r>=95&&r>=g*1.45&&r>=b*1.25&&r-g>=38;
         const pink=r>=100&&r>=b*.95&&r-g>=28&&b-g>=18&&chroma/Math.max(1,r,g,b)>=.2;
         const weak=r>=80&&r>=b*.9&&r-g>=15&&b>=g&&chroma/Math.max(1,r,g,b)>=.1;
-        if(!red&&!pink&&!weak)continue;
+        // 明るい空を背景にしたロブ。縮小で空の色と混ざり赤みが消える（実測: 原寸の球 RGB(105,65,65) が
+        // 640px では (150,140,145) 程度になる）ため、背景より十分暗く、背景より赤い点を候補にする。
+        // 選手枠の内側では使わない（髪や影を拾うため）。
+        // 背景は空（明るく、青みがかった無彩色）に限り、上下左右3px先の背景も空であること。
+        // ガラス窓に映った空の前を歩く人の頭は、下に体があるので外れる。球は全方向が空。
+        const skyDark=y<skyLimit&&bgR+bgG+bgB-(r+g+b)>=90&&(r-g)-(bgR-bgG)>=18&&r>=g&&r>=b*.85&&skyAround(x,y);
+        if(!red&&!pink&&!weak&&!skyDark)continue;
         const inPlayer=regions.some(q=>x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h);
-        const strong=red||(!inPlayer&&pink);
+        const strong=red||(!inPlayer&&(pink||skyDark));
         const near=!inPlayer&&predictions.some(p=>(p.x-x)**2+(p.y-y)**2<p.radius**2);
         if(!(strong&&delta>=45&&bgDelta>=35)&&!(near&&weak&&delta>=22&&bgDelta>=24))continue;
         if(body.some(p=>(p.x-x)**2+(p.y-y)**2<(width*.012)**2))continue;

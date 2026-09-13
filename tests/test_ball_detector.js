@@ -23,4 +23,16 @@ console.log('Pink detection, fixed background, large moving objects, bounded fai
   assert.equal(D2.detect(frame([{x:80,y:157}]),2/30).length,0,'below the feet stays excluded');
 }
 console.log('Search range above the player boxes passed');
+// 明るい空を背景にした暗い赤の球（ロブ）。縮小で赤みが薄れても、背景より暗く赤い点として拾う。
+{
+  const low=[{x:0,y:100,w:50,h:60},{x:270,y:100,w:50,h:60}];
+  const sky=objects=>{const data=frame(objects);for(let i=0;i<data.length;i+=4){if(data[i]===80){data[i]=199;data[i+1]=214;data[i+2]=226;}}return data;};
+  const D3=B.createDetector(w,h,low);D3.detect(sky(),0);D3.detect(sky(),1/30);
+  assert.equal(D3.detect(sky([{x:120,y:20,color:[150,140,145]}]),2/30).length,1,'dark reddish dot against bright sky above the players is a candidate');
+  const D4=B.createDetector(w,h,low);D4.detect(sky(),0);D4.detect(sky(),1/30);
+  assert.equal(D4.detect(sky([{x:120,y:150,color:[150,140,145]}]),2/30).length,0,'the same dot low on bright sand is not a candidate');
+  const D5=B.createDetector(w,h,low);D5.detect(sky(),0);D5.detect(sky(),1/30);
+  assert.equal(D5.detect(sky([{x:120,y:20,color:[140,150,160]}]),2/30).length,0,'a dark dot that is not redder than the sky is ignored');
+}
+console.log('Sky-contrast lob candidates passed');
 
