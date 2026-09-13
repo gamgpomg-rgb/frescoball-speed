@@ -2300,7 +2300,7 @@ function openMotionWorkflow() {
   const generation = uploadAnalysisGeneration;
   try {
     const f = selectedVideoFile;
-    FrescoMotionReview.open({mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
+    FrescoMotionReview.open({getSpeedHits:()=>curStats?.hits||[],mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
       source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
       hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion,
       onDistance:value => { $("upDistance").value=String(value); currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(value);if(curStats?.audioHits)curStats.audioHits=rebuildTimeline(curStats.audioHits).hits; },

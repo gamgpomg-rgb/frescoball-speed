@@ -18,3 +18,10 @@ console.log('Ball tracker short-gap interpolation, no long-gap extrapolation, re
 const nearHand=sequence.map((f,i)=>({...f,poses:i===7?[Array.from({length:33},(_,k)=>k===15?{x:425,y:100,visibility:.45,presence:.9}:null)]:[]}));
 const noHand=B.track(nearHand,1000,regions);assert.equal(B.at(noHand,.21),null,'do not attach the final point to a partially visible wrist');
 console.log('Hand-proximity rejection passed');
+{
+ const C=require('../ball-tracker');
+ assert.equal(C.speedColor(90),'#ffd700');assert.equal(C.speedColor(120),'#ffd700');assert.notEqual(C.speedColor(89.9),'#ffd700');assert.equal(C.speedColor(null),'#c6cad3');assert.equal(C.speedColor(NaN),'#c6cad3');
+ const hits=[{t:1,speed:null},{t:1.5,speed:50},{t:2,speed:95},{t:2.5,speed:null}];
+ assert.equal(C.speedAt(hits,1.2),50);assert.equal(C.speedAt(hits,1.5),95);assert.equal(C.speedAt(hits,2.2),null);assert.equal(C.speedAt(hits,.5),null);assert.equal(C.speedAt(hits,3),null);assert.equal(C.speedAt([{t:1},{t:1.5,speed:95,qualityExcluded:true}],1.2),null);assert.equal(C.speedAt([{t:1},{t:5,speed:95}],2),null);
+ console.log('Trajectory colors use the upcoming impact interval, gold at 90+, and neutral for excluded/missing speeds');
+}

@@ -26,11 +26,12 @@ window.FrescoShare = (() => {
     f.poses.forEach((ps,i)=>{g.strokeStyle=i?'#FFD23F':'#16E6C3';for(const [a,b]of edges)if(ps[a]?.visibility>=.65&&ps[b]?.visibility>=.65&&(ps[a].presence==null||ps[a].presence>=.65)&&(ps[b].presence==null||ps[b].presence>=.65)){g.beginPath();g.moveTo(ps[a].x,ps[a].y);g.lineTo(ps[b].x,ps[b].y);g.stroke();drawn=true;}});
     return drawn;
   }
-  function trajectory(g,tracks,t,width){
+  function trajectory(g,tracks,t,width,hits){
     const points=window.FrescoBallTracker?(window.FrescoBallTracker.at(tracks,t)?.trail||[]):C.trajectoryAt(tracks,t);if(points.length<2)return false;
-    g.strokeStyle='#ffce59';g.lineWidth=Math.max(3,width/480);
-    for(let i=1;i<points.length;i++){g.globalAlpha=.2+.8*i/points.length;g.setLineDash?.(points[i].predicted?[5,5]:[]);g.beginPath();g.moveTo(points[i-1].x,points[i-1].y);g.lineTo(points[i].x,points[i].y);g.stroke();}g.globalAlpha=1;g.setLineDash?.([]);
-    const last=points.at(-1);g.beginPath();g.arc(last.x,last.y,Math.max(4,width/240),0,Math.PI*2);g.stroke();return true;
+    const colorAt=time=>window.FrescoBallTracker?.speedColor(window.FrescoBallTracker.speedAt(hits,time))||'#c6cad3';
+    g.strokeStyle=colorAt(t);g.lineWidth=Math.max(3,width/480);
+    for(let i=1;i<points.length;i++){g.globalAlpha=.2+.8*i/points.length;g.strokeStyle=colorAt((points[i-1].t+points[i].t)/2);g.setLineDash?.(points[i].predicted?[5,5]:[]);g.beginPath();g.moveTo(points[i-1].x,points[i-1].y);g.lineTo(points[i].x,points[i].y);g.stroke();}g.globalAlpha=1;g.setLineDash?.([]);
+    const last=points.at(-1);g.strokeStyle=colorAt(t);g.beginPath();g.arc(last.x,last.y,Math.max(4,width/240),0,Math.PI*2);g.stroke();return true;
   }
   function draw(canvas,video,state){
     const {format,style,motion,record,start,end,title,focus,measurementSource,statsLabel}=state;
@@ -52,7 +53,7 @@ window.FrescoShare = (() => {
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth);g.restore();g.fillStyle='#ffce59';g.font=`${20*W/1080}px sans-serif`;g.fillText('球の軌跡候補',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px sans-serif`;g.fillText('軌跡：低速は寒色・90km/h以上は金色',box.x+20*W/1080,box.y+box.h-18*W/1080);}
     const shot=(state.shotEstimates||[]).filter(e=>e.t<=video.currentTime&&video.currentTime-e.t<.9).at(-1);
     if(shot?.type){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*W/1080,box.y+120*W/1080,270*W/1080,42*W/1080);g.fillStyle='#ffd23f';g.font=`${24*W/1080}px "Hiragino Sans",sans-serif`;g.fillText(`${shot.type==='attack'?'アタック':'ディフェンス'}（推定）`,box.x+30*W/1080,box.y+149*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;

@@ -81,5 +81,20 @@
     }
     matches.sort((a,b)=>b.span-a.span);return matches[0]||null;
   }
-  return {track,at,maxGapSeconds:MAX_GAP};
+  function speedAt(hits,t){
+    if(!Array.isArray(hits)||!finite(t))return null;
+    let lo=0,hi=hits.length;while(lo<hi){const m=(lo+hi)>>1;if(hits[m].t<=t)lo=m+1;else hi=m;}
+    const before=hits[lo-1],after=hits[lo];
+    if(!before||!after||after.t-before.t<=0||after.t-before.t>2||after.qualityExcluded||!finite(after.speed)||after.speed<=0)return null;
+    return after.speed;
+  }
+  function speedColor(speed){
+    if(!finite(speed)||speed<=0)return '#c6cad3';
+    if(speed>=90)return '#ffd700';
+    const stops=[[30,[65,115,255]],[45,[40,205,245]],[60,[40,218,161]],[70,[241,223,70]],[80,[255,142,48]],[89.999,[255,72,77]]];
+    if(speed<=30)return '#4173ff';
+    for(let i=1;i<stops.length;i++)if(speed<=stops[i][0]){const a=stops[i-1],b=stops[i],f=(speed-a[0])/(b[0]-a[0]);return '#'+a[1].map((n,j)=>Math.round(n+(b[1][j]-n)*f).toString(16).padStart(2,'0')).join('');}
+    return '#ff484d';
+  }
+  return {track,at,speedAt,speedColor,maxGapSeconds:MAX_GAP};
 });
