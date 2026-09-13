@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('assert'),fs=require('fs'),vm=require('vm'),S=require('../shot-analysis');
+const hits=Array.from({length:28},(_,i)=>({t:i*.5,player:i%2?'b':'a'})),before=JSON.stringify(hits);
+const fallback=S.simpleRoles(hits);assert.equal(fallback.filter(e=>e.player==='a'&&e.type==='attack').length,14);assert.equal(fallback.filter(e=>e.player==='b'&&e.type==='defense').length,14);
+assert(fallback.every(e=>e.provisional));assert.equal(JSON.stringify(hits),before);
+const anchored=S.simpleRoles(hits,[{t:2,player:'a',type:'defense',basis:'manual'},{t:10,player:'a',type:'defense',basis:'pose'}]);assert(anchored.every(e=>e.type===(e.player==='a'?'defense':'attack')));assert.equal(anchored[4].basis,'manual');
+const swapped=S.simpleRoles(hits,[{t:0,player:'a',type:'attack'},{t:10,player:'a',type:'defense'}]);assert.equal(swapped[0].type,'attack');assert.equal(swapped[26].type,'defense');
+assert.deepEqual(S.simpleRoles([]),[]);assert.equal(S.simpleRoles([{t:0,player:'b'}])[0].type,'attack');
+const html=fs.readFileSync(require.resolve('../index.html'),'utf8'),a=html.indexOf('function syncLive()'),b=html.indexOf('\n}',a)+2,elements=new Map();
+const $=id=>{if(!elements.has(id))elements.set(id,{textContent:'',currentTime:99});return elements.get(id);};
+const ctx=vm.createContext({$,curStats:{hits},curFlip:false,currentShotEstimates:[],videoMode:'simple',roleDisplayCache:{},window:{FrescoShots:S}});vm.runInContext(html.slice(a,b),ctx);ctx.syncLive();
+assert.equal($('ulPA').textContent,14);assert.equal($('ulAAttack').textContent,14);assert.equal($('ulBDefense').textContent,14);
+ctx.videoMode='detail';ctx.syncLive();assert.equal($('ulAAttack').textContent,0,'detail does not invent evidence');
+ctx.videoMode='simple';ctx.curFlip=true;ctx.syncLive();assert.equal($('ulADefense').textContent,14,'player swap also swaps role totals');
+$('upVideo').currentTime=2;ctx.syncLive();assert.equal($('ulADefense').textContent,$('ulPA').textContent,'seeking keeps roles and total in sync');
+console.log('Simple A/D fallback: 14+14 screenshot case, neighboring roles, manual anchors, role swaps, mode separation, seeking and player swap passed');

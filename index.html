@@ -511,15 +511,15 @@
       <div class="ul-spd"><span id="ulV">--</span><small> km/h</small></div>
       <div class="ul-meta">連続 <b id="ulR">0</b>回 ・ 累計 <b id="ulH">0</b>回</div>
     </div>
-    <div class="ul-p left"><small>LEFT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPA">0</span></div><div class="role-counts"><div>A <b id="ulAAttack">0</b></div><div>D <b id="ulADefense">0</b></div></div></div></div>
-    <div class="ul-p right"><small>RIGHT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPB">0</span></div><div class="role-counts"><div>A <b id="ulBAttack">0</b></div><div>D <b id="ulBDefense">0</b></div></div></div></div>
+    <div class="ul-p left"><small>LEFT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPA">0</span></div><div class="role-counts"><small>推定</small><div>A <b id="ulAAttack">0</b></div><div>D <b id="ulADefense">0</b></div></div></div></div>
+    <div class="ul-p right"><small>RIGHT PLAYER</small><div class="player-counts"><div><small>総打数</small><span id="ulPB">0</span></div><div class="role-counts"><small>推定</small><div>A <b id="ulBAttack">0</b></div><div>D <b id="ulBDefense">0</b></div></div></div></div>
   </div>
   <div id="overlayOptions" hidden style="display:none"><label><input id="showSkeleton" type="checkbox" checked> 骨格</label> <label><input id="showBall" type="checkbox" checked> ボールの軌跡（推定）</label></div>
   <div id="upDash" hidden>
     <p id="analysisNote" style="font-size:12px;color:var(--muted)"></p>
     <div class="dashGrid" id="dashSummary"></div>
     <p style="font-size:13px;color:var(--muted)">球速は選手間距離と打球間隔から求めた推定初速です。スピードガンの実測値ではありません。</p>
-    <div id="shotSummary" class="shot-summary" hidden></div>
+    <div id="shotSummary" class="shot-summary advanced-results" hidden></div>
     <details id="distributionDetails" class="distribution-details"><summary>速度分布を見る</summary>
     <div class="players2">
       <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
@@ -1567,7 +1567,7 @@ function selectVideoMode(mode){
   videoMode=mode;exitCamera();$("numView").style.display="none";$("upView").classList.add("show");
   $("upView").classList.toggle("simple-mode",mode==='simple');
   $("tabUp").classList.toggle("active",mode==='simple');$("tabDetail").classList.toggle("active",mode==='detail');$("tabCam").classList.remove("active");
-  window.FrescoMotionReview?.setMode?.(mode);$("activityBadge").hidden=analysisActivity.status==='idle';
+  window.FrescoMotionReview?.setMode?.(mode);syncLive();$("activityBadge").hidden=analysisActivity.status==='idle';
 }
 $("tabCam").addEventListener("click",()=>{if(analysisActivity.busy)return;$("activityBadge").hidden=true;exitUpload();$("tabUp").classList.remove("active");$("tabDetail").classList.remove("active");enterCamera();});
 $("hudClose").addEventListener("click",()=>selectVideoMode(videoMode));
@@ -1997,6 +1997,7 @@ function aggregate(hits, flip) {
 
 // --- ダッシュボード描画 ---
 let curStats = null, curFlip = false, currentMotion = null, currentShotEstimates = [];
+let roleDisplayCache={};
 let uploadAnalysisGeneration = 0, uploadObjectUrl = null, selectedVideoFile = null;
 
 function applySpeedReview() {
@@ -2188,8 +2189,11 @@ function syncLive() {
   }
   $("ulPA").textContent = pa;
   $("ulPB").textContent = pb;
+  if(roleDisplayCache.hits!==curStats.hits||roleDisplayCache.estimates!==currentShotEstimates||roleDisplayCache.mode!==videoMode){
+    roleDisplayCache={hits:curStats.hits,estimates:currentShotEstimates,mode:videoMode,items:videoMode==='simple'?window.FrescoShots.simpleRoles(curStats.hits,currentShotEstimates):currentShotEstimates};
+  }
   for(const [key,player] of [['A',curFlip?'b':'a'],['B',curFlip?'a':'b']]){
-    const items=currentShotEstimates.filter(e=>e.t<=t&&e.player===player);
+    const items=roleDisplayCache.items.filter(e=>e.t<=t&&e.player===player);
     $("ul"+key+"Attack").textContent=items.filter(e=>e.type==='attack').length;
     $("ul"+key+"Defense").textContent=items.filter(e=>e.type==='defense').length;
   }
@@ -2784,7 +2788,7 @@ function openSharePreview(format, image = false) {
   const video = $("upVideo");
   if (!video.src || !video.videoWidth || !curStats) { $("shareStatus").textContent = "先に動画を選んでください"; return; }
   if (FrescoMotionReview.isBusy()) { $("shareStatus").textContent = "動きの解析が終わってから保存してください"; return; }
-  FrescoShare.open({video, format, image, record: makeRecord(currentRecordMeta),
+  FrescoShare.open({video, format, image, mode:videoMode, record: makeRecord(currentRecordMeta),
     motion: currentMotion, audioGraph: getUpVideoAudioGraph, download: downloadBlob});
 }
 $("exportStoryBtn").addEventListener("click", () => openSharePreview("story"));

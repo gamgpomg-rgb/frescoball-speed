@@ -64,7 +64,7 @@ window.FrescoShare = (() => {
       const x=i?box.x+box.w-248*u:box.x+18*u,y=box.y+box.h-130*u;
       const shots=(state.shotEstimates||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.player===player);
       g.fillStyle='rgba(9,6,25,.78)';g.fillRect(x,y,230*u,94*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${18*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+12*u,y+23*u);
-      g.fillStyle='#fff';g.font=`${15*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+12*u,y+44*u);g.font=`800 ${32*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+12*u,y+79*u);
+      g.fillStyle='#fff';g.font=`${15*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+12*u,y+44*u);g.fillText('推定',x+174*u,y+44*u);g.font=`800 ${32*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+12*u,y+79*u);
       g.font=`${18*u}px "Hiragino Sans", sans-serif`;g.fillText('A '+shots.filter(e=>e.type==='attack').length,x+118*u,y+51*u);g.fillText('D '+shots.filter(e=>e.type==='defense').length,x+118*u,y+78*u);
     }
     if(story){
@@ -148,7 +148,8 @@ window.FrescoShare = (() => {
         const distances=new Set(hits.filter(h=>h.t>=range.start&&h.t<=range.end&&h.usedDistanceM!=null).map(h=>h.usedDistanceM));
         selectedRecord={...record,hits,playbackHits,settings:{values:{distance:distances.size===1?[...distances][0]:motion.settings.distanceM}},variedDistances:distances.size>1};
       }
-      state={shotEstimates:window.FrescoShots&&motion?.frames?window.FrescoShots.classify(window.FrescoMotion.countedEvents(record.audioHits||record.hits||[],motion.events),motion.frames):[],format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
+      state={mode:options.mode||'simple',shotEstimates:window.FrescoShots&&motion?.frames?window.FrescoShots.classify(window.FrescoMotion.countedEvents(record.audioHits||record.hits||[],motion.events),motion.frames):[],format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
+      if(state.mode==='simple'&&window.FrescoShots)state.shotEstimates=window.FrescoShots.simpleRoles(selectedRecord.playbackHits||selectedRecord.hits,state.shotEstimates);
       const c=C.crop(video.videoWidth,video.videoHeight,motion?.regions,state.focus);
       if(options.format==='story'){canvas.width=1080;canvas.height=1920;}else{const scale=Math.min(1,1280/Math.max(c.w,c.h));canvas.width=Math.max(2,Math.round(c.w*scale/2)*2);canvas.height=Math.max(2,Math.round(c.h*scale/2)*2);}
       return state;

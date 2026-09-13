@@ -89,6 +89,24 @@ function inferAlternation(events,frames,width){
   const player=side?'b':'a';return {...event,player,status:'auto',suggestedPlayer:player,reviewRequired:true,provenance:'rally-alternation-estimate-v1',reviewReason:'前後の打者とラリー間隔、腕の動きからの仮判定です。接触は未確認です'};
  });
 }
+// Presentation-only fallback. Never changes the evidence used by detailed review.
+function simpleRoles(hits,estimates=[]){
+ const known=new Map(estimates.filter(e=>['attack','defense'].includes(e.type)).map(e=>[`${e.t}:${e.player}`,e]));
+ const items=(hits||[]).filter(e=>e.status!=='ignored'&&['a','b'].includes(e.player)).slice().sort((a,b)=>a.t-b.t).map(e=>({...e,...known.get(`${e.t}:${e.player}`)}));
+ const stateOf=e=>(e.player==='a')===(e.type==='attack')?0:1;
+ let carried=null;
+ for(let first=0;first<items.length;){let end=first+1;while(end<items.length&&items[end].t-items[end-1].t<=2.5)end++;
+  const next=[];let anchor=null;for(let i=end-1;i>=first;i--){if(known.has(`${items[i].t}:${items[i].player}`))anchor=i;next[i-first]=anchor;}
+  let previous=null;const fallback=carried??(items[first].player==='a'?0:1);
+  for(let i=first;i<end;i++){
+   const e=items[i];if(known.has(`${e.t}:${e.player}`)){previous=i;carried=stateOf(e);continue;}
+   const future=next[i-first];const chosen=previous==null?future:future==null?previous:e.t-items[previous].t<=items[future].t-e.t?previous:future;
+   const state=chosen==null?fallback:stateOf(items[chosen]);e.type=(state===0)===(e.player==='a')?'attack':'defense';e.basis=chosen==null?'simple-role-default':'simple-role-neighbor';e.provisional=true;carried=state;
+  }
+  first=end;
+ }
+ return items;
+}
 function summary(items){const attack=items.filter(e=>e.type==='attack').length,defense=items.filter(e=>e.type==='defense').length;return {attack,defense,classified:attack+defense,total:items.length,byPlayer:Object.fromEntries(['a','b'].map(player=>[player,{attack:items.filter(e=>e.player===player&&e.type==='attack').length,defense:items.filter(e=>e.player===player&&e.type==='defense').length}]))};}
-return {classify,summary,inferAlternation,resolveRoles};
+return {simpleRoles,classify,summary,inferAlternation,resolveRoles};
 });
