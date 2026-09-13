@@ -25,7 +25,7 @@ vm.runInContext(html.slice(a,b),c);
   assert.equal(audioCalls,1);assert.equal(c.curStats.analysisMode,'audio');
   assert.equal(el('stateQuick').textContent,'✓ 計測済み');
   c.updateAnalysisSteps('motion',45);assert.equal(el('analysisProgress').value,45);assert.equal(el('stepReview').disabled,true);
-  c.updateAnalysisSteps();
+  c.updateAnalysisSteps();assert.equal(el("analysisProgress").value,45,"refresh preserves the running progress");
   c.openMotionWorkflow();
   assert(workflow&&typeof workflow.analyzeAudio==='function');
   const hits=await workflow.analyzeAudio(()=>{},()=>true);

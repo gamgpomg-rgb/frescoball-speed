@@ -2098,7 +2098,7 @@ function updateAnalysisSteps(phase,percent) {
   const pending=(currentMotion?.events||[]).filter(e=>e.status==='pending'||e.reviewRequired).length;
   $("stateReview").textContent=motion?(pending?`確認候補 ${pending} 件`:'気になる判定を修正'):'任意・判定を修正';
   for(const [id,active]of [['stepQuick',phase==='audio'||!audio&&!motion&&phase!=='motion'],['stepMotion',phase==='motion'||motion&&phase!=='review'],['stepReview',phase==='review']])$(id).setAttribute('aria-current',active?'step':'false');
-  $("analysisProgress").hidden=!busy; $("analysisProgress").value=Number(percent)||0;
+  $("analysisProgress").hidden=!busy; $("analysisProgress").value=percent==null?analysisActivity.percent:Number(percent)||0;
   $("stepQuick").classList.toggle("completed",audio&&phase!=="audio");
   $("stepMotion").classList.toggle("completed",motion&&phase!=="motion");
   $("selectedVideoName").textContent=selectedVideoFile?.name||"動画を選んで自動計測";
