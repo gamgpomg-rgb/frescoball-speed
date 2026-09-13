@@ -53,9 +53,9 @@ window.FrescoShare = (() => {
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px sans-serif`;g.fillText('軌跡：低速は寒色・90km/h以上は金色',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px sans-serif`;g.fillText('軌跡：90km/h以上は金色・破線は推定',box.x+20*W/1080,box.y+box.h-18*W/1080);}
     const shot=(state.shotEstimates||[]).filter(e=>e.t<=video.currentTime&&video.currentTime-e.t<.9).at(-1);
-    if(shot?.type){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*W/1080,box.y+120*W/1080,270*W/1080,42*W/1080);g.fillStyle='#ffd23f';g.font=`${24*W/1080}px "Hiragino Sans",sans-serif`;g.fillText(`${shot.type==='attack'?'アタック':'ディフェンス'}（推定）`,box.x+30*W/1080,box.y+149*W/1080);}
+    if(shot?.type){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*W/1080,box.y+120*W/1080,390*W/1080,42*W/1080);g.fillStyle='#ffd23f';g.font=`${24*W/1080}px "Hiragino Sans",sans-serif`;g.fillText(`${shot.player==='a'?'1':'2'}人目：${shot.type==='attack'?'アタック':'ディフェンス'}（推定）`,box.x+30*W/1080,box.y+149*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
@@ -81,7 +81,8 @@ window.FrescoShare = (() => {
     cancel();document.getElementById('sharePreview')?.remove();
     const controller=new AbortController();active=controller;
     const video=options.video,record=structuredClone(options.record),motion=options.motion?structuredClone(options.motion):null;
-    const displayTracks=window.FrescoBallTracker&&motion?.frames?window.FrescoBallTracker.track(motion.frames,video.videoWidth,motion.regions):C.trajectoryTracks(motion?.tracks||(motion?.frames?window.FrescoMotion.track(motion.frames,video.videoWidth):[]),motion?.regions,video.videoWidth,video.videoHeight);
+    let displayTracks=window.FrescoBallTracker&&motion?.frames?window.FrescoBallTracker.track(motion.frames,video.videoWidth,motion.regions):C.trajectoryTracks(motion?.tracks||(motion?.frames?window.FrescoMotion.track(motion.frames,video.videoWidth):[]),motion?.regions,video.videoWidth,video.videoHeight);
+    if(window.FrescoBallTracker?.displayTracks)displayTracks=window.FrescoBallTracker.displayTracks(displayTracks,motion?.events,video.videoWidth,motion?.frames||[]);
     const ownedSrc=video.src,ownedObject=video.srcObject;
     const ownsVideo=()=>active===controller&&video.src===ownedSrc&&video.srcObject===ownedObject;
     const check=()=>{if(controller.signal.aborted||!ownsVideo())throw new Error('保存を中止しました');};

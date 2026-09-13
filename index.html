@@ -2158,7 +2158,7 @@ function renderSpeedButterfly() {
 function syncLive() {
   if (!curStats) return;
   const t = $("upVideo").currentTime;
-  const shot=currentShotEstimates.filter(e=>e.t<=t&&t-e.t<.9).at(-1);$("ulShot").textContent=shot?.type?`${shot.type==="attack"?"アタック":"ディフェンス"}（推定）`:"";
+  const shot=currentShotEstimates.filter(e=>e.t<=t&&t-e.t<.9).at(-1);$("ulShot").textContent=shot?.type?`${shot.player==="a"?"1":"2"}人目：${shot.type==="attack"?"アタック":"ディフェンス"}（推定）`:"";
   let cur = null, hitsTo = 0, lastH = null;
   for (const h of curStats.hits) {
     if (h.t <= t) { hitsTo++; lastH = h; if (h.speed != null) cur = h; } else break;
@@ -2339,7 +2339,7 @@ function updateFromMotion(snapshot) {
 function renderShotSummary(snapshot){
   const panel=$("shotSummary");if(!window.FrescoShots||!snapshot?.frames?.length){currentShotEstimates=[];panel.hidden=true;return;}
   const items=FrescoShots.classify(snapshot.events,snapshot.frames);currentShotEstimates=items;const summary=FrescoShots.summary(items);
-  panel.hidden=false;panel.innerHTML=`<b>打ち方の傾向（推定）</b><div class="shot-counts"><span>アタック <strong>${summary.attack}</strong> 球</span><span>ディフェンス <strong>${summary.defense}</strong> 球</span></div><small>体と腕の位置から分類した ${summary.classified} / ${summary.total} 球の集計です。</small>`;
+  panel.hidden=false;panel.innerHTML=`<b>打ち方の傾向（推定）</b><div class="shot-counts"><span>アタック <strong>${summary.attack}</strong> 球</span><span>ディフェンス <strong>${summary.defense}</strong> 球</span></div><div>1人目：アタック ${summary.byPlayer.a.attack}球 ／ ディフェンス ${summary.byPlayer.a.defense}球</div><div>2人目：アタック ${summary.byPlayer.b.attack}球 ／ ディフェンス ${summary.byPlayer.b.defense}球</div><small>腕の位置と2人の役割の入れ替わりから推定。分類した ${summary.classified} / ${summary.total} 球の集計です。</small>`;
 }
 
 // --- IndexedDB（記録の蓄積。v1からの互換移行あり） ---

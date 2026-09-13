@@ -3,12 +3,12 @@ window.FrescoMotionReview = (() => {
   'use strict';
   const M = window.FrescoMotion;
   const edges = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
-  let serial = 0, models = null, panel, video, source, frames = [], tracks = [], events = [], regions = [], selecting = null, origin = null, busy = false;
+  let drawingTracks = [], serial = 0, models = null, panel, video, source, frames = [], tracks = [], events = [], regions = [], selecting = null, origin = null, busy = false;
   let overlay, view, status, rows, controls, currentDistance = 7, callbacks = {}, reviewIndex = 0, corner = null, clipEnd = null, previewFrame = null, viewHome = null, playback = null, showAll = false, conditions = null, showSkeleton = true, showBall = true, timeline = null, clockLabel = null, reviewSection = null, lastProgress = 0, uiMode = 'detail', detailNodes = [];
   const el = (tag, text, parent) => { const n=document.createElement(tag); if(text)n.textContent=text; if(parent)parent.append(n); return n; };
   const button = (text, parent, action) => {const b=el('button',text,parent);b.type='button';b.onclick=action;return b;};
   const say = text => {if(status)status.textContent=text;};
-  function reset(){serial++;if(busy)callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});callbacks={};source=null;corner=null;clipEnd=null;previewFrame=null;showAll=false;showSkeleton=true;showBall=true;timeline=null;clockLabel=null;reviewSection=null;busy=false;selecting=null;origin=null;frames=[];tracks=[];events=[];regions=[];if(panel)panel.remove();panel=null;if(overlay)overlay.remove();overlay=null;}
+  function reset(){serial++;if(busy)callbacks.onProgress?.({phase:'motion',percent:lastProgress,busy:false,status:'cancelled'});callbacks={};source=null;corner=null;clipEnd=null;previewFrame=null;showAll=false;showSkeleton=true;showBall=true;timeline=null;clockLabel=null;reviewSection=null;busy=false;selecting=null;origin=null;frames=[];tracks=[];drawingTracks=[];events=[];regions=[];if(panel)panel.remove();panel=null;if(overlay)overlay.remove();overlay=null;}
   async function model(){
     if(models)return models;
     const {FilesetResolver,PoseLandmarker}=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/vision_bundle.mjs');
@@ -21,7 +21,8 @@ window.FrescoMotionReview = (() => {
     if(!source)return null;
     return JSON.parse(JSON.stringify({schema:'frescoball-motion-v1',source,settings:{distanceM:currentDistance,rule:'practice'},regions:regions[0]&&regions[1]?regions:[],frames,tracks,events}));
   }
-  function changed(){callbacks.onChange?.(snapshot());}
+  function refreshTracks(){drawingTracks=window.FrescoBallTracker?.displayTracks?.(tracks,events,source?.width,frames)||tracks;}
+  function changed(){refreshTracks();callbacks.onChange?.(snapshot());}
   function drawOverlay(c,w,h,t,options={}){
     if(!source||!source.width||!source.height)return false;
     const f=previewFrame&&Math.abs(previewFrame.t-t)<.1?previewFrame:M.nearestFrame(frames,t);let drawn=false;
@@ -31,7 +32,7 @@ window.FrescoMotionReview = (() => {
     if(options.ball??showBall){
       const speedHits=callbacks.getSpeedHits?.()||[];
       const colorAt=time=>window.FrescoBallTracker?.speedColor(window.FrescoBallTracker.speedAt(speedHits,time))||'#c6cad3';
-      const ball=window.FrescoBallTracker?.at(tracks,t);
+      const ball=window.FrescoBallTracker?.at(drawingTracks,t);
       const fallback=tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t&&p.t>=t-.22)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>b.length-a.length)[0];
       const points=window.FrescoBallTracker?(ball?.trail||[]):(fallback||[]);
       for(let i=1;i<points.length;i++){c.globalAlpha=.2+.8*i/points.length;c.strokeStyle=colorAt((points[i-1].t+points[i].t)/2);c.setLineDash?.(points[i].predicted?[5,5]:[]);c.beginPath();c.moveTo(points[i-1].x,points[i-1].y);c.lineTo(points[i].x,points[i].y);c.stroke();drawn=true;}
@@ -194,7 +195,7 @@ window.FrescoMotionReview = (() => {
   function restore(raw){
     if(busy)throw new Error('解析が終わってから記録を戻してください');
     const data=M.normalize(raw,source);frames=data.frames;regions=data.regions||[];events=data.events;currentDistance=data.settings.distanceM;
-    tracks=window.FrescoBallTracker?window.FrescoBallTracker.track(frames,source.width,regions):M.track(frames,source.width).filter(trackForPair);events=M.evidence(events,frames,tracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),source.width);reviewIndex=0;
+    tracks=window.FrescoBallTracker?window.FrescoBallTracker.track(frames,source.width,regions):M.track(frames,source.width).filter(trackForPair);events=M.evidence(events,frames,tracks.map(tr=>({...tr,points:tr.points.filter(p=>!p.predicted)})),source.width);refreshTracks();reviewIndex=0;
     if(panel){panel.querySelector('[data-distance]').value=currentDistance;renderEvents();draw();}
     callbacks.onDistance?.(currentDistance);return snapshot();
   }
@@ -222,7 +223,7 @@ window.FrescoMotionReview = (() => {
       if(!dragged&&!corner){corner=p;origin=null;say('次に、選手の全身を囲む反対側の角をタップしてください');draw();return;}
       const from=dragged?origin:corner,r={x:Math.min(p.x,from.x),y:Math.min(p.y,from.y),w:Math.abs(p.x-from.x),h:Math.abs(p.y-from.y)};
       if(r.w<20||r.h<20){origin=null;corner=null;say('範囲が小さすぎます。頭から足までを囲んでください');draw();return;}
-      serial++;regions[selecting]=r;frames=[];tracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();
+      serial++;regions[selecting]=r;frames=[];tracks=[];drawingTracks=[];events=events.map(e=>({...e,status:'pending',player:null,suggestedPlayer:null,evidence:''}));renderEvents();changed();
       const done=regions[0]&&regions[1];selecting=done?null:selecting===0?1:0;origin=null;corner=null;
       say(done?'2人を選びました。「選んだ2人で自動解析」を押すと骨格の線と球の軌跡を確認できます。':`${selecting+1}人目も、全身を囲む2か所をタップしてください`);draw();};
     controls=el('fieldset','',conditions);controls.style.border='0';el('legend','2. 動きを解析する',controls);
@@ -241,7 +242,7 @@ window.FrescoMotionReview = (() => {
     el('p','上の映像を打った瞬間で止めて、打った人を選んでください。',manual);
     for(const player of ['a','b'])button(`${player==='a'?'1':'2'}人目の打球を追加`,manual,()=>{if(busy)return;events.push({id:`manual-${Date.now()}-${events.length}`,t:video.currentTime,player,status:'confirmed',origin:'manual'});reviewIndex=events.slice().sort((a,b)=>a.t-b.t).findIndex(e=>e.id===events.at(-1).id);renderEvents();changed();});
     const notes=el('details','',further);el('summary','表示される数値について',notes);
-    el('p','骨格の角度は画面上の推定で、腰の立体的な回転ではありません。球の軌跡は赤い球の候補で、誤って表示されることがあります。球速は確認した連続する打球の時間と距離から求める平均の推定値です。',notes);
+    el('p','骨格の角度は画面上の推定で、腰の立体的な回転ではありません。球の軌跡は赤い球の候補で、誤って表示されることがあります。短い途切れや打球付近を、前後の軌跡・手首の位置から推定した部分は破線です。球速は確認した連続する打球の時間と距離から求める平均の推定値です。',notes);
     const backup=el('details','',further);el('summary','記録のバックアップ・復元',backup);
     el('p','機種変更や記録の消失に備える解析結果の控えです。元動画は含まれません。通常の解析には必要ありません。',backup);
     button('バックアップを保存',backup,()=>{if(busy){say('解析が終わってから保存してください');return;}const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot())],{type:'application/json'}));const a=el('a');a.href=url;a.download='frescoball-motion.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});

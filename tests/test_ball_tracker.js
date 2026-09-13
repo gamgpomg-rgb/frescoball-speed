@@ -25,3 +25,31 @@ console.log('Hand-proximity rejection passed');
  assert.equal(C.speedAt(hits,1.2),50);assert.equal(C.speedAt(hits,1.5),95);assert.equal(C.speedAt(hits,2.2),null);assert.equal(C.speedAt(hits,.5),null);assert.equal(C.speedAt(hits,3),null);assert.equal(C.speedAt([{t:1},{t:1.5,speed:95,qualityExcluded:true}],1.2),null);assert.equal(C.speedAt([{t:1},{t:5,speed:95}],2),null);
  console.log('Trajectory colors use the upcoming impact interval, gold at 90+, and neutral for excluded/missing speeds');
 }
+{
+ const segment=(id,start,x)=>({id,points:Array.from({length:4},(_,i)=>({t:start+i*.03,x:x+i*25,y:100,predicted:false}))});
+ const parts=[segment(1,0,250),segment(2,.27,475)],original=JSON.stringify(parts);
+ const display=B.displayTracks(parts,[],1000);
+ assert.equal(display.length,3);assert.equal(B.at(display,.18).point.kind,'display-bridge');
+ assert.equal(JSON.stringify(parts),original,'display interpolation cannot alter measured tracks');
+ assert.equal(B.at(parts,.18),null,'contact evidence remains missing');
+ assert.equal(B.displayTracks(parts,[{t:.18,status:'pending'}],1000).length,2,'never bridge a potential impact');
+ assert.equal(B.displayTracks(parts,[{t:.18,status:'ignored'}],1000).length,3);
+ assert.equal(B.at(display,.5),null,'no extrapolation past observed endpoints');
+ assert.equal(B.displayTracks([parts[0],segment(2,.5,667)],[],1000).length,2,'long gaps stay missing');
+ const reversed=segment(2,.27,475);reversed.points.forEach((p,i)=>p.x=475-i*25);
+ assert.equal(B.displayTracks([parts[0],reversed],[],1000).length,2,'no bridge across reversal');
+ assert.equal(B.displayTracks([...parts,segment(3,.27,480)],[],1000).length,3,'ambiguous continuations stay missing');
+ console.log('Display-only gap bridges preserve impact evidence, reject reversal and ambiguity, and never extrapolate');
+}
+{
+ const tr={id:1,points:Array.from({length:5},(_,i)=>({t:.1+i*.03,x:300+i*25,y:100,predicted:false}))};
+ const poses=[Array.from({length:33},(_,k)=>({x:225,y:100,visibility:k===16?1:0})),[]];
+ const frames=[{t:.01,poses}],event={t:.01,status:'auto',player:'a'};
+ const out=B.displayTracks([tr],[event],1000,frames);
+ assert.equal(B.at(out,.05).predicted,true);assert.equal(out[1].points[0].kind,'contact-display-estimate');
+ assert.equal(B.at([tr],.05),null,'contact estimate does not become measured ball evidence');
+ assert.equal(B.displayTracks([tr],[{...event,status:'pending'}],1000,frames).length,1,'unknown hitter cannot anchor contact');
+ assert.equal(B.displayTracks([tr],[event],1000,[]).length,1,'no wrist means no invented contact path');
+ assert.equal(B.at(out,-.01),null);
+ console.log('Short contact display estimates require a known hitter and a visible, direction-consistent wrist');
+}
