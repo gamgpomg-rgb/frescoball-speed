@@ -33,7 +33,7 @@ drag(80,100,20,20);drag(300,425,200,450);drag(700,100,700,20);drag(920,425,950,4
 assert.equal(R.snapshot().regions[0].x,20);assert.equal(R.snapshot().regions[0].h,430);
 const beforeCancel=JSON.stringify(R.snapshot().regions);canvas.onpointerdown({clientX:20,clientY:20,pointerId:1});canvas.onpointermove({clientX:0,clientY:0,pointerId:1});canvas.onpointercancel({pointerId:1});assert.equal(JSON.stringify(R.snapshot().regions),beforeCancel,'cancel restores region');
 assert.equal(R.snapshot().regions.length,2,'four corners resize both ROIs');
-const shotSelect=host.walk().find(e=>e.tag==='select');shotSelect.value='attack';shotSelect.onchange();assert.equal(R.snapshot().events[0].shotOverride,'attack');shotSelect.value='';shotSelect.onchange();assert.equal(R.snapshot().events[0].shotOverride,null);find('1人目が打った').onclick();find('2人目が打った').onclick();
+find('1人目が打った').onclick();find('2人目が打った').onclick();
 assert.equal(R.snapshot().events.filter(e=>e.status==='confirmed').length,2);
 const saved=R.snapshot();assert.equal(saved.settings.distanceM,7);assert(updates>=4);
 R.setDistance(10);assert.equal(R.snapshot().settings.distanceM,10);R.restore(saved);assert.equal(R.snapshot().settings.distanceM,7);

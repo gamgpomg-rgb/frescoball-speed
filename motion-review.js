@@ -65,7 +65,6 @@ window.FrescoMotionReview = (() => {
     el('strong',`確認箇所 ${reviewIndex+1} / ${ordered.length}・${timeText(event.t)}`,card);if(frames.length&&reviewSection?.open){card.append(view);card.append(playback);}el('p',event.reviewReason||event.evidence||'自動では判断しきれなかった音です。',card);
     el('p','映像を見て、誰が打った音か選んでください。隣の組の音や足音は「この2人の打球ではない」を選びます。',card);
     button('この前後を再生',card,async()=>{if(busy)return;try{const token=serial;video.pause();await seek(Math.max(0,event.t-.65));if(token!==serial)return;clipEnd=Math.min(video.duration,event.t+.65);await video.play();}catch(e){say(e.message);}});
-    const shotLabel=el('label','打ち方 ',card),shot=el('select','',shotLabel);shot.setAttribute('aria-label','打ち方の修正');for(const [value,text]of [['','自動推定'],['attack','アタック'],['defense','ディフェンス']]){const option=el('option',text,shot);option.value=value;}shot.value=event.shotOverride||'';shot.onchange=()=>{if(busy)return;event.shotOverride=shot.value||null;changed();};
     const choices=el('div','',card);
     const select=(player,state)=>{if(busy)return;event.player=player;event.status=state;event.reviewRequired=false;event.suspicious=false;event.origin='manual-review';reviewIndex=state==='pending'?(reviewIndex+1)%ordered.length:showAll?Math.min(reviewIndex+1,ordered.length-1):Math.min(reviewIndex,ordered.length-2);renderEvents();changed();};
     button('1人目が打った',choices,()=>select('a','confirmed'));
@@ -264,7 +263,7 @@ window.FrescoMotionReview = (() => {
   function open(options){
     reset();detailNodes=[];callbacks=options;video=options.video;source=options.source;currentDistance=M.distance(options.distance);
     panel=el('section','',options.host);panel.className='motion-review';
-    el('h3','2人の軌跡と打ち方を見る',panel);
+    el('h3','2人の骨格と軌跡を見る',panel);
     el('p','2人の動きと球の軌跡を、映像で確かめられます。',panel);
     const reviewHelp=el('p','気になる場面を再生し、必要なところだけ判定を直せます。',panel);detailNodes.push(reviewHelp);
     viewHome=el('div','',panel);view=el('canvas','',viewHome);view.style.cssText='width:auto;max-width:100%;max-height:36svh;display:block;margin:auto;object-fit:contain;touch-action:none;background:#000';view.setAttribute('aria-label','選手の枠。四隅をドラッグして大きさを調整し、枠の内側をドラッグして移動します');

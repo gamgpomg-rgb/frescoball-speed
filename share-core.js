@@ -22,6 +22,14 @@
     selected.forEach(h=>{run=last!=null&&h.t-last<=gap?run+1:1;best=Math.max(best,run);if(last!=null&&h.t>last&&h.t-last<=gap&&typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)speeds.push(h.speed);last=h.t;});
     return {total:selected.length,rally:best,average:speeds.length?speeds.reduce((a,b)=>a+b,0)/speeds.length:null,max:speeds.length?Math.max(...speeds):null};
   }
+  function distribution(hits,start,end,flip=false){
+    const rows=['50未満','50–60','60–70','70–80','80–90','90以上'].map(label=>({label,a:0,b:0}));
+    const ordered=(hits||[]).slice().sort((a,b)=>a.t-b.t);
+    ordered.forEach((h,i)=>{if(h.t<start||h.t>end||h.qualityExcluded||h.status==='ignored'||!Number.isFinite(h.speed)||h.speed<=0)return;
+      let player=h.launchPlayer||ordered[i-1]?.player;if(!['a','b'].includes(player))return;
+      if(flip)player=player==='a'?'b':'a';const band=h.speed<50?0:h.speed>=90?5:1+Math.floor((h.speed-50)/10);rows[band][player]++;
+    });return rows;
+  }
   function motionRange(motion){
     const fs=motion?.frames;if(!Array.isArray(fs)||fs.length<2)return null;
     let last=-Infinity;
@@ -56,5 +64,5 @@
     segments.sort((a,b)=>Math.hypot(b.at(-1).x-b[0].x,b.at(-1).y-b[0].y)-Math.hypot(a.at(-1).x-a[0].x,a.at(-1).y-a[0].y));
     return segments[0]||[];
   }
-  return {windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt};
+  return {distribution,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt};
 });

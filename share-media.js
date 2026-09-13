@@ -41,12 +41,12 @@ window.FrescoShare = (() => {
     const story=format==='story',stats=C.stats(record?.hits||[],start,end),distance=record?.settings?.values?.distance;
     g.fillStyle='#120a2e';g.fillRect(0,0,W,H);
     const closeups=story&&motion?.regions?.length===2;
-    let box=story?C.fit(crop.w,crop.h,0,340,W,closeups?720:1120):{x:0,y:0,w:W,h:H};
+    let box=story?C.fit(crop.w,crop.h,0,220,W,closeups?560:860):{x:0,y:0,w:W,h:H};
     if(story){
       g.save();g.globalAlpha=.25;g.filter='blur(32px)';g.drawImage(video,0,200,W,1280);g.restore();
-      g.textAlign='left';g.fillStyle='#16e6c3';g.font='700 28px "Hiragino Sans", sans-serif';g.fillText('FRESCOBALL',64,164);
-      g.fillStyle='#fff';g.font='800 64px "Hiragino Sans", sans-serif';g.fillText(title||'今日のラリー',64,246,W-128);
-      g.fillStyle='#d7d4e6';g.font='400 30px "Hiragino Sans", sans-serif';g.fillText(style==='skeleton'?'ふたりの動きを見返す':'ふたりでつないだラリー',64,294);
+      g.textAlign='left';g.fillStyle='#16e6c3';g.font='700 28px "Hiragino Sans", sans-serif';g.fillText('FRESCOBALL',64,72);
+      g.fillStyle='#fff';g.font='800 64px "Hiragino Sans", sans-serif';g.fillText(title||'今日のラリー',64,150,W-128);
+      g.fillStyle='#d7d4e6';g.font='400 30px "Hiragino Sans", sans-serif';g.fillText(style==='skeleton'?'ふたりの動きを見返す':'ふたりでつないだラリー',64,198);
     }
     g.drawImage(video,crop.x,crop.y,crop.w,crop.h,box.x,box.y,box.w,box.h);
     if(style==='skeleton'){
@@ -61,17 +61,15 @@ window.FrescoShare = (() => {
     const visibleHits=(record?.playbackHits||record?.hits||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.status!=='ignored');
     for(const [i,side] of ['a','b'].entries()){
       const player=record?.flip?(side==='a'?'b':'a'):side;
-      const x=i?box.x+box.w-180*u:box.x+8*u;
+      const x=i?box.x+box.w-132*u:box.x+8*u;
       const bottomClearance=story?(state.showTrajectory?34:8):44;
       const y=box.y+box.h-(68+bottomClearance)*u;
-      const shots=(state.shotEstimates||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.player===player);
-      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(x,y,172*u,68*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+8*u,y+16*u);
-      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+8*u,y+32*u);g.fillText('推定',x+133*u,y+32*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+8*u,y+59*u,68*u);
-      g.font=`${13*u}px "Hiragino Sans", sans-serif`;g.fillText('A '+shots.filter(e=>e.type==='attack').length,x+86*u,y+39*u,76*u);g.fillText('D '+shots.filter(e=>e.type==='defense').length,x+86*u,y+59*u,76*u);
+      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(x,y,124*u,68*u);g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',x+8*u,y+16*u);
+      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',x+8*u,y+32*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(String(visibleHits.filter(e=>e.player===player).length),x+8*u,y+59*u,68*u);
     }
     if(story){
       if(closeups)motion.regions.forEach((region,i)=>{
-        const area={x:64+i*496,y:1120,w:456,h:300};
+        const area={x:64+i*496,y:840,w:456,h:250};
         const fitted=C.fit(region.w,region.h,area.x,area.y,area.w,area.h);
         g.fillStyle='rgba(9,6,25,.5)';g.fillRect(area.x,area.y,area.w,area.h);
         g.drawImage(video,region.x,region.y,region.w,region.h,fitted.x,fitted.y,fitted.w,fitted.h);
@@ -79,11 +77,21 @@ window.FrescoShare = (() => {
         g.fillStyle=i?'#ffd23f':'#16e6c3';g.font='700 24px "Hiragino Sans", sans-serif';g.fillText(record?.playerLabels?.[i?'b':'a']||`${i+1}人目`,area.x,area.y-18,area.w);
       });
       const cells=[[confirmed?'対象の打数':'連続した打数',`${confirmed?stats.total:stats.rally} 回`],[confirmed?'推定初速の平均':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
-      cells.forEach(([label,value],i)=>{const x=64+i*328;g.fillStyle='#bcb4d3';g.font='500 27px "Hiragino Sans", sans-serif';g.fillText(label,x,1540);g.fillStyle=i===0?'#ffd23f':'#fff';g.font='800 49px "Hiragino Sans", sans-serif';g.fillText(value,x,1615,304);});
-      g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の推定初速（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1700,952);
-      g.fillStyle='#9c92b3';g.font='400 24px "Hiragino Sans", sans-serif';g.fillText('FRESCOBALL  /  PRACTICE',64,1770);
+      cells.forEach(([label,value],i)=>{const x=64+i*328;g.fillStyle='#bcb4d3';g.font='500 27px "Hiragino Sans", sans-serif';g.fillText(label,x,1160);g.fillStyle=i===0?'#ffd23f':'#fff';g.font='800 49px "Hiragino Sans", sans-serif';g.fillText(value,x,1230,304);});
+      const distribution=C.distribution(record?.playbackHits||record?.hits||[],start,end,record?.flip);
+      const max=Math.max(1,...distribution.flatMap(r=>[r.a,r.b]));
+      g.fillStyle='#fff';g.font='700 32px "Hiragino Sans",sans-serif';g.fillText('球速分布',64,1320);
+      g.font='700 24px "Hiragino Sans",sans-serif';g.fillStyle='#58d5ef';g.fillText('LEFT PLAYER',64,1370);g.fillStyle='#ffd23f';g.textAlign='right';g.fillText('RIGHT PLAYER',1016,1370);g.textAlign='left';
+      distribution.forEach((row,i)=>{const y=1400+i*59;
+        g.fillStyle='#ffffff18';g.fillRect(130,y,300,24);g.fillRect(650,y,300,24);
+        g.fillStyle='#58d5ef';g.fillRect(430-row.a/max*300,y,row.a/max*300,24);g.fillStyle='#ffd23f';g.fillRect(650,y,row.b/max*300,24);
+        g.font='22px "Hiragino Sans",sans-serif';g.fillStyle='#fff';g.fillText(String(row.a),70,y+21);g.textAlign='center';g.fillText(row.label,540,y+21);g.textAlign='right';g.fillText(String(row.b),1016,y+21);g.textAlign='left';
+      });
+      g.fillStyle='#c4bdd5';g.font='22px "Hiragino Sans",sans-serif';g.fillText('単位：km/h ・ 選んだ区間の打ち出した側別 ・ 左右は推定',64,1795);
+      g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の推定初速（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1850,952);
+      g.fillStyle='#9c92b3';g.font='400 24px "Hiragino Sans", sans-serif';
     }
-    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed?'音の打数＋2人の打ち方・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
+    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed?'音の打数＋映像で確認・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
     return canvas;
   }
   function open(options){
@@ -110,14 +118,14 @@ window.FrescoShare = (() => {
     const note=e('p','保存する見た目と区間を選び、プレビューで確認できます。');
     const form=e('fieldset');const label=(text)=>e('label',text,form);
     const sl=label('見た目'),style=e('select','',sl);for(const [value,text]of [['play','プレーと球速'],['skeleton','骨格付き']]){const o=e('option',text,style);o.value=value;if(value==='skeleton'&&!C.motionRange(motion))o.disabled=true;}
-    if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで軌跡と打ち方を見る」で解析してください。',form);
+    if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで骨格と軌跡を見る」で解析してください。',form);
     const trailLabel=label('球の軌跡'),trail=e('select','',trailLabel);for(const [value,text]of [['off','表示しない'],['on','軌跡候補を表示']]){const o=e('option',text,trail);o.value=value;if(value==='on'&&!displayTracks.length)o.disabled=true;}
     if(displayTracks.length)trail.value='on';
     const measurementLabel=label('表示する記録'),measurement=e('select','',measurementLabel);
     const hasAudio=record?.analysisMode!=='motion'||Array.isArray(record?.audioHits);
-    for(const [value,text]of [['audio','音から計算した記録'],['confirmed','音の打数＋2人の打ち方']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
+    for(const [value,text]of [['audio','音から計算した記録'],['confirmed','音の打数＋映像で確認']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
     if(record?.analysisMode==='motion')measurement.value='confirmed';
-    e('p','打数は音が基準です。映像で読み取れない打球も含み、左右・A／Dは前後の動きから推定します。明示的に除外した音は数えません。',form);
+    e('p','打数は音が基準です。映像で読み取れない打球も含み、左右は前後の動きから推定します。明示的に除外した音は数えません。',form);
     const tl=label('タイトル'),title=e('input','',tl);title.value='今日のラリー';title.maxLength=24;tl.hidden=options.format!=='story';
     const startLabel=label('開始位置（秒）'),start=e('input','',startLabel);start.type='number';start.min=0;start.max=video.duration;start.step='.1';start.value=Math.min(video.currentTime,Math.max(0,video.duration-.1)).toFixed(2);
     const lengthLabel=label('長さ'),length=e('select','',lengthLabel);for(const n of [8,15,30,60]){const o=e('option',`${n}秒`,length);o.value=n;}length.value='15';lengthLabel.hidden=Boolean(options.image);if(options.format!=='story'){const all=e('option','全編',length);all.value=video.duration;all.dataset.full='';}
@@ -150,8 +158,7 @@ window.FrescoShare = (() => {
         const distances=new Set(hits.filter(h=>h.t>=range.start&&h.t<=range.end&&h.usedDistanceM!=null).map(h=>h.usedDistanceM));
         selectedRecord={...record,hits,playbackHits,settings:{values:{distance:distances.size===1?[...distances][0]:motion.settings.distanceM}},variedDistances:distances.size>1};
       }
-      state={mode:options.mode||'simple',shotEstimates:window.FrescoShots&&motion?.frames?window.FrescoShots.classify(window.FrescoMotion.countedEvents(record.audioHits||record.hits||[],motion.events),motion.frames):[],format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
-      if(state.mode==='simple'&&window.FrescoShots)state.shotEstimates=window.FrescoShots.simpleRoles(selectedRecord.playbackHits||selectedRecord.hits,state.shotEstimates);
+      state={mode:options.mode||'simple',format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
       const c=C.crop(video.videoWidth,video.videoHeight,motion?.regions,state.focus);
       if(options.format==='story'){canvas.width=1080;canvas.height=1920;}else{const scale=Math.min(1,1280/Math.max(c.w,c.h));canvas.width=Math.max(2,Math.round(c.w*scale/2)*2);canvas.height=Math.max(2,Math.round(c.h*scale/2)*2);}
       return state;

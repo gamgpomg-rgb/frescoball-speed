@@ -100,3 +100,10 @@ assert.equal(C.trajectoryAt([ballTrack],.1).length,3,'no future ball samples in 
 assert.equal(C.trajectoryAt([ballTrack],.4).length,0,'old tracks must disappear');
 assert.equal(C.trajectoryAt([ballTrack,ballTrack],.15).length,4,'show one plausible segment instead of accumulating all candidates');
 console.log('Trajectory display rejects background/body/static candidates and avoids future or stale points');
+{
+ const hits=[{t:0,player:'a',speed:null},{t:1,player:'b',speed:49.9},{t:2,player:'a',speed:50},{t:3,player:'b',speed:60},{t:4,player:'a',speed:90},{t:5,player:'b',speed:99,qualityExcluded:true}];
+ const rows=C.distribution(hits,1,5);assert.equal(rows[0].a,1);assert.equal(rows[1].b,1);assert.equal(rows[2].a,1);assert.equal(rows[5].b,1);assert.equal(rows.flatMap(r=>[r.a,r.b]).reduce((a,b)=>a+b,0),4);
+ assert.equal(C.distribution(hits,2,2,true)[1].a,1,'range boundaries retain launcher outside clip and respect swap');
+ assert(C.distribution([],0,1).every(r=>r.a===0&&r.b===0));
+ console.log('Story distributions: interval boundaries, originating player, excluded speeds and left/right swap passed');
+}
