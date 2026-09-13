@@ -13,3 +13,14 @@ D=B.createDetector(w,h,regions);D.detect(frame(),0);assert.equal(D.detect(frame(
 D=B.createDetector(w,h,regions);D.detect(frame(),0);D.detect(frame([{x:80,y:50}]),1/30);D.detect(frame([{x:90,y:50}]),2/30);assert.equal(D.detect(frame([{x:100,y:50,w:7,h:1}]),3/30).length,1,'short motion blur accepted near prediction');
 const slow=Array.from({length:10},(_,i)=>({t:i/30,ballCandidates:[{x:80+i*.1,y:50}]}));assert.equal(B.track(slow,w,regions).length,0,'slow background is not a ball track');
 console.log('Pink detection, fixed background, large moving objects, bounded faint/blur recovery and no invented points passed');
+// 選手枠より上を飛ぶ球（山なりのラリー）。探索範囲を枠の上端で切っていた頃は候補が消え、軌跡が分断された。
+{
+  const low=[{x:0,y:100,w:50,h:60},{x:270,y:100,w:50,h:60}];
+  const D2=B.createDetector(w,h,low);D2.detect(frame(),0);
+  assert.equal(D2.detect(frame([{x:80,y:20}]),1/30).length,1,'ball above the player boxes is still searched');
+  const lob=Array.from({length:8},(_,i)=>({t:i/30,ballCandidates:[{x:60+i*25,y:20}]}));
+  assert.equal(B.track(lob,w,low).length,1,'a flight above both boxes forms a track');
+  assert.equal(D2.detect(frame([{x:80,y:157}]),2/30).length,0,'below the feet stays excluded');
+}
+console.log('Search range above the player boxes passed');
+

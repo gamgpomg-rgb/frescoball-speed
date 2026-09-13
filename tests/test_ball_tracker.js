@@ -76,3 +76,15 @@ console.log('Hand-proximity rejection passed');
  assert.equal(B.speedAt(hits,.445),60);
  console.log('Whole-flight display reconstruction: bounded audio interval, ambiguity and reversal rejection, unchanged measurements');
 }
+
+{
+  // 打音マーカー: 打音±0.25秒以内の観測点がある打音だけ、0.7秒間だけ位置を返す
+  const seq=Array.from({length:8},(_,i)=>({t:i*.03,ballCandidates:[{x:250+i*25,y:100}]}));
+  const tr=B.track(seq,1000,regions);
+  const marks=B.impactMarkers([{t:.2,status:'auto'},{t:1.5,status:'auto'},{t:.1,status:'ignored'}],tr,.3);
+  assert.equal(marks.length,1,'only unignored hits with a nearby observed point, within the display window');
+  assert(Math.abs(marks[0].x-416.7)<.5,'nearest observed point, moved back along the track to the hit time');
+  assert.equal(B.impactMarkers([{t:.2,status:'auto'}],tr,1.2).length,0,'marker disappears after impactSeconds');
+  assert.equal(B.impactMarkers([{t:.6,status:'auto'}],tr,.7).length,0,'no observed point near the hit means no marker');
+  console.log('Impact markers follow audio time and observed positions only');
+}

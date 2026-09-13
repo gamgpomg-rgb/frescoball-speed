@@ -13,7 +13,10 @@
   function createDetector(width,height,regions){
     let previous=null,background=null,lastTime=null,hypotheses=[];
     const x0=Math.max(1,Math.floor(Math.min(...regions.map(r=>r.x)))),x1=Math.min(width-2,Math.ceil(Math.max(...regions.map(r=>r.x+r.w))));
-    const y0=Math.max(1,Math.floor(Math.min(...regions.map(r=>r.y-r.h*.15)))),y1=Math.min(height-2,Math.ceil(Math.max(...regions.map(r=>r.y+r.h*.92))));
+    // 縦の探索範囲は画面上端から選手の足元まで。以前は「枠の上端−15%」で止めていたため、
+    // 頭〜膝の狭い枠を引くと山なりの球が枠より上を飛ぶ区間で候補が消え、軌跡が分断された
+    // （IMG_9997 98.5〜102.5s で再現。広い枠では全返球を追跡できていた）。
+    const y0=1,y1=Math.min(height-2,Math.ceil(Math.max(...regions.map(r=>r.y+r.h*.92))));
     return {detect(data,t,poses=[]){
       if(!previous||lastTime==null||t<=lastTime||t-lastTime>.15){previous=new Uint8ClampedArray(data);background=Float32Array.from(data);lastTime=t;hypotheses=[];return [];}
       const dt=t-lastTime,predictions=hypotheses.filter(q=>q.count>=2&&q.vx!=null&&t-q.t<=.1).map(q=>({x:q.x+q.vx*(t-q.t),y:q.y+q.vy*(t-q.t),radius:Math.max(5,width*.015)}));
@@ -59,7 +62,8 @@
     if(!Array.isArray(frames)||!finite(width)||width<=0)throw new Error('動画の追跡入力が不正です');
     if(!Array.isArray(regions)||regions.length!==2||Array.from(regions).some(r=>!r||![r.x,r.y,r.w,r.h].every(finite)||r.w<=0||r.h<=0))return [];
     const left=Math.max(0,Math.min(...regions.map(r=>r.x))),right=Math.min(width,Math.max(...regions.map(r=>r.x+r.w)));
-    const top=Math.max(0,Math.min(...regions.map(r=>r.y-r.h*.2))),bottom=Math.max(...regions.map(r=>r.y+r.h*.95));
+    // 追跡の有効範囲も上端は画面の端（検出側と揃える）。下端は足元より下を除く。
+    const top=0,bottom=Math.max(...regions.map(r=>r.y+r.h*.95));
     const center=regions.map(r=>({x:r.x+r.w/2,y:r.y+r.h/2})),axis={x:center[1].x-center[0].x,y:center[1].y-center[0].y};
     const separation=Math.hypot(axis.x,axis.y);if(separation<1)return [];
     const inside=p=>valid(p)&&p.x>=left&&p.x<=right&&p.y>=top&&p.y<=bottom;
@@ -240,5 +244,41 @@
     else{c.fillStyle='#fff';c.fill();c.stroke();}
     c.restore();return true;
   }
-  return {drawTrail,createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
+  // 打音の位置マーカー（表示専用）。時刻は打音で確定し、場所は打音の±0.25秒以内にある
+  // 観測点のうち最も近いものを使う。観測点が無い打音には出さない（音だけでは場所が分からない）。
+  // 速度・打数・接触判定には一切使わない。
+  const IMPACT_SECONDS=.7;
+  function impactMarkers(hits,tracks,t){
+    if(!Array.isArray(hits)||!finite(t))return [];
+    const out=[];
+    for(const h of hits){
+      if(!h||!finite(h.t)||h.status==='ignored')continue;
+      const age=t-h.t;if(age<0||age>IMPACT_SECONDS)continue;
+      let best=null;
+      for(const tr of tracks||[]){const ps=(tr.points||[]).filter(p=>!p.predicted&&valid(p));
+        ps.forEach((p,i)=>{const d=Math.abs(p.t-h.t);if(d>.25||(best&&d>=best.d))return;
+          // 観測点は打音の少し後（または前）にあるので、隣の観測点との速度で打音時刻まで戻す。
+          // 戻す量は最大0.25秒ぶんの観測速度で、軌跡の端より外へ長く延ばさない。
+          const q=ps[i+1]||ps[i-1],dt=q?q.t-p.t:0,vx=dt?(q.x-p.x)/dt:0,vy=dt?(q.y-p.y)/dt:0,back=h.t-p.t;
+          best={d,x:p.x+vx*back,y:p.y+vy*back};});}
+      if(best)out.push({t:h.t,x:best.x,y:best.y,age,offset:best.d});
+    }
+    return out;
+  }
+  // 水面のように広がる楕円。外側の輪ほど薄く、0.7秒で消える。色はその打球の音声速度。
+  function drawImpacts(c,markers,width,t,hits=[]){
+    if(!markers?.length)return false;
+    const unit=Math.max(1,width/640);
+    c.save();c.setLineDash?.([]);
+    for(const m of markers){
+      const k=Math.min(1,Math.max(0,m.age/IMPACT_SECONDS)),color=speedColor(speedAt(hits,m.t+.01));
+      for(const [scale,alpha] of [[1,.9],[.55,.5]]){
+        const rx=(6+k*70)*unit*scale,ry=rx*.42;
+        c.beginPath();c.ellipse(m.x,m.y,rx,ry,0,0,Math.PI*2);
+        c.strokeStyle=color;c.globalAlpha=alpha*(1-k);c.lineWidth=(2.4-k*1.2)*unit;c.shadowColor=color;c.shadowBlur=6*unit;c.stroke();
+      }
+    }
+    c.restore();return true;
+  }
+  return {drawTrail,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
 });

@@ -36,6 +36,7 @@ window.FrescoMotionReview = (() => {
       const fallback=tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t&&p.t>=t-.22)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>b.length-a.length)[0];
       const points=window.FrescoBallTracker?(ball?.trail||[]):(fallback||[]);
       if(window.FrescoBallTracker?.drawTrail)drawn=window.FrescoBallTracker.drawTrail(c,points,source.width,t,speedHits)||drawn;
+      if(window.FrescoBallTracker?.drawImpacts){const marks=window.FrescoBallTracker.impactMarkers(events,drawingTracks,t);drawn=window.FrescoBallTracker.drawImpacts(c,marks,source.width,t,speedHits)||drawn;}
     }
     c.restore();return drawn;
   }
@@ -169,7 +170,7 @@ window.FrescoMotionReview = (() => {
     for(const [job,index] of keys){
       if(index!==0)continue;
       let meta;try{meta=JSON.parse(job);}catch{continue;}
-      if(meta.version!==2||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
+      if(meta.version!==3||meta.mode!==mode||identity(meta.source)!==identity(videoSource))continue;
       const chunk=await new Promise((resolve,reject)=>{const r=db.transaction('chunks','readonly').objectStore('chunks').get([job,0]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
       if(chunk)matches.push({meta,updatedAt:chunk.updatedAt||0});
     }
@@ -214,7 +215,7 @@ window.FrescoMotionReview = (() => {
       const cv=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth);cv.width=Math.round(video.videoWidth*scale);cv.height=Math.round(video.videoHeight*scale);const cx=cv.getContext('2d',{willReadFrequently:true});
       const pixelDetector=window.FrescoBallTracker?.createDetector(cv.width,cv.height,roi.map(r=>({x:r.x*scale,y:r.y*scale,w:r.w*scale,h:r.h*scale})));
       const count=Math.ceil(duration*30),schedule=poseSchedule(start,count,workingEvents,runMode);
-      job=JSON.stringify({version:2,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
+      job=JSON.stringify({version:3,source,roi,start,duration,mode:runMode,hits:workingEvents.map(e=>e.t).sort((a,b)=>a-b)});
       try{
         const stored=await readCheckpoint(job);if(token!==serial)return;
         if(stored.length<=count&&stored.every((f,i)=>Math.abs(f.t-(start+i/30))<.001&&Array.isArray(f.poses)&&Array.isArray(f.ballCandidates))){for(const frame of stored)output.push(frame);saved=stored.length;}
