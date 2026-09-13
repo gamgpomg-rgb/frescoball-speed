@@ -287,7 +287,7 @@
   // 直近 TRAIL_SECONDS の軌跡を返球をまたいで残し、古いほど薄くする（参考動画の残像）。
   // 軌跡は追跡ごとに分けたままつなぎ、観測が MAX_GAP 以上途切れた所は線にしない。
   // 折り返し（打点）では前の返球の終端と次の返球の始端が同時に見える。
-  const TRAIL_SECONDS=2;
+  const TRAIL_SECONDS=.7;
   function trailRuns(tracks,t,seconds=TRAIL_SECONDS){
     if(!finite(t))return [];
     const runs=[];

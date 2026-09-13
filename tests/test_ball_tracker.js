@@ -96,10 +96,11 @@ console.log('Hand-proximity rejection passed');
   const a=Array.from({length:8},(_,i)=>({t:i*.03,ballCandidates:[{x:250+i*25,y:100}]}));
   const b=Array.from({length:8},(_,i)=>({t:1+i*.03,ballCandidates:[{x:700-i*25,y:120}]}));
   const tr=B.track([...a,...b],1000,regions);assert.equal(tr.length,2);
-  const runs=B.trailRuns(tr,1.1,B.trailSeconds);
+  const runs=B.trailRuns(tr,1.1,1.2);   // 窓を明示（既定の残り時間は調整されうる）
   assert.equal(runs.length,2,'both flights inside the window are kept as separate runs');
   assert(runs.every(r=>r.points.every(p=>p.t<=1.1)),'no future points');
-  assert.equal(B.trailRuns(tr,3.5,B.trailSeconds).length,0,'old flights fade out of the window');
+  assert.equal(B.trailRuns(tr,3.5,1.2).length,0,'old flights fade out of the window');
+  assert(B.trailSeconds>0&&B.trailSeconds<=2,'default trail lifetime stays within the tuned range');
   assert.equal(B.trailRuns(tr,1.1,.5).length,1,'a shorter window keeps only the current flight');
   console.log('Multi-flight trail window passed');
 }
