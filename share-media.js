@@ -28,8 +28,8 @@ window.FrescoShare = (() => {
   }
   function trajectory(g,tracks,t,width,hits){
     let drawn=false;
-    const points=window.FrescoBallTracker?(window.FrescoBallTracker.at(tracks,t)?.trail||[]):C.trajectoryAt(tracks,t);
-    if(points.length>=2)drawn=window.FrescoBallTracker?.drawTrail(g,points,width,t,hits)||drawn;
+    if(window.FrescoBallTracker?.drawTrails)drawn=window.FrescoBallTracker.drawTrails(g,tracks,width,t,hits)||drawn;
+    else{const points=window.FrescoBallTracker?(window.FrescoBallTracker.at(tracks,t)?.trail||[]):C.trajectoryAt(tracks,t);if(points.length>=2)drawn=window.FrescoBallTracker?.drawTrail(g,points,width,t,hits)||drawn;}
     // 打音の位置に広がる輪。観測点が近くにある打音だけ（音だけでは場所が決まらない）
     if(window.FrescoBallTracker?.drawImpacts)drawn=window.FrescoBallTracker.drawImpacts(g,window.FrescoBallTracker.impactMarkers(hits,tracks,t),width,t,hits)||drawn;
     return drawn;

@@ -35,7 +35,8 @@ window.FrescoMotionReview = (() => {
       const ball=window.FrescoBallTracker?.at(drawingTracks,t);
       const fallback=tracks.filter(trackForPair).map(tr=>tr.points.filter(p=>p.t<=t&&p.t>=t-.22)).filter(ps=>ps.length>=2&&t-ps.at(-1).t<=.1).sort((a,b)=>b.length-a.length)[0];
       const points=window.FrescoBallTracker?(ball?.trail||[]):(fallback||[]);
-      if(window.FrescoBallTracker?.drawTrail)drawn=window.FrescoBallTracker.drawTrail(c,points,source.width,t,speedHits)||drawn;
+      if(window.FrescoBallTracker?.drawTrails)drawn=window.FrescoBallTracker.drawTrails(c,drawingTracks,source.width,t,speedHits)||drawn;
+      else if(window.FrescoBallTracker?.drawTrail)drawn=window.FrescoBallTracker.drawTrail(c,points,source.width,t,speedHits)||drawn;
       if(window.FrescoBallTracker?.drawImpacts){const marks=window.FrescoBallTracker.impactMarkers(events,drawingTracks,t);drawn=window.FrescoBallTracker.drawImpacts(c,marks,source.width,t,speedHits)||drawn;}
     }
     c.restore();return drawn;

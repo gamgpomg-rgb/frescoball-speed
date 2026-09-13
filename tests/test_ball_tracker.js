@@ -88,3 +88,16 @@ console.log('Hand-proximity rejection passed');
   assert.equal(B.impactMarkers([{t:.6,status:'auto'}],tr,.7).length,0,'no observed point near the hit means no marker');
   console.log('Impact markers follow audio time and observed positions only');
 }
+
+{
+  // 残像: 直近 trailSeconds の点を追跡ごとに返し、窓の外や未来の点は含めない
+  const a=Array.from({length:8},(_,i)=>({t:i*.03,ballCandidates:[{x:250+i*25,y:100}]}));
+  const b=Array.from({length:8},(_,i)=>({t:1+i*.03,ballCandidates:[{x:700-i*25,y:120}]}));
+  const tr=B.track([...a,...b],1000,regions);assert.equal(tr.length,2);
+  const runs=B.trailRuns(tr,1.1,B.trailSeconds);
+  assert.equal(runs.length,2,'both flights inside the window are kept as separate runs');
+  assert(runs.every(r=>r.points.every(p=>p.t<=1.1)),'no future points');
+  assert.equal(B.trailRuns(tr,3.5,B.trailSeconds).length,0,'old flights fade out of the window');
+  assert.equal(B.trailRuns(tr,1.1,.5).length,1,'a shorter window keeps only the current flight');
+  console.log('Multi-flight trail window passed');
+}

@@ -265,7 +265,7 @@
     }
     return out;
   }
-  // 水面のように広がる楕円。外側の輪ほど薄く、0.7秒で消える。色はその打球の音声速度。
+  // 打点から広がる二重の円。外側ほど薄く、0.7秒で消える。色はその打球の音声速度。
   function drawImpacts(c,markers,width,t,hits=[]){
     if(!markers?.length)return false;
     const unit=Math.max(1,width/640);
@@ -273,12 +273,54 @@
     for(const m of markers){
       const k=Math.min(1,Math.max(0,m.age/IMPACT_SECONDS)),color=speedColor(speedAt(hits,m.t+.01));
       for(const [scale,alpha] of [[1,.9],[.55,.5]]){
-        const rx=(6+k*70)*unit*scale,ry=rx*.42;
-        c.beginPath();c.ellipse(m.x,m.y,rx,ry,0,0,Math.PI*2);
+        const radius=(5+k*38)*unit*scale;   // 正円。参考動画の打点マーカーに合わせる
+        c.beginPath();c.arc(m.x,m.y,radius,0,Math.PI*2);
         c.strokeStyle=color;c.globalAlpha=alpha*(1-k);c.lineWidth=(2.4-k*1.2)*unit;c.shadowColor=color;c.shadowBlur=6*unit;c.stroke();
       }
     }
     c.restore();return true;
   }
-  return {drawTrail,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
+  // 直近 TRAIL_SECONDS の軌跡を返球をまたいで残し、古いほど薄くする（参考動画の残像）。
+  // 軌跡は追跡ごとに分けたままつなぎ、観測が MAX_GAP 以上途切れた所は線にしない。
+  // 折り返し（打点）では前の返球の終端と次の返球の始端が同時に見える。
+  const TRAIL_SECONDS=2;
+  function trailRuns(tracks,t,seconds=TRAIL_SECONDS){
+    if(!finite(t))return [];
+    const runs=[];
+    for(const tr of tracks||[]){const ps=(tr.points||[]).filter(p=>valid(p)&&p.t<=t+1e-6&&p.t>=t-seconds);if(ps.length>=2)runs.push({id:tr.id,points:ps});}
+    return runs;
+  }
+  function drawTrails(c,tracks,width,t,hits=[],seconds=TRAIL_SECONDS){
+    if(!finite(width)||width<=0||!finite(t))return false;
+    const unit=Math.max(1,width/640),colorAt=time=>speedColor(speedAt(hits,time)),fade=age=>Math.pow(Math.max(0,1-age/seconds),1.3);
+    const chunks=[];
+    for(const run of trailRuns(tracks,t,seconds)){
+      let cur=null;
+      for(let i=1;i<run.points.length;i++){
+        const a=run.points[i-1],b=run.points[i];
+        if(b.t-a.t>MAX_GAP+1e-6){cur=null;continue;}
+        const predicted=!!(a.predicted||b.predicted),color=colorAt((a.t+b.t)/2),bucket=Math.floor((t-b.t)/.12);
+        if(cur&&cur.predicted===predicted&&cur.color===color&&cur.bucket===bucket)cur.points.push(b);
+        else{cur={predicted,color,bucket,alpha:fade(t-(a.t+b.t)/2),points:[a,b]};chunks.push(cur);}
+      }
+    }
+    if(!chunks.length)return false;
+    chunks.sort((x,y)=>y.bucket-x.bucket);
+    // 区間ごとに透明度が違うので、端を丸めずに描いて継ぎ目の二重塗りを避ける
+    c.save();c.lineCap='butt';c.lineJoin='round';c.setLineDash?.([]);
+    const stroke=(ch,style,alpha,lineWidth,blur)=>{c.strokeStyle=style;c.globalAlpha=alpha;c.lineWidth=lineWidth;c.shadowColor=ch.color;c.shadowBlur=blur;c.beginPath();ch.points.forEach((p,k)=>k?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();};
+    for(const ch of chunks)stroke(ch,'#081421',(ch.predicted?.3:.55)*ch.alpha,6.4*unit,0);
+    for(const ch of chunks)stroke(ch,ch.color,(ch.predicted?.45:.95)*ch.alpha,3.6*unit,ch.predicted?0:4*unit);
+    for(const ch of chunks)if(!ch.predicted)stroke(ch,'#fff',.8*ch.alpha,1.2*unit,0);
+    const now=at(tracks,t);
+    if(now){
+      const p=now.point,color=colorAt(t),radius=2.6*unit;
+      c.shadowBlur=0;c.globalAlpha=1;
+      c.beginPath();c.arc(p.x,p.y,radius+1.6*unit,0,Math.PI*2);c.fillStyle='#08142199';c.fill();
+      c.beginPath();c.arc(p.x,p.y,radius,0,Math.PI*2);c.strokeStyle=color;c.lineWidth=1.2*unit;c.shadowColor=color;c.shadowBlur=p.predicted?0:5*unit;
+      if(p.predicted){c.setLineDash?.([2*unit,2*unit]);c.stroke();}else{c.fillStyle='#fff';c.fill();c.stroke();}
+    }
+    c.restore();return true;
+  }
+  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP};
 });
