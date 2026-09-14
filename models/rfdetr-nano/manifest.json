@@ -1,0 +1,48 @@
+{
+ "name": "rfdetr-nano-frescoball-20260913",
+ "totalBytes": 118075121,
+ "sha256": "1065fb18011025c5702249b9ac1611bac723cab1789c29110a26749b2101c3d7",
+ "input": {
+  "name": "input",
+  "shape": [
+   1,
+   3,
+   384,
+   384
+  ],
+  "normalize": "imagenet"
+ },
+ "outputs": {
+  "boxes": "dets",
+  "logits": "labels",
+  "ballColumn": 0
+ },
+ "window": 192,
+ "parts": [
+  {
+   "file": "part-00.bin",
+   "bytes": 25165824,
+   "sha256": "a95325adabfdbcb73ac8dfeb9bd1d7ad90f1455155fd1f819c0e62775b6ec3e5"
+  },
+  {
+   "file": "part-01.bin",
+   "bytes": 25165824,
+   "sha256": "7b53b14b8a900d66c9d1116727f97ab1f10938fc1e2dd5c5f0567f4c7a2e30cc"
+  },
+  {
+   "file": "part-02.bin",
+   "bytes": 25165824,
+   "sha256": "3316ecb3a1297336963c855e793eab444177d6f4ecf8d63a79ddd906c1ac7d0f"
+  },
+  {
+   "file": "part-03.bin",
+   "bytes": 25165824,
+   "sha256": "c8381ac71683ff26e6facb6e299e5ec00fe6107f049ad729b4c2e48298c27097"
+  },
+  {
+   "file": "part-04.bin",
+   "bytes": 17411825,
+   "sha256": "ffead93d0c858e1a2e604bd9646b7ab7f2c9222aad4fd311b4a46e503236e1a0"
+  }
+ ]
+}

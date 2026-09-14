@@ -230,6 +230,13 @@ window.FrescoMotionReview = (() => {
       if(output.length&&output.length<count){await seek(output.at(-1).t);if(token!==serial)return;cx.drawImage(video,0,0,cv.width,cv.height);previous=cx.getImageData(0,0,cv.width,cv.height).data;pixelDetector?.detect(previous,output.at(-1).t);}
       const resumed=output.length;
       if(output.length<count){detector=await model();if(token!==serial)return;}
+      // 高精度の球検出モデル（PC の Chrome・任意）。予測位置の小窓で規則ベースが何も見つけないときだけ当てる。
+      let teacher=null,teacherCanvas=null,teacherCtx=null,teacherCalls=0,teacherHits=0;
+      if(callbacks.teacher&&pixelDetector&&output.length<count){
+        try{say('高精度の球検出モデルを準備しています。初回は通信が必要です');teacher=await callbacks.teacher(p=>{if(token===serial)say(`高精度の球検出モデルを取得中 ${Math.round(p*100)}%`);});if(token!==serial)return;
+          if(teacher){teacherCanvas=document.createElement('canvas');teacherCanvas.width=teacherCanvas.height=teacher.size;teacherCtx=teacherCanvas.getContext('2d',{willReadFrequently:true});}
+        }catch(e){teacher=null;say(`高精度モデルは使えません：${e.message}`);}
+      }
       const began=Date.now();
       const crops=roi.map(r=>{const c=document.createElement('canvas');c.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));c.height=Math.max(8,Math.min(512,Math.round(c.width*r.h/r.w)));return {canvas:c,context:c.getContext('2d')};});
       for(let n=output.length;n<count;n++){
@@ -243,7 +250,7 @@ window.FrescoMotionReview = (() => {
         }
         if(n%6===0||n===count-1){
           const elapsed=(Date.now()-began)/1000,remaining=n>resumed&&elapsed>5?Math.ceil(elapsed/(n-resumed)*(count-n)):null;
-          const message=`速度・打数は確認できます。${resumed?'続きから':''}軌跡を準備中${remaining!=null?'・残り約'+Math.ceil(remaining/60)+'分':''}${storageFailed?'・途中保存できません':''}`;
+          const message=`速度・打数は確認できます。${resumed?'続きから':''}軌跡を準備中${remaining!=null?'・残り約'+Math.ceil(remaining/60)+'分':''}${storageFailed?'・途中保存できません':''}${teacher?`・高精度モデル ${teacherHits}/${teacherCalls}`:''}`;
           callbacks.onProgress?.({phase:'motion',percent:(lastProgress=15+Math.round((n+1)/count*80)),busy:true,message});previewFrame={t,poses};
           say(`映像を解析中 ${Math.round((n+1)/count*100)}%：完了すると骨格とボールの軌跡が動画に加わります。速度・打数は先に確認できます。`);
           draw();await new Promise(r=>setTimeout(r,0));if(token!==serial)return;
@@ -254,6 +261,14 @@ window.FrescoMotionReview = (() => {
           const extra=[];
           for(const win of watch){if(!win.data)continue;const found=window.FrescoBallTracker.refineLocal({data:cropWindow(win),prev:win.data,width:win.w,height:win.h,origin:{x:win.x,y:win.y},center:win.center,exclude:win.exclude,unit:unitPx});
             for(const p of found)if(!ballCandidates.some(c=>Math.hypot(c.x-p.x,c.y-p.y)<18*unitPx)&&!extra.some(e=>Math.hypot(e.x-p.x,e.y-p.y)<18*unitPx))extra.push({x:p.x,y:p.y,local:true});}
+          // 規則ベースが窓の中に何も見つけなかったときだけ、同じ中心の 192px 窓（学習時と同じ大きさ）を高精度モデルに見せる
+          if(teacher)for(const win of watch){if(!win.data)continue;const cxp=win.center.x,cyp=win.center.y;
+            if(extra.some(e=>Math.hypot(e.x-cxp,e.y-cyp)<win.w)||ballCandidates.some(c=>Math.hypot(c.x-cxp,c.y-cyp)<win.w))continue;
+            const size=Math.round(192*unitPx),x0=Math.round(Math.max(0,Math.min(video.videoWidth-size,cxp-size/2))),y0=Math.round(Math.max(0,Math.min(video.videoHeight-size,cyp-size/2)));
+            teacherCtx.drawImage(video,x0,y0,size,size,0,0,teacher.size,teacher.size);teacherCalls++;
+            let hit=null;try{hit=await teacher.detect(teacherCtx.getImageData(0,0,teacher.size,teacher.size));}catch(e){hit=null;}
+            if(token!==serial)return;
+            if(hit&&hit.conf>=.5){const px=x0+hit.x*size,py=y0+hit.y*size;teacherHits++;if(!extra.some(e=>Math.hypot(e.x-px,e.y-py)<18*unitPx))extra.push({x:px,y:py,local:true,teacher:true});}}
           if(extra.length){pixelDetector.adopt(extra.map(p=>({x:p.x*scale,y:p.y*scale})),t);ballCandidates.push(...extra.map(p=>({x:p.x,y:p.y})));}
           // 次フレーム用の窓: 予測位置、無ければ打音直後（0.2秒）の手首
           watch=[];const tn=t+1/30;

@@ -9,7 +9,7 @@ Object.assign(el('upVideo'),{src:'',videoWidth:1920,videoHeight:1080,duration:20
 let audioCalls=0,workflow;
 const c=vm.createContext({$:el,console,setTimeout,clearTimeout,URL:{createObjectURL:()=> 'blob:local-test'},
   videoMode:"simple",analysisActivity:{busy:false,percent:0},renderShotSummary:()=>{},selectedVideoFile:null,uploadObjectUrl:null,uploadAnalysisGeneration:0,currentMotion:null,curStats:null,currentRecordMeta:{},currentVideoSettings:null,
-  validatedVideoDistance:Number,currentSettings:()=>({values:{distance:'7'}}),setVideoExportAvailability:()=>{},
+  validatedVideoDistance:Number,currentSettings:()=>({values:{distance:'7'}}),setVideoExportAvailability:()=>{},loadTeacher:async()=>null,
   window:{FrescoMotionReview:{isBusy:()=>false}},updateAnalysisSteps:()=>{},renderDash:()=>{},syncLive:()=>{},saveCurrentRecord:()=>{},videoRallyGap:()=>2.5,
   MEASUREMENT:require('../measurement-spec.js'),FrescoMotion:require('../motion-core.js'),FrescoMotionReview:{open:options=>{workflow=options;}},
   analyzeFile:async()=>{audioCalls++;return{onsets:[1,1.5],aiRejected:0};},buildStats:times=>({hits:times.map(t=>({t}))})});

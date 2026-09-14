@@ -398,6 +398,7 @@
     <div class="setting"><label>実測校正係数（空欄=物理モデル）</label><input type="number" id="calib" placeholder="自動" step="0.005" min="0.001"></div>
     <div class="setting"><label>ライブ/解析: 信頼する初速上限 [km/h]（超は集計から除外）</label><input type="number" id="maxTrust" placeholder="既定" step="5" min="1"></div>
     <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
+    <div class="setting"><label>解析: 高精度の球検出モデル（PCのChrome向け・実験。初回はモデル113MB DL/要ネット。球の軌跡の見落としを補うだけで、速度・打数は変わりません）</label><input type="checkbox" id="teacherBall"></div>
     <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
@@ -642,6 +643,7 @@
 <script src="motion-core.js"></script>
 <script src="shot-analysis.js"></script>
 <script src="ball-tracker.js"></script>
+<script src="teacher-model.js"></script>
 <script src="motion-review.js"></script>
 <script src="video-quality.js"></script>
 <script src="share-core.js"></script>
@@ -767,7 +769,7 @@ const LIVE_SESSION_STORAGE_KEY = "frescoball-speed.live-session.v1";
 const PERSISTED_SETTING_IDS = [
   "distance", "micPos", "firstOnsetSide", "playerAName", "playerBName", "sens", "voiceCut", "rallyGap",
   "cdSecs", "restMin", "classicTimeouts", "sndTick", "sndBgm", "bgmVol", "sndVoice", "minBeep",
-  "calib", "maxTrust", "aiFilter", "aiThresh", "timerMin", "rule"
+  "calib", "maxTrust", "aiFilter", "aiThresh", "timerMin", "rule", "teacherBall"
 ];
 function currentSettings() {
   const values = {};
@@ -789,6 +791,25 @@ function applySettings(settings) {
   }
   if (typeof bgmEl !== "undefined" && bgmEl) bgmEl.volume = Number($("bgmVol").value) || 0;
   renderSndBtn(); renderPlayers(); updateRuleUI(); updateRestVisibility();
+}
+// 高精度の球検出モデル（PC の Chrome 向け・任意）。設定がオンで WebGPU があるときだけ読み込む。
+// 球の軌跡の見落としを補うだけに使い、速度・打数（音声基準）には使わない。ONNX Runtime は CDN から取得する。
+const TEACHER_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/";
+const TEACHER_ORT_SRI = "sha384-spJihwjw5DABHdp7XVsBfqbR7hlxe8gdmFg+FQUzeWG58zV7iOKXd30heVr3CZG0";   // ort.webgpu.min.js 1.29.0
+let teacherInstance = null, teacherLoading = null;
+async function loadTeacher(onProgress) {
+  const on = $("teacherBall") && $("teacherBall").checked;
+  if (!on || !window.FrescoTeacher || !FrescoTeacher.supported()) return null;
+  if (teacherInstance) return teacherInstance;
+  if (!teacherLoading) teacherLoading = (async () => {
+    if (!window.ort) {
+      await new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = TEACHER_ORT_BASE + "ort.webgpu.min.js"; s.integrity = TEACHER_ORT_SRI; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => reject(new Error("ONNX Runtime を取得できません")); document.head.append(s); });
+      window.ort.env.wasm.wasmPaths = TEACHER_ORT_BASE;
+    }
+    teacherInstance = await FrescoTeacher.createTeacher({ ort: window.ort, baseUrl: "./models/rfdetr-nano/", onProgress });
+    return teacherInstance;
+  })().finally(() => { teacherLoading = null; });
+  return teacherLoading;
 }
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(currentSettings())); } catch (_) {}
@@ -2321,7 +2342,7 @@ function openMotionWorkflow() {
     const f = selectedVideoFile;
     FrescoMotionReview.open({getSpeedHits:()=>curStats?.hits||[],measureEvents:events=>FrescoMotion.estimatedSpeeds(events,validatedVideoDistance($("upDistance").value),currentVideoSettings,MEASUREMENT,curStats?.audioHits||[]),mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
       source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,lastModified:f?.lastModified,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
-      hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion,
+      hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion, teacher:loadTeacher,
       onDistance:value => { $("upDistance").value=String(value); currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(value);if(curStats?.audioHits)curStats.audioHits=rebuildTimeline(curStats.audioHits).hits; },
       analyzeAudio:async (onProgress,shouldContinue) => {
         if (!f) throw new Error("元の動画を選び直してください");

@@ -24,7 +24,11 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v41/);
+assert.match(sw, /frescoball-speed-shell-v42/);
+assert.match(sw, /teacher-model\.js/);
+assert.match(html, /teacher-model\.js/);
+assert.match(html, /id="teacherBall"/);
+assert.match(html, /teacher:loadTeacher/);
 assert.match(sw, /result-utils\.js/);
 assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 assert.match(sw, /cache\.match\(request\)/);

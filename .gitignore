@@ -2,3 +2,4 @@
 .local-cert/
 __pycache__/
 *.py[cod]
+models/*/part-*.bin
