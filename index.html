@@ -398,7 +398,7 @@
     <div class="setting"><label>実測校正係数（空欄=物理モデル）</label><input type="number" id="calib" placeholder="自動" step="0.005" min="0.001"></div>
     <div class="setting"><label>ライブ/解析: 信頼する初速上限 [km/h]（超は集計から除外）</label><input type="number" id="maxTrust" placeholder="既定" step="5" min="1"></div>
     <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
-    <div class="setting"><label>解析: 高精度の球検出モデル（PCのChrome向け・実験。初回はモデル113MB DL/要ネット。球の軌跡の見落としを補うだけで、速度・打数は変わりません）</label><input type="checkbox" id="teacherBall"></div>
+    <div class="setting"><label>解析: 球の検出モデル（実験・初回は通信。PCのChromeは高精度113MB、スマホなどは軽量3.5MB。球の軌跡の見落としを補うだけで、速度・打数は変わりません）</label><input type="checkbox" id="teacherBall"></div>
     <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
@@ -806,7 +806,10 @@ async function loadTeacher(onProgress) {
       await new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = TEACHER_ORT_BASE + "ort.webgpu.min.js"; s.integrity = TEACHER_ORT_SRI; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => reject(new Error("ONNX Runtime を取得できません")); document.head.append(s); });
       window.ort.env.wasm.wasmPaths = TEACHER_ORT_BASE;
     }
-    teacherInstance = await FrescoTeacher.createTeacher({ ort: window.ort, baseUrl: "./models/rfdetr-nano/", onProgress });
+    // PC の Chrome（WebGPU）は高精度モデル、スマホや WebGPU の無い環境は軽量モデル。?model=yolox|rfdetr で検証用に固定できる
+    const choice = FrescoTeacher.pick(navigator, new URLSearchParams(location.search).get("model"));
+    if (!choice) throw new Error("この環境では球の検出モデルを使えません");
+    teacherInstance = await FrescoTeacher.createTeacher({ ort: window.ort, baseUrl: choice.base, providers: choice.providers, onProgress });
     return teacherInstance;
   })().finally(() => { teacherLoading = null; });
   return teacherLoading;

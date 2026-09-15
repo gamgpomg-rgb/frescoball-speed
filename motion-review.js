@@ -268,7 +268,7 @@ window.FrescoMotionReview = (() => {
             teacherCtx.drawImage(video,x0,y0,size,size,0,0,teacher.size,teacher.size);teacherCalls++;
             let hit=null;try{hit=await teacher.detect(teacherCtx.getImageData(0,0,teacher.size,teacher.size));}catch(e){hit=null;}
             if(token!==serial)return;
-            if(hit&&hit.conf>=.5){const px=x0+hit.x*size,py=y0+hit.y*size;teacherHits++;if(!extra.some(e=>Math.hypot(e.x-px,e.y-py)<18*unitPx))extra.push({x:px,y:py,local:true,teacher:true});}}
+            if(hit&&hit.conf>=(teacher.conf??.5)){const px=x0+hit.x*size,py=y0+hit.y*size;teacherHits++;if(!extra.some(e=>Math.hypot(e.x-px,e.y-py)<18*unitPx))extra.push({x:px,y:py,local:true,teacher:true});}}
           if(extra.length){pixelDetector.adopt(extra.map(p=>({x:p.x*scale,y:p.y*scale})),t);ballCandidates.push(...extra.map(p=>({x:p.x,y:p.y})));}
           // 次フレーム用の窓: 予測位置、無ければ打音直後（0.2秒）の手首
           watch=[];const tn=t+1/30;

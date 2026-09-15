@@ -24,11 +24,18 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v42/);
+assert.match(sw, /frescoball-speed-shell-v43/);
 assert.match(sw, /teacher-model\.js/);
 assert.match(html, /teacher-model\.js/);
 assert.match(html, /id="teacherBall"/);
 assert.match(html, /teacher:loadTeacher/);
+assert.match(html, /FrescoTeacher\.pick\(navigator/);
+for (const model of ["rfdetr-nano", "yolox-nano"]) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "models", model, "manifest.json"), "utf8"));
+  assert(Array.isArray(manifest.parts) && manifest.parts.length >= 1 && manifest.parts.every(p => /^part-\d+\.bin$/.test(p.file) && /^[0-9a-f]{64}$/.test(p.sha256)), `${model} manifest lists hashed parts`);
+  assert(manifest.totalBytes === manifest.parts.reduce((s, p) => s + p.bytes, 0), `${model} manifest sizes add up`);
+}
+assert(fs.existsSync(path.join(__dirname, "..", "models", "yolox-nano", "part-00.bin")), "the lightweight model ships with the app");
 assert.match(sw, /result-utils\.js/);
 assert.match(sw, /key\.startsWith\(CACHE_PREFIX\)/);
 assert.match(sw, /cache\.match\(request\)/);

@@ -1,0 +1,30 @@
+{
+ "name": "yolox-nano-frescoball-20260915",
+ "kind": "yolox",
+ "license": "Apache-2.0 (YOLOX) / fine-tuned on Giftn frescoball crops",
+ "totalBytes": 3683771,
+ "sha256": "bf6296c1235d29cae311fd74cdf6eb67227b044238aa84800adb6c7e98cee36f",
+ "input": {
+  "name": "images",
+  "shape": [
+   1,
+   3,
+   384,
+   384
+  ],
+  "normalize": "bgr255"
+ },
+ "outputs": {
+  "boxes": "output",
+  "stride": 6
+ },
+ "conf": 0.4,
+ "window": 192,
+ "parts": [
+  {
+   "file": "part-00.bin",
+   "bytes": 3683771,
+   "sha256": "bf6296c1235d29cae311fd74cdf6eb67227b044238aa84800adb6c7e98cee36f"
+  }
+ ]
+}

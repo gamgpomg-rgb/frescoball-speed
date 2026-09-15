@@ -3,3 +3,4 @@
 __pycache__/
 *.py[cod]
 models/*/part-*.bin
+!models/yolox-nano/part-*.bin

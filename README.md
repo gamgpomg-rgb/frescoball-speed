@@ -194,3 +194,7 @@ A/Dの自動分類・補完呼び出し、動画カウンター、詳細の打�
 - モデルの置き場所: `models/rfdetr-nano/`（manifest.json と 24MB ずつの分割ファイル、合計 113MB）。分割ファイルは git に入れず（.gitignore）、`wrangler deploy` で speed.giftn.co.jp にだけ配信します。GitHub Pages のミラーにはモデルが無いため、設定をオンにしても「モデルを取得できません」と出て従来どおり動きます。元ファイルと再生成手順は `~/dev/outputs/80_コミュニティ/frescoball-ball-annotation-20260913/`（runs/export_epoch16/rfdetr-nano.onnx を 24MiB ごとに分割して manifest.json を作る）。
 - 実行環境: ONNX Runtime Web 1.29.0 を jsdelivr から取得します（初回のみ通信。版を固定し、本体スクリプトは SRI で検証）。モデルは初回取得後に Cache API（frescoball-teacher-v1）へ保存します。
 - 検証: tests/test_teacher_model.js（前処理・復号・結合・対応判定）。ブラウザでは PyTorch 版と同じ位置・信頼度を出すことを確認済み。
+
+### 軽量モデル（スマホなど向け、2026-09-15追加）
+
+同じ設定で、WebGPU の無い環境やスマホでは軽量モデル（YOLOX-Nano を同じ切り抜きで教え直したもの、Apache 2.0、3.5MB、`models/yolox-nano/`、git に含む）を使います。選び方は teacher-model.js の `pick()`（PC の Chrome で WebGPU があれば高精度、それ以外は軽量。`?model=yolox` / `?model=rfdetr` で固定可）。軽量モデルの入力は BGR 0〜255（正規化なし）、出力は [1,3024,6]（cx,cy,w,h,obj,cls）で、obj×cls が最大の 1 つを使い、しきい値は manifest の conf（0.4）。検証（同じ 373 枚・球 148 個）: 148/148 検出・誤検出 1。規則ベースが見逃した 26 フレームの回収は高精度 26/26、軽量 23/26（残り 3 枚は位置は合っているが確信度 0.11〜0.37）。Chrome（WebGPU）で 1 窓 24ms、wasm 1 スレッドで 376ms。

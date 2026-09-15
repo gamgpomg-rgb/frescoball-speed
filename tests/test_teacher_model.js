@@ -25,12 +25,26 @@ const assert=require('assert'),T=require('../teacher-model');
   const out=T.assemble([a,b],5);assert.deepEqual(Array.from(out),[1,2,3,4,5]);
   assert.throws(()=>T.assemble([a,b],6),/大きさ/);
 }
-// 対応判定: WebGPU のある PC だけ。Node（navigator なし）や iPhone は対象外
+// モデルの選び方: WebGPU のある PC は高精度（rfdetr）、スマホや WebGPU の無い環境は軽量（yolox、wasm）
 {
-  assert.equal(T.supported(null),false);
-  assert.equal(T.supported({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'}),true);
-  assert.equal(T.supported({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'}),false);
-  assert.equal(T.supported({userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'}),false);
+  assert.equal(T.pick(null),null);assert.equal(T.supported(null),false);
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'}).model,'rfdetr');
+  const phone=T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'});
+  assert.equal(phone.model,'yolox');assert.deepEqual(phone.providers,['webgpu','wasm']);
+  const noGpu=T.pick({userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'});
+  assert.equal(noGpu.model,'yolox');assert.deepEqual(noGpu.providers,['wasm']);
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'},'yolox').model,'yolox','forced choice for verification');
+  assert.equal(T.supported({userAgent:'Mozilla/5.0 (iPhone)'}),true);
+}
+// YOLOX 用: BGR 0〜255 の前処理と、obj×cls が最大の 1 つを選ぶ復号（座標は入力画素→相対）
+{
+  const data=new Uint8ClampedArray([10,20,30,255, 40,50,60,255, 70,80,90,255, 100,110,120,255]);
+  const x=T.preprocessBgr255(data,2);
+  assert.deepEqual(Array.from(x),[30,60,90,120, 20,50,80,110, 10,40,70,100],'B, G, R planes without normalisation');
+  const out=new Float32Array([100,100,20,20,.9,.2, 192,96,20,20,.8,.9, 300,300,20,20,.1,.99]);
+  const best=T.decodeYolox(out,3,6,.05,384);
+  assert(best&&Math.abs(best.x-.5)<1e-9&&Math.abs(best.y-.25)<1e-9&&Math.abs(best.conf-.72)<1e-6,'obj×cls picks the second box');
+  assert.equal(T.decodeYolox(out,3,6,.8,384),null,'minimum confidence is respected');
 }
 // 分割ファイルの照合: SHA-256 が manifest と一致しないときは失敗にし、キャッシュからも消す
 (async()=>{

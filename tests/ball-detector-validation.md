@@ -66,3 +66,13 @@ Node ハーネス（同じ3区間・骨格は IMG_0001 のみ）: 3区間とも�
 |IMG_0001 180〜188（返球12）|94%・82%|94%・82%|
 
 永続テスト: test_ball_detector.js「Parabolic motion model and carried predictions」、test_ball_tracker.js「Parabolic display bridge and gap interpolation」。ブラウザ本体での再解析は未実施（変更は運動モデルと橋渡しの形のみ）。
+
+# 学習モデルの組み込み（2026-09-15）
+
+- 高精度（RF-DETR nano、113MB、PC の Chrome・WebGPU）と軽量（YOLOX-Nano、3.5MB、スマホなど）を、規則ベースが予測窓で何も見つけないときだけ当てる。速度・打数は音声基準のまま。
+- 学習データ: 400 枚のラベルから切り抜き 1,468 枚（学習）と 373 枚（検証、IMG_9997 のみ）。
+- 検証（切り抜き 373 枚・球 148 個）: 高精度 148/148・誤検出 5、軽量 148/148・誤検出 1（しきい値 0.5／0.4）。
+- 規則ベースが見逃した 26 フレーム（3 区間）の回収: 高精度 26/26、軽量 23/26（残り 3 枚は位置は正しく確信度 0.11〜0.37）。
+- アプリ本体（IMG_9996 26.5〜32.5s、既定の枠、実骨格）: 飛行中の観測 107/124（86%）→ 高精度 123/124、軽量 123/124。IMG_0001 180〜188s: 162/164 → 163/164。IMG_9997: 78/78 のまま。
+- 1 窓あたり（Chrome、M1 Mac）: 高精度 112ms（WebGPU）、軽量 13ms（WebGPU）／73ms（wasm 1 スレッド）。
+- 別コート・逆光・別の球色は未検証。永続テスト: tests/test_teacher_model.js、tests/test_app_regressions.js（manifest の整合）。
