@@ -24,7 +24,7 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v43/);
+assert.match(sw, /frescoball-speed-shell-v44/);
 assert.match(sw, /teacher-model\.js/);
 assert.match(html, /teacher-model\.js/);
 assert.match(html, /id="teacherBall"/);

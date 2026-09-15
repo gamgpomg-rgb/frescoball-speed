@@ -29,12 +29,13 @@ const assert=require('assert'),T=require('../teacher-model');
 {
   assert.equal(T.pick(null),null);assert.equal(T.supported(null),false);
   assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'}).model,'rfdetr');
-  const phone=T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'});
-  assert.equal(phone.model,'yolox');assert.deepEqual(phone.providers,['webgpu','wasm']);
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'}),null,'phones stay on the rule-based path until the Safari crash is understood');
+  const forcedPhone=T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'},'yolox');
+  assert.equal(forcedPhone.model,'yolox');assert.deepEqual(forcedPhone.providers,['webgpu','wasm']);
   const noGpu=T.pick({userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'});
   assert.equal(noGpu.model,'yolox');assert.deepEqual(noGpu.providers,['wasm']);
   assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'},'yolox').model,'yolox','forced choice for verification');
-  assert.equal(T.supported({userAgent:'Mozilla/5.0 (iPhone)'}),true);
+  assert.equal(T.supported({userAgent:'Mozilla/5.0 (iPhone)'}),false);
 }
 // YOLOX 用: BGR 0〜255 の前処理と、obj×cls が最大の 1 つを選ぶ復号（座標は入力画素→相対）
 {

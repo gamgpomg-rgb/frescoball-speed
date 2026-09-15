@@ -52,7 +52,10 @@
     const mobile=/Mobi|Android|iPhone|iPad|iPod/i.test(nav.userAgent||''),gpu=!!nav.gpu;
     const rfdetr={model:'rfdetr',base:'./models/rfdetr-nano/',providers:['webgpu','wasm']},yolox={model:'yolox',base:'./models/yolox-nano/',providers:gpu?['webgpu','wasm']:['wasm']};
     if(force==='rfdetr')return rfdetr;if(force==='yolox')return yolox;
-    return gpu&&!mobile?rfdetr:yolox;
+    // スマホは当面は対象外（iPhone の Safari で解析中にページが落ちる報告があり、原因を確認するまで止める）。
+    // 検証時は ?model=yolox で明示的に有効にする。PC で WebGPU が無い場合は軽量版を wasm で使う
+    if(mobile)return null;
+    return gpu?rfdetr:yolox;
   }
   function supported(nav=typeof navigator!=='undefined'?navigator:null){return !!pick(nav);}
   // SHA-256 の16進表記（manifest の値と突き合わせる）。WebCrypto が無い環境では null

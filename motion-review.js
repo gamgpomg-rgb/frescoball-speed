@@ -233,7 +233,7 @@ window.FrescoMotionReview = (() => {
       // 高精度の球検出モデル（PC の Chrome・任意）。予測位置の小窓で規則ベースが何も見つけないときだけ当てる。
       let teacher=null,teacherCanvas=null,teacherCtx=null,teacherCalls=0,teacherHits=0;
       if(callbacks.teacher&&pixelDetector&&output.length<count){
-        try{say('高精度の球検出モデルを準備しています。初回は通信が必要です');teacher=await callbacks.teacher(p=>{if(token===serial)say(`高精度の球検出モデルを取得中 ${Math.round(p*100)}%`);});if(token!==serial)return;
+        try{teacher=await callbacks.teacher(p=>{if(token===serial)say(`球の検出モデルを取得中 ${Math.round(p*100)}%（初回だけ通信します）`);});if(token!==serial)return;
           if(teacher){teacherCanvas=document.createElement('canvas');teacherCanvas.width=teacherCanvas.height=teacher.size;teacherCtx=teacherCanvas.getContext('2d',{willReadFrequently:true});}
         }catch(e){teacher=null;say(`高精度モデルは使えません：${e.message}`);}
       }
