@@ -96,7 +96,7 @@ window.FrescoShare = (() => {
       g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の推定初速（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1850,952);
       g.fillStyle='#9c92b3';g.font='400 24px "Hiragino Sans", sans-serif';
     }
-    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed?'音の打数＋映像で確認・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
+    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed&&(motion?.events||[]).some(e=>e.origin==='video')?'映像の球の軌跡から打点を推定・設定距離による推定初速':confirmed?'音の打数＋映像で確認・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
     return canvas;
   }
   function open(options){
@@ -128,9 +128,11 @@ window.FrescoShare = (() => {
     if(displayTracks.length)trail.value='on';
     const measurementLabel=label('表示する記録'),measurement=e('select','',measurementLabel);
     const hasAudio=record?.analysisMode!=='motion'||Array.isArray(record?.audioHits);
-    for(const [value,text]of [['audio','音から計算した記録'],['confirmed','音の打数＋映像で確認']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
+    // 映像が主のモード（実験）で作った解析は、打数の基準が音ではなく映像の打点になる。
+    const videoBasis=(motion?.events||[]).some(event=>event.origin==='video');
+    for(const [value,text]of [['audio','音から計算した記録'],['confirmed',videoBasis?'映像から出した打点（実験）':'音の打数＋映像で確認']]){const o=e('option',text,measurement);o.value=value;if(value==='audio'&&!hasAudio)o.disabled=true;if(value==='confirmed'&&!motion?.events?.some(event=>['auto','confirmed'].includes(event.status)&&['a','b'].includes(event.player)))o.disabled=true;}
     if(record?.analysisMode==='motion')measurement.value='confirmed';
-    e('p','打数は音が基準です。映像で読み取れない打球も含み、左右は前後の動きから推定します。明示的に除外した音は数えません。',form);
+    e('p',videoBasis?'打数は映像の球の向きが入れ替わる瞬間が基準です（実験）。球を追えなかった返球は数に入りません。速度の目安は±10%です。':'打数は音が基準です。映像で読み取れない打球も含み、左右は前後の動きから推定します。明示的に除外した音は数えません。',form);
     const tl=label('タイトル'),title=e('input','',tl);title.value='今日のラリー';title.maxLength=24;tl.hidden=options.format!=='story';
     const startLabel=label('開始位置（秒）'),start=e('input','',startLabel);start.type='number';start.min=0;start.max=video.duration;start.step='.1';start.value=Math.min(video.currentTime,Math.max(0,video.duration-.1)).toFixed(2);
     const lengthLabel=label('長さ'),length=e('select','',lengthLabel);for(const n of [8,15,30,60]){const o=e('option',`${n}秒`,length);o.value=n;}length.value='15';lengthLabel.hidden=Boolean(options.image);if(options.format!=='story'){const all=e('option','全編',length);all.value=video.duration;all.dataset.full='';}

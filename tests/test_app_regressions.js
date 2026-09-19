@@ -24,7 +24,12 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v44/);
+assert.match(sw, /frescoball-speed-shell-v45/);
+// 映像が主の打点（実験・任意）: 設定があり、解析へ渡され、既定はオフ（音基準のまま）
+assert.match(html, /id="videoHits"/);
+assert.doesNotMatch(html, /id="videoHits"[^>]*checked/);
+assert.match(html, /videoFirst:\(\)=>Boolean\(\$\("videoHits"\)\?\.checked\)/);
+assert.match(fs.readFileSync(path.join(root, "motion-review.js"), "utf8"), /M\.videoHits\(observedTracks,regions,video\.videoWidth\)/);
 assert.match(sw, /teacher-model\.js/);
 assert.match(html, /teacher-model\.js/);
 assert.match(html, /id="teacherBall"/);

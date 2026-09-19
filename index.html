@@ -399,6 +399,7 @@
     <div class="setting"><label>ライブ/解析: 信頼する初速上限 [km/h]（超は集計から除外）</label><input type="number" id="maxTrust" placeholder="既定" step="5" min="1"></div>
     <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
     <div class="setting"><label>解析: 球の検出モデル（実験・PC向け・初回は通信。PCのChromeは高精度113MB、WebGPUの無いPCは軽量3.5MB。スマホでは当面使いません。球の軌跡の見落としを補うだけで、速度・打数は変わりません）</label><input type="checkbox" id="teacherBall"></div>
+    <div class="setting"><label>解析: 映像から打点を出す（実験・会場のBGMやMCで音の検出が当てにならない動画向け。球の向きが入れ替わる瞬間を打点にするので、打数・速度・左右が映像基準に変わります。球がよく追える高画質の動画が前提です）</label><input type="checkbox" id="videoHits"></div>
     <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
       ・スマホはコート側面中央（両選手から等距離）に置くのが基本。<br>
@@ -769,7 +770,7 @@ const LIVE_SESSION_STORAGE_KEY = "frescoball-speed.live-session.v1";
 const PERSISTED_SETTING_IDS = [
   "distance", "micPos", "firstOnsetSide", "playerAName", "playerBName", "sens", "voiceCut", "rallyGap",
   "cdSecs", "restMin", "classicTimeouts", "sndTick", "sndBgm", "bgmVol", "sndVoice", "minBeep",
-  "calib", "maxTrust", "aiFilter", "aiThresh", "timerMin", "rule", "teacherBall"
+  "calib", "maxTrust", "aiFilter", "aiThresh", "timerMin", "rule", "teacherBall", "videoHits"
 ];
 function currentSettings() {
   const values = {};
@@ -2149,7 +2150,7 @@ function renderDash() {
   $("dropCount").value=String(drops);
   $("dropEstimateNote").textContent=`打球の間が空いた区切りと、最後の打球後の空白から ${dropInfo.estimated} 回と推定しています。休憩や検出漏れも含まれるため、必要なときだけ実際の回数に直してください。`;
   updateAnalysisSteps();
-  $("analysisNote").textContent = curStats.analysisMode === "motion" ? "打数・球速は音を基準に計測。映像で読み取れない打球も含みます。左右とA／Dは推定、落球数は音の区切りからの推定です。" : "音から求めた速報です。左右は交互の推定で、隣の組の音が含まれることがあります。2人を選ぶと映像でも詳しく調べられます。";
+  $("analysisNote").textContent = curStats.analysisMode === "motion" && curStats.countBasis === "video" ? "打数・球速・左右は、映像の球の向きが入れ替わる瞬間を打点として計測しています（実験）。球を追えなかった返球は数に入りません。速度は音基準より粗く、目安は±10%です。" : curStats.analysisMode === "motion" ? "打数・球速は音を基準に計測。映像で読み取れない打球も含みます。左右とA／Dは推定、落球数は音の区切りからの推定です。" : "音から求めた速報です。左右は交互の推定で、隣の組の音が含まれることがあります。2人を選ぶと映像でも詳しく調べられます。";
   $("dashSummary").innerHTML = [
     ["打数", curStats.total], ["最高速", ag.maxSpeed ? ag.maxSpeed.toFixed(1) : "--"], ["平均速", ag.avgAll ? ag.avgAll.toFixed(1) : "--"],
     ["最長ラリー", curStats.rMax], ["ラリー本数（推定）", curStats.rallies], [dropInfo.corrected ? "落球数（修正済み）" : "落球数（推定）", drops]
@@ -2188,7 +2189,7 @@ function renderSpeedButterfly() {
     <div class="sb-track right"><div class="fill" style="width:${row.r / mx * 100}%"></div></div>
     <div class="sb-band right">${row.label}</div>
   </div>`).join("");
-  $("sbNote").textContent = curStats.analysisMode === "motion" ? "音を基準にした集計です。左右は映像と交互の打順から推定しています。" : curStats.review
+  $("sbNote").textContent = curStats.analysisMode === "motion" && curStats.countBasis === "video" ? "映像の球の軌跡を基準にした集計です（実験）。左右は球の向きが入れ替わった位置から決めています。" : curStats.analysisMode === "motion" ? "音を基準にした集計です。左右は映像と交互の打順から推定しています。" : curStats.review
     ? "旧方式で推定した左右の分布です。打者の正しさは未確認です。"
     : "音から推定した左右の集計です。周囲の打音によってずれることがあります。";
   wrap.hidden = false;
@@ -2345,7 +2346,7 @@ function openMotionWorkflow() {
     const f = selectedVideoFile;
     FrescoMotionReview.open({getSpeedHits:()=>curStats?.hits||[],measureEvents:events=>FrescoMotion.estimatedSpeeds(events,validatedVideoDistance($("upDistance").value),currentVideoSettings,MEASUREMENT,curStats?.audioHits||[]),mode:videoMode,video:v, host:$("motionHost"), distance:validatedVideoDistance($("upDistance").value),
       source:{name:f?.name || currentRecordMeta.fileName,size:f?.size,lastModified:f?.lastModified,width:v.videoWidth,height:v.videoHeight,duration:v.duration},
-      hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion, teacher:loadTeacher,
+      hits:curStats?.audioHits || curStats?.hits || [], initialData:currentMotion, teacher:loadTeacher, videoFirst:()=>Boolean($("videoHits")?.checked),
       onDistance:value => { $("upDistance").value=String(value); currentVideoSettings=currentVideoSettings||currentSettings();currentVideoSettings.values.distance=String(value);if(curStats?.audioHits)curStats.audioHits=rebuildTimeline(curStats.audioHits).hits; },
       analyzeAudio:async (onProgress,shouldContinue) => {
         if (!f) throw new Error("元の動画を選び直してください");
@@ -2383,7 +2384,9 @@ function updateFromMotion(snapshot) {
     run++;best=Math.max(best,run);
     hits.push({t:event.t,idx:hits.length,player:event.player,speed:event.initialKmh,rNow:run});previous=event.t;
   }
-  curStats={...curStats,hits,total:hits.length,rMax:best,rallies,analysisMode:"motion",qualityRejected:0,excluded:0};
+  // 映像が主のモード（origin:"video" の打点）で作られた集計かどうか。説明文と書き出しの表記をこれで切り替える。
+  const countBasis=(snapshot.events||[]).some(e=>e.origin==="video")?"video":"audio";
+  curStats={...curStats,hits,total:hits.length,rMax:best,rallies,analysisMode:"motion",countBasis,qualityRejected:0,excluded:0};
   renderShotSummary(snapshot);renderDash();syncLive();
 }
 function renderShotSummary(snapshot){

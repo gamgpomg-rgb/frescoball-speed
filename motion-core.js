@@ -117,6 +117,42 @@
     for(const [event,reason]of doubtful){event.status='pending';event.reviewReason=reason;}
     return judged;
   }
+  // 映像が主の打点（実験）。会場のBGMやMCで音の打音検出が当てにならない動画向け。
+  // 横に大きく進む追跡＝返球、返球の向きが入れ替わる境目＝打点、とみなす。音は使わない。
+  // 時刻は、到着側と出発側の x(t) を直線で延ばした交点（30fpsの刻みより細かく決まる）。打った側は、
+  // 交点の位置に近い選手枠で決める。2026-09-19の大会動画（1080p・BGMあり）での実測: 打点の取りこぼし約7%、
+  // 音基準の速度との差は中央値4.6%・8割が±10%以内（tests/ball-detector-validation.md）。
+  function videoHits(tracks,regions,width){
+    if(!finite(width)||width<=0)throw new Error('動画の幅が不正です');
+    const minTravel=width*.155,joinSlack=width*.042;
+    const segments=(tracks||[]).map(tr=>(tr.points||[]).filter(p=>point(p)&&finite(p.t)&&!p.predicted)).filter(pts=>pts.length>=6&&Math.abs(pts.at(-1).x-pts[0].x)>=minTravel)
+      .map(pts=>({pts,dir:pts.at(-1).x>pts[0].x?1:-1})).sort((a,b)=>a.pts[0].t-b.pts[0].t);
+    const flights=[];
+    for(const seg of segments){
+      const last=flights.at(-1),gap=last?seg.pts[0].t-last.pts.at(-1).t:Infinity;
+      // 途中で切れた同じ返球（同じ向き・0.3秒以内・位置が戻っていない）はつなぐ
+      if(last&&seg.dir===last.dir&&gap>=0&&gap<=.3&&(seg.pts[0].x-last.pts.at(-1).x)*seg.dir>-joinSlack)last.pts.push(...seg.pts);
+      else flights.push({pts:seg.pts.slice(),dir:seg.dir});
+    }
+    const line=pts=>{const n=pts.length,mt=pts.reduce((s,p)=>s+p.t,0)/n,mx=pts.reduce((s,p)=>s+p.x,0)/n,my=pts.reduce((s,p)=>s+p.y,0)/n;
+      const den=pts.reduce((s,p)=>s+(p.t-mt)**2,0)||1e-9,v=pts.reduce((s,p)=>s+(p.t-mt)*(p.x-mx),0)/den;return {at:t=>mx+v*(t-mt),v,my};};
+    const centers=Array.isArray(regions)&&regions.length===2&&regions.every(r=>r&&[r.x,r.y,r.w,r.h].every(finite))?regions.map(r=>r.x+r.w/2):null;
+    const events=[];
+    for(let i=1;i<flights.length;i++){
+      const a=flights[i-1],b=flights[i],ta=a.pts.at(-1).t,tb=b.pts[0].t;
+      if(a.dir===b.dir||tb-ta<-.05||tb-ta>.6)continue;
+      const la=line(a.pts.slice(-4)),lb=line(b.pts.slice(0,4)),mid=(ta+tb)/2;
+      // la.at(t)=lb.at(t) を解く。追跡の端から0.1秒を超えて外れる交点は信用せず中点を使う
+      let t=Math.abs(la.v-lb.v)>1e-6?(lb.at(0)-la.at(0))/(la.v-lb.v):mid;
+      if(!(t>=ta-.1&&t<=tb+.1))t=mid;
+      if(events.length&&t-events.at(-1).t<.15)continue;
+      const x=(la.at(t)+lb.at(t))/2;
+      const player=centers?(Math.abs(x-centers[0])<=Math.abs(x-centers[1])?'a':'b'):null;
+      events.push({id:`video-${events.length}`,t:Math.max(0,t),player,suggestedPlayer:player,status:player?'auto':'pending',origin:'video',provenance:'video-reversal-v1',
+        evidence:'球の向きが入れ替わった位置と時刻（映像から推定）',reviewReason:player?'':'打った側を決められません（2人の範囲が未設定）'});
+    }
+    return events;
+  }
   function speeds(events,defaultDistance){
     const fallback=distance(defaultDistance);
     if(!Array.isArray(events)||events.some(e=>!e||!finite(e.t)||e.t<0))throw new Error('打点時刻が不正です');
@@ -137,14 +173,16 @@
   // Audio is the count authority. Missing visual evidence is an annotation,
   // not a reason to discard an onset. Explicit exclusions remain authoritative.
   function countedEvents(audioHits,events,gap=2.5){
-    const source=Array.isArray(audioHits)&&audioHits.length?audioHits:(events||[]).filter(e=>e.origin==='audio'||['auto','confirmed'].includes(e.status));
+    // 映像が主のモード（origin:'video' の打点がある）では、音の打数ではなく映像の打点を数える。
+    const videoMode=(events||[]).some(e=>e.origin==='video');
+    const source=!videoMode&&Array.isArray(audioHits)&&audioHits.length?audioHits:(events||[]).filter(e=>e.origin==='audio'||e.origin==='video'||['auto','confirmed'].includes(e.status));
     const matched=new Set();
     const out=source.map((h,i)=>{
       const e=(events||[]).find(e=>Math.abs(e.t-h.t)<.001);if(e)matched.add(e);
       if(e?.status==='ignored')return null;
       const known=e&&['auto','confirmed'].includes(e.status)&&['a','b'].includes(e.player);
       return {...h,...e,id:e?.id||`audio-${i}`,t:h.t,status:known?e.status:'auto',player:known?e.player:null,
-        countSource:'audio',playerEstimated:!known,visualStatus:e?.status||'pending',reviewRequired:!known||e.reviewRequired};
+        countSource:e?.origin==='video'?'video':'audio',playerEstimated:!known,visualStatus:e?.status||'pending',reviewRequired:!known||e.reviewRequired};
     }).filter(Boolean);
     for(const e of events||[])if(!matched.has(e)&&e.status==='confirmed'&&['a','b'].includes(e.player))out.push({...e,countSource:'manual',playerEstimated:false});
     out.sort((a,b)=>a.t-b.t);
@@ -160,11 +198,13 @@
     return speeds(events,fallback).map(event=>{
       if(event.averageKmh==null)return {...event,initialKmh:null,speed:null};
       if(!measurement?.measureInterval)return {...event,initialKmh:null,speed:null,reason:'速度モデルを読み込めません'};
-      const index=audioHits.findIndex(h=>Math.abs(h.t-event.previousTime)<.001);
-      if(values.micPos==='near'&&(index<0||audioHits[index+1]?.t!==event.t))return {...event,initialKmh:null,speed:null,reason:'マイク側を確認してください'};
+      // 映像で決めた打点どうしの間隔には、音がマイクへ届くまでの遅れが入らない。マイク位置の補正はしない。
+      const videoTimed=event.origin==='video';
+      const index=videoTimed?-1:audioHits.findIndex(h=>Math.abs(h.t-event.previousTime)<.001);
+      if(!videoTimed&&values.micPos==='near'&&(index<0||audioHits[index+1]?.t!==event.t))return {...event,initialKmh:null,speed:null,reason:'マイク側を確認してください'};
       const calibration=Number(values.calib),limit=Number(values.maxTrust);
       const result=measurement.measureInterval({observedSeconds:event.t-event.previousTime,lengthM:event.usedDistanceM,
-        pairStartIndex:Math.max(0,index),micPosition:values.micPos||'center',firstOnsetSide:values.firstOnsetSide||'near',
+        pairStartIndex:Math.max(0,index),micPosition:videoTimed?'center':(values.micPos||'center'),firstOnsetSide:values.firstOnsetSide||'near',
         calibrationFactor:calibration>0?calibration:null,maxInitialSpeedKmh:limit>0?limit:undefined});
       return {...event,averageKmh:result.averageSpeedKmh??null,initialKmh:result.accepted?result.initialSpeedKmh:null,
         speed:result.accepted?result.initialSpeedKmh:null,reason:result.accepted?'':result.reason,speedDefinition:'estimated-initial'};
@@ -206,5 +246,5 @@
     });
     return {schema:'frescoball-motion-v1',source,settings,frames,events,regions,legacy:Boolean(legacy)};
   }
-  return {countedEvents,distance,posture,track,nearestFrame,evidence,autoReview,speeds,estimatedSpeeds,normalize};
+  return {countedEvents,distance,posture,track,nearestFrame,evidence,autoReview,videoHits,speeds,estimatedSpeeds,normalize};
 });
