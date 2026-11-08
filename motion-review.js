@@ -239,14 +239,19 @@ window.FrescoMotionReview = (() => {
       }
       const began=Date.now();
       const crops=roi.map(r=>{const c=document.createElement('canvas');c.width=Math.max(8,Math.min(256,Math.round(512*r.w/r.h)));c.height=Math.max(8,Math.min(512,Math.round(c.width*r.h/r.w)));return {canvas:c,context:c.getContext('2d')};});
+      // 追従枠。手で引いた枠（roi）を基準に、直前の骨格へ切り出し位置を寄せる。再開時は最後の骨格から起こす
+      const follow=roi.map(r=>({box:{...r},lost:0}));
+      if(output.length){const lastPoses=output.at(-1).poses||[];for(let person=0;person<roi.length;person++)follow[person]=M.followRegion({base:roi[person],otherBase:roi[1-person],pose:lastPoses[person],width:video.videoWidth,height:video.videoHeight});}
       for(let n=output.length;n<count;n++){
         if(token!==serial)return;const t=start+n/30;await seek(t);if(token!==serial)return;
         const samplePose=!!schedule[n],poses=!samplePose&&output.length?output.at(-1).poses:[];
         if(samplePose)for(let person=0;person<roi.length;person++){
-          const r=roi[person],{canvas:crop,context:cropContext}=crops[person];
+          const r=follow[person].box,{canvas:crop,context:cropContext}=crops[person];
+          const cw=Math.max(8,Math.min(256,Math.round(512*r.w/r.h))),ch=Math.max(8,Math.min(512,Math.round(cw*r.h/r.w)));if(crop.width!==cw||crop.height!==ch){crop.width=cw;crop.height=ch;}
           cropContext.drawImage(video,r.x,r.y,r.w,r.h,0,0,crop.width,crop.height);
           const result=detector.detect(crop);
-          poses.push((result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence})));result.close?.();
+          const pose=(result.landmarks[0]||[]).map(p=>({x:r.x+p.x*r.w,y:r.y+p.y*r.h,visibility:p.visibility,presence:p.presence}));poses.push(pose);result.close?.();
+          follow[person]=M.followRegion({base:roi[person],current:r,other:follow[1-person]?.box,otherBase:roi[1-person],pose,width:video.videoWidth,height:video.videoHeight,lost:follow[person].lost});
         }
         if(n%6===0||n===count-1){
           const elapsed=(Date.now()-began)/1000,remaining=n>resumed&&elapsed>5?Math.ceil(elapsed/(n-resumed)*(count-n)):null;

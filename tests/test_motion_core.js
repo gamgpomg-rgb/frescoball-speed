@@ -107,3 +107,27 @@ console.log('Separate sustained track convergence accepted; missing, mismatched 
  assert.equal(slow.length,2);assert.equal(slow[1].speed,null,'slow contact remains counted without a speed');
  console.log('Unified initial speed, distance changes, microphone direction and count versus speed acceptance passed');
 }
+
+// Follow box: the pose crop follows the player, never crosses to the other side, and falls back to the drawn box.
+{
+  const W=1340,H=598,base=[{x:40,y:230,w:160,h:330},{x:1170,y:200,w:160,h:360}];
+  const person=(cx,top,height,vis=.9)=>{const p=Array.from({length:33},()=>({x:cx,y:top+height/2,visibility:0}));const put=(i,x,y)=>{p[i]={x,y,visibility:vis};};
+    put(0,cx,top);put(11,cx-20,top+height*.2);put(12,cx+20,top+height*.2);put(23,cx-15,top+height*.55);put(24,cx+15,top+height*.55);put(25,cx-15,top+height*.78);put(26,cx+15,top+height*.78);put(27,cx-15,top+height);put(28,cx+15,top+height);return p;};
+  const near=M.followRegion({base:base[1],otherBase:base[0],pose:person(1250,210,340),width:W,height:H});
+  assert(near.followed);assert(Math.abs(near.box.x+near.box.w/2-1250)<1,'centres on the player');
+  const walked=M.followRegion({base:base[1],current:near.box,otherBase:base[0],pose:person(1000,210,340),width:W,height:H});
+  assert(walked.followed);assert(Math.abs(walked.box.x+walked.box.w/2-1000)<1,'follows the player away from the drawn box');
+  assert(walked.box.x>=0&&walked.box.x+walked.box.w<=W,'stays inside the frame');
+  const cross=M.followRegion({base:base[1],current:walked.box,otherBase:base[0],pose:person(300,210,340),width:W,height:H});
+  const mid=(base[0].x+base[0].w/2+base[1].x+base[1].w/2)/2;
+  assert(cross.box.x+cross.box.w/2>mid,'never crosses the centre line towards the other player');
+  const far=M.followRegion({base:base[1],current:near.box,otherBase:base[0],pose:person(1000,260,120),width:W,height:H});
+  assert(!far.followed&&far.lost===1,'a small far person is not followed');
+  let state={box:near.box,lost:0};for(let i=0;i<8;i++)state=M.followRegion({base:base[1],current:state.box,otherBase:base[0],pose:[],width:W,height:H,lost:state.lost});
+  assert.deepEqual(state.box,base[1],'after repeated misses the crop returns to the drawn box');
+  const overlap=M.followRegion({base:base[0],current:base[0],other:{x:120,y:230,w:160,h:330},otherBase:base[1],pose:person(180,240,320),width:W,height:H});
+  assert(!overlap.followed,'does not move onto the other player\'s box');
+  const partial=M.followRegion({base:base[0],otherBase:base[1],pose:person(120,240,320,.3),width:W,height:H});
+  assert(!partial.followed,'low-visibility landmarks do not steer the box');
+  console.log('Follow box tracks the player, respects the centre line, ignores far people and falls back to the drawn box');
+}

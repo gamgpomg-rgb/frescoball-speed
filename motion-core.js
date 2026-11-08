@@ -246,5 +246,32 @@
     });
     return {schema:'frescoball-motion-v1',source,settings,frames,events,regions,legacy:Boolean(legacy)};
   }
-  return {countedEvents,distance,posture,track,nearestFrame,evidence,autoReview,videoHits,speeds,estimatedSpeeds,normalize};
+  // 追従枠。骨格推定の切り出し位置を直前の骨格に合わせて動かす。手で引いた枠（base）が基準で、
+  // 相手側へは2つの枠の中心線を越えない・相手の現在の枠とは重ねない・骨格が枠に対して小さすぎる
+  // （奥の人物）ときは追わない。骨格が maxLost 回続けて取れなければ元の枠へ戻す。
+  function followRegion({base,current=null,other=null,otherBase=null,pose=null,width,height,lost=0,maxLost=8}){
+    const prev=current||base;
+    const miss=()=>{const n=lost+1;return {box:n>=maxLost?{...base}:{...prev},lost:n,followed:false};};
+    if(!base||!finite(width)||!finite(height))return {box:{...(prev||{})},lost,followed:false};
+    const ok=p=>point(p)&&finite(p.visibility)&&p.visibility>=.5;
+    const vis=(pose||[]).filter(ok);
+    const core=[11,12,23,24].filter(i=>ok(pose?.[i])).length;
+    if(vis.length<6||core<3)return miss();
+    const xs=vis.map(p=>p.x),ys=vis.map(p=>p.y);
+    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),bw=maxX-minX,bh=maxY-minY;
+    if(bh<base.h*.45||bh>base.h*1.8)return miss();
+    const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+    let w=clamp(Math.max(base.w*.9,bw*2.2),base.w*.8,base.w*1.6),h=clamp(Math.max(base.h*.9,bh*1.4),base.h*.8,base.h*1.6);
+    let cx=(minX+maxX)/2,cy=(minY+maxY)/2-bh*.05;
+    const baseCx=base.x+base.w/2,baseCy=base.y+base.h/2;
+    if(otherBase){const otherCx=otherBase.x+otherBase.w/2,mid=(baseCx+otherCx)/2,gap=Math.abs(otherCx-baseCx);
+      if(baseCx<mid)cx=Math.min(cx,mid-gap*.15);else if(baseCx>mid)cx=Math.max(cx,mid+gap*.15);}
+    cx=clamp(cx,baseCx-base.w*2.5,baseCx+base.w*2.5);cy=clamp(cy,baseCy-base.h,baseCy+base.h);
+    w=Math.min(w,width);h=Math.min(h,height);
+    const box={x:clamp(cx-w/2,0,width-w),y:clamp(cy-h/2,0,height-h),w,h};
+    if(other){const ox=Math.max(0,Math.min(box.x+box.w,other.x+other.w)-Math.max(box.x,other.x)),oy=Math.max(0,Math.min(box.y+box.h,other.y+other.h)-Math.max(box.y,other.y));
+      if(ox*oy>box.w*box.h*.3)return miss();}
+    return {box,lost:0,followed:true};
+  }
+  return {countedEvents,distance,posture,track,nearestFrame,evidence,autoReview,videoHits,speeds,estimatedSpeeds,normalize,followRegion};
 });
