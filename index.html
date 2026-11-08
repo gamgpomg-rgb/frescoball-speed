@@ -2037,14 +2037,15 @@ function renderSpeedReview() {
   const settings = curStats.speedReview;
   $("speedAuto").checked = settings.autoOutliers !== false;
   $("videoSpeedCap").value = settings.maxSpeedKmh ?? "";
+  const overlapCount = curStats.hits.filter(h => h.qualityCode === "overlap_suspect").length;
   $("speedReviewNote").textContent = curStats.speedReviewExcluded
-    ? `${curStats.speedReviewExcluded}件の速度を集計から外しています。下の一覧で戻せます。`
+    ? `${curStats.speedReviewExcluded}件の速度を集計から外しています${overlapCount ? `（うち${overlapCount}件は隣の組の打音が重なっている疑い。打数には数えています）` : ""}。下の一覧で戻せます。`
     : "気になる速度は一覧から外せます。変更はいつでも戻せます。";
   const list = $("speedReviewList"); list.replaceChildren();
   const hits = curStats.hits.filter(h => h.originalSpeed != null).slice().sort((a,b)=>b.originalSpeed-a.originalSpeed).slice(0,20);
   for (const hit of hits) {
     const row = document.createElement("div"), label = document.createElement("span"), seek = document.createElement("button"), toggle = document.createElement("button");
-    label.textContent = `${hit.originalSpeed.toFixed(1)} km/h${hit.qualityExcluded ? "・除外中" : ""}`;
+    label.textContent = `${hit.originalSpeed.toFixed(1)} km/h${hit.qualityExcluded ? `・除外中（${hit.qualityReason || "理由不明"}）` : ""}`;
     seek.textContent = `${hit.t.toFixed(1)}秒を見る`; seek.className = "ghost";
     seek.disabled = !$("upVideo").src;
     seek.onclick = () => { if (!currentMotion) openMotionWorkflow(); $("motionDetails").open=true; if (window.FrescoMotionReview.inspectTime) { FrescoMotionReview.inspectTime(hit.t).catch(error => { $("speedReviewNote").textContent=error.message; }); } else { openMotionWorkflow(); $("upVideo").currentTime=Math.max(0,hit.t-.25); $("motionHost").scrollIntoView({behavior:"smooth"}); } };

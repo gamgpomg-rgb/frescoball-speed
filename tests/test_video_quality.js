@@ -54,3 +54,24 @@ assert.equal(Q.review(globalResult.hits,{overrides:{[lastKey]:'keep'}}).hits.at(
 assert.equal(Q.review(globalResult.hits,{autoOutliers:false}).hits.at(-1).speed,105);
 assert.equal(Q.review(supported,{maxSpeedKmh:95}).hits[12].qualityCode,'above_limit','distribution support does not override explicit caps');
 console.log('Whole-video isolated peaks, repeated upper-range support, minimum sample count and reversibility passed');
+
+// Overlapping rallies from a neighbouring pair: keep the count, withhold speeds nearby.
+{
+  const single = Array.from({length: 12}, (_, i) => ({t: i * .7, speed: 55}));
+  assert.equal(Q.review(single).overlapSuspects.length, 0, 'a steady single rally is not suspect');
+  const fast = Array.from({length: 10}, (_, i) => ({t: i * .27, speed: 100}));
+  assert.equal(Q.review(fast).overlapSuspects.length, 0, 'consistently short intervals are a fast rally, not an overlap');
+  const mixed = [0, .7, 1.4, 2.1, 2.31, 2.8, 3.5, 4.2, 6.9, 7.6, 8.3, 9.0].map(t => ({t, speed: 55}));
+  const r = Q.review(mixed);
+  assert(r.overlapSuspects.some(s => s.t === 2.31), 'an isolated short interval seeds a suspect window');
+  assert.equal(r.hits.length, mixed.length, 'the count is kept');
+  assert.equal(r.hits.find(h => h.t === 2.31).speed, null);
+  assert.equal(r.hits.find(h => h.t === 2.31).qualityCode, 'overlap_suspect');
+  assert.equal(r.hits.find(h => h.t === 1.4).speed, null, 'neighbours within the span lose their speed');
+  assert.equal(r.hits.find(h => h.t === 6.9).speed, 55, 'hits outside the span keep their speed');
+  assert.equal(Q.review(mixed, {overrides: {'2.31': 'keep'}}).hits.find(h => h.t === 2.31).speed, 55, 'a manual keep restores the speed');
+  assert.equal(Q.review(mixed, {overlapSuspect: false}).overlapSuspects.length, 0, 'the rule can be switched off');
+  const tooShort = [0, .7, .85, 1.0, 1.7].map(t => ({t, speed: 55}));
+  assert(Q.review(tooShort).overlapSuspects.length > 0, 'intervals below 0.17 s are always suspect');
+  console.log('Overlap-suspect review keeps counts and withholds speeds near interleaved sounds');
+}

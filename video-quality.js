@@ -1,5 +1,6 @@
 /* Reversible review of estimated speeds. Does not change the physical model.
  * review(hits, { maxSpeedKmh: null | positive number, autoOutliers: true,
+ *                overlapSuspect: true, overlapSeedSeconds: .3, overlapSpanSeconds: 2,
  *                overrides: { [String(hit.t)]: 'auto' | 'keep' | 'drop' } })
  * Returns { hits, excluded: number, candidates: [{t, speed, median, threshold}] }.
  * originalSpeed preserves the measurement before this review; pre-existing null
@@ -73,6 +74,29 @@
         }
       }
     }
+    // 隣の組の打音が重なった疑い（音だけの保守的な規則）。孤立した短い間隔（前後の間隔が
+    // 明らかに長い）か物理的にあり得ない短さ（0.17秒未満）を種にし、その前後 overlapSpanSeconds
+    // の打音は数には残すが速度を集計しない。連続して短い間隔（本当に速いラリー）は種にしない。
+    // 2組の周期がずれて全間隔が同じになる重なりは検出できない（Codex #448 の指摘）。
+    const overlap = new Map();
+    if (options.overlapSuspect !== false) {
+      const seedMax = finite(options.overlapSeedSeconds) ? options.overlapSeedSeconds : .3;
+      const span = finite(options.overlapSpanSeconds) ? options.overlapSpanSeconds : 2;
+      const times = hits.map((h, index) => ({t: h.t, index})).sort((a, b) => a.t - b.t);
+      const gaps = times.map((h, i) => i ? h.t - times[i - 1].t : null);
+      const seeds = [];
+      for (let i = 1; i < times.length; i++) {
+        const d = gaps[i];
+        if (d == null || d >= seedMax) continue;
+        const prev = gaps[i - 1], next = gaps[i + 1];
+        const isolated = (prev == null || prev > d * 1.6) && (next == null || next > d * 1.6);
+        if (d < .17 || isolated) seeds.push(times[i].t);
+      }
+      if (seeds.length) for (const h of times) {
+        const seed = seeds.find(t => Math.abs(t - h.t) <= span);
+        if (seed != null) overlap.set(h.index, {t: h.t, seed, code: 'overlap_suspect'});
+      }
+    }
     let excluded = 0;
     const reviewed = hits.map((hit, index) => {
       const originalSpeed = originals[index] == null ? null : originals[index];
@@ -86,14 +110,16 @@
           qualityCode = 'above_limit'; qualityReason = `設定上限 ${limit} km/h を超過`;
         } else if (override !== 'keep' && autoOutliers && flagged.has(index)) {
           qualityCode = flagged.get(index).code; qualityReason = qualityCode === 'global_isolated_spike' ? '動画全体の速度分布に対して孤立した高速値' : '前後の速度に対して孤立した高速値';
+        } else if (override !== 'keep' && overlap.has(index)) {
+          qualityCode = 'overlap_suspect'; qualityReason = '隣の組の打音が重なっている疑い（打数は数え、速度は集計しない）';
         }
       }
       const qualityExcluded = Boolean(qualityCode);
       if (qualityExcluded) excluded++;
       return {...hit, originalSpeed, speed: usable && !qualityExcluded ? originalSpeed : null,
-        qualityExcluded, qualityCode, qualityReason, isOutlierCandidate: flagged.has(index)};
+        qualityExcluded, qualityCode, qualityReason, isOutlierCandidate: flagged.has(index), overlapSuspect: overlap.has(index)};
     });
-    return {hits: reviewed, excluded, candidates: Array.from(flagged.values())};
+    return {hits: reviewed, excluded, candidates: Array.from(flagged.values()), overlapSuspects: Array.from(overlap.values())};
   }
   return {review};
 });

@@ -81,7 +81,7 @@ window.FrescoShare = (() => {
         if(style==='skeleton'){g.save();g.beginPath();g.rect(fitted.x,fitted.y,fitted.w,fitted.h);g.clip();g.translate(fitted.x,fitted.y);g.scale(fitted.w/region.w,fitted.h/region.h);g.translate(-region.x,-region.y);skeleton(g,motion,video.currentTime);g.restore();}
         g.fillStyle=i?'#ffd23f':'#16e6c3';g.font='700 24px "Hiragino Sans", sans-serif';g.fillText(record?.playerLabels?.[i?'b':'a']||`${i+1}人目`,area.x,area.y-18,area.w);
       });
-      const cells=[[confirmed?'対象の打数':'連続した打数',`${confirmed?stats.total:stats.rally} 回`],[confirmed?'推定初速の平均':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
+      const cells=[[confirmed?'対象の打数':'打数',`${stats.total} 回`],[confirmed?'推定初速の平均':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
       cells.forEach(([label,value],i)=>{const x=64+i*328;g.fillStyle='#bcb4d3';g.font='500 27px "Hiragino Sans", sans-serif';g.fillText(label,x,1160);g.fillStyle=i===0?'#ffd23f':'#fff';g.font='800 49px "Hiragino Sans", sans-serif';g.fillText(value,x,1230,304);});
       const distribution=C.distribution(record?.playbackHits||record?.hits||[],start,end,record?.flip);
       const max=Math.max(1,...distribution.flatMap(r=>[r.a,r.b]));
