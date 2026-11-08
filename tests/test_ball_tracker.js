@@ -126,28 +126,54 @@ console.log('Hand-proximity rejection passed');
   console.log('Parabolic display bridge and gap interpolation passed');
 }
 
-// Estimated hit-to-hit arcs: display only, anchored on wrists, parabolic, never for ignored or overlapping sounds.
+// Estimated hit arcs (Codex #451 conditions): one drawer per time span, fit only to confidently matched strong observations,
+// no arc across excluded sounds, no arc when candidates conflict, extrapolate to a wrist only when consistent.
 {
-  const regions=[{x:0,y:100,w:100,h:300},{x:900,y:100,w:100,h:300}],W=1000;
+  const regions=[{x:0,y:100,w:100,h:300},{x:900,y:100,w:100,h:300}],W=1000,g=B.gravityFor(W,regions);
   const pose=(wx,wy)=>{const p=Array.from({length:33},()=>({x:0,y:0,visibility:0}));p[11]={x:wx-20,y:wy-40,visibility:1};p[12]={x:wx+20,y:wy-40,visibility:1};p[15]={x:wx,y:wy,visibility:1};p[16]={x:wx-30,y:wy+10,visibility:1};return p;};
-  const frames=Array.from({length:40},(_,i)=>({t:i/30,poses:[pose(80,250),pose(920,240)]}));
-  const hits=[{t:0,player:'a',status:'auto'},{t:.6,player:'b',status:'auto'},{t:1.1,player:'a',status:'auto',qualityCode:'overlap_suspect'},{t:1.5,player:'b',status:'ignored'}];
-  const arcs=B.estimatedArcs(hits,frames,regions,W);
-  assert.equal(arcs.length,1,'only the 0→0.6 pair qualifies (overlap suspect and ignored sounds are skipped)');
-  const arc=arcs[0];assert(arc.displayOnly&&arc.estimated);assert.deepEqual(arc.anchors,['wrist','wrist']);
-  assert.equal(arc.points[0].x,80);assert.equal(arc.points.at(-1).x,890,'arc runs from the hitter wrist to the receiver wrist nearest the court');
-  const midIndex=Math.floor(arc.points.length/2),mid=arc.points[midIndex],chord=(arc.points[0].y+arc.points.at(-1).y)/2;
-  assert(mid.y<chord-10,'the arc rises above the chord by the gravity sag');
-  assert(arc.points.every(p=>p.predicted&&p.kind==='hit-arc'));
-  // 実測の軌跡があれば進行方向を優先（player 表示が逆でも右へ飛ぶ球は左の選手が打った）
-  const track=[{id:1,points:Array.from({length:6},(_,i)=>({t:.1+i*.05,x:300+i*60,y:200}))}];
-  const byTrack=B.estimatedArcs([{t:0,player:'b',status:'auto'},{t:.6,player:'a',status:'auto'}],frames,regions,W,{tracks:track});
-  assert.equal(byTrack[0].hitter,0,'direction of the measured track decides the hitter');
-  // 手首が見えなければ枠の内側を使い、枠が無ければ描かない
-  const noPose=B.estimatedArcs(hits.slice(0,2),[],regions,W);assert.deepEqual(noPose[0].anchors,['box','box']);
-  assert.equal(B.estimatedArcs(hits,frames,null,W).length,0);
-  // drawTrails は弧を実線で色違いに描き、現在位置の印は実測が無ければ出さない
-  let strokes=0,fills=0;const c={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){strokes++;},arc(){},fill(){fills++;},setLineDash(){}};
-  assert(B.drawTrails(c,arcs,W,.3,hits));assert(strokes>0&&fills===0,'no current-point marker for an estimated arc');
-  console.log('Estimated hit arcs: wrist anchors, gravity sag, track-direction hitter, skips for ignored/overlap, solid distinct colour');
+  const frames=Array.from({length:40},(_,i)=>({t:i/30,poses:[pose(100,210),pose(800,210)]}));
+  const hits=[{t:0,player:'a',status:'auto'},{t:.6,player:'b',status:'auto'}];
+  // 観測なし: 手首どうしの全区間の弧（既定オン）。fullArcs:false なら描かない
+  const full=B.estimatedArcs(hits,frames,regions,W);
+  assert.equal(full.length,1);assert(full[0].extrapolated&&!full[0].fitted);assert.deepEqual(full[0].anchors,['wrist','wrist']);
+  assert.equal(full[0].points[0].x,100);assert.equal(full[0].points.at(-1).x,770,'receiver wrist nearest the court');
+  const mid=full[0].points[Math.floor(full[0].points.length/2)];assert(mid.y<210-10,'gravity sag above the chord');
+  assert.equal(B.estimatedArcs(hits,frames,regions,W,{fullArcs:false}).length,0);
+  // 除外・隣の組の疑いの音は区切り: またいで弧を作らない
+  assert.equal(B.estimatedArcs([{t:0,player:'a',status:'auto'},{t:.3,status:'auto',player:'b',qualityCode:'overlap_suspect'},{t:.6,player:'a',status:'auto'}],frames,regions,W).length,0,'no arc across an overlap-suspect sound');
+  assert.equal(B.estimatedArcs([{t:0,player:'a',status:'auto'},{t:.3,status:'ignored'},{t:.6,player:'a',status:'auto'}],frames,regions,W).length,0,'no arc across an ignored sound');
+  // 観測あり（強い9点・手首と整合）: 当てはめ、観測のある時間帯は covered、両端へ延長
+  const truth=t=>({t,x:100+700*(t/.6),y:210-.5*g*.36*(t/.6)*(1-t/.6)});
+  const measured=[{id:7,points:Array.from({length:9},(_,i)=>({...truth(.15+i/30)}))}];
+  const fitted=B.estimatedArcs(hits,frames,regions,W,{tracks:measured});
+  assert.equal(fitted.length,1);const arc=fitted[0];assert(arc.fitted&&!arc.extrapolated);assert(arc.residual<6&&arc.seam<6);
+  assert.deepEqual(arc.extended,[true,true],'fitted arc reaches both wrists because they agree with the fit');
+  const covered=arc.points.filter(p=>p.covered).length;assert(covered>=8&&covered<arc.points.length,'only the observed span is covered');
+  const m=arc.points.find(p=>Math.abs(p.t-.3)<.02);assert(Math.abs(m.y-truth(.3).y)<6&&Math.abs(m.x-truth(.3).x)<6,'fitted arc coincides with the measurement');
+  let strokes=0;const c={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){strokes++;},arc(){},fill(){},setLineDash(){}};
+  B.drawTrails(c,fitted,W,.3,hits);const withGaps=strokes;strokes=0;B.drawTrails(c,[{...arc,points:arc.points.map(p=>({...p,covered:false}))}],W,.3,hits);
+  assert(withGaps<strokes,'covered segments are not stroked');
+  // 手首と合わない観測: 延長しない（観測で挟まれた範囲だけ）
+  const shifted=[{id:8,points:Array.from({length:9},(_,i)=>{const q=truth(.15+i/30);return {...q,y:q.y-80};})}];
+  const sh=B.estimatedArcs(hits,frames,regions,W,{tracks:shifted})[0];assert(sh&&sh.fitted);assert.deepEqual(sh.extended,[false,false]);
+  assert(sh.points[0].t>=.14&&sh.points.at(-1).t<=.43,'arc stays within the observed span when the wrists disagree');
+  // 弱い観測だけ: 当てはめない → 観測がある以上、全区間の弧にも戻さない
+  const weakOnly=[{id:9,points:measured[0].points.map(p=>({...p,weak:true}))}];
+  assert.equal(B.estimatedArcs(hits,frames,regions,W,{tracks:weakOnly}).length,0,'weak-only observations give no arc');
+  // 逆向きの同程度の候補: 曖昧なので描かない
+  const reverse=[{id:10,points:Array.from({length:9},(_,i)=>({t:.15+i/30,x:800-700*((.15+i/30)/.6),y:200}))}];
+  assert.equal(B.estimatedArcs(hits,frames,regions,W,{tracks:measured.concat(reverse)}).length,0,'conflicting candidates give no arc');
+  // 既存の表示用ブリッジがある時間帯も covered
+  const bridge=[{id:'bridge-1',displayOnly:true,points:Array.from({length:4},(_,i)=>({t:.45+i/30,x:600+i*20,y:200,predicted:true,kind:'display-bridge'}))}];
+  const withBridge=B.estimatedArcs(hits,frames,regions,W,{tracks:measured.concat(bridge)})[0];
+  assert(withBridge.points.filter(p=>p.t>=.45&&p.t<=.55).every(p=>p.covered),'bridge spans are not drawn twice');
+  // ジグザグ・短すぎる観測: 当てはめない
+  const noisy=[{id:11,points:Array.from({length:8},(_,i)=>({t:.15+i/30,x:200+i*60,y:i%2?120:320}))}];
+  assert.equal(B.estimatedArcs(hits,frames,regions,W,{tracks:noisy}).length,0);
+  const short=[{id:12,points:Array.from({length:4},(_,i)=>({t:.2+i/30,x:400+i*10,y:200}))}];
+  assert.equal(B.estimatedArcs(hits,frames,regions,W,{tracks:short}).length,0);
+  // 弱い観測の由来は track の点に残る
+  const tr=B.track(Array.from({length:6},(_,i)=>({t:i*.03,ballCandidates:[{x:250+i*25,y:100,weak:i===2}]})),1000,[{x:0,y:0,w:200,h:300},{x:800,y:0,w:200,h:300}]);
+  assert(tr[0].points.some(p=>p.weak)&&tr[0].points.filter(p=>p.weak).length===1,'weak provenance survives tracking');
+  console.log('Estimated arcs: boundaries at excluded sounds, confident-fit only, gap filling, consistent extension, weak provenance kept');
 }

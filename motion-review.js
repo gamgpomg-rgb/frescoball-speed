@@ -265,7 +265,7 @@ window.FrescoMotionReview = (() => {
         if(pixelDetector&&window.FrescoBallTracker?.refineLocal){
           const extra=[];
           for(const win of watch){if(!win.data)continue;const found=window.FrescoBallTracker.refineLocal({data:cropWindow(win),prev:win.data,width:win.w,height:win.h,origin:{x:win.x,y:win.y},center:win.center,exclude:win.exclude,unit:unitPx});
-            for(const p of found)if(!ballCandidates.some(c=>Math.hypot(c.x-p.x,c.y-p.y)<18*unitPx)&&!extra.some(e=>Math.hypot(e.x-p.x,e.y-p.y)<18*unitPx))extra.push({x:p.x,y:p.y,local:true});}
+            for(const p of found)if(!ballCandidates.some(c=>Math.hypot(c.x-p.x,c.y-p.y)<18*unitPx)&&!extra.some(e=>Math.hypot(e.x-p.x,e.y-p.y)<18*unitPx))extra.push({x:p.x,y:p.y,local:true,...(p.weak?{weak:true}:{})});}
           // 規則ベースが窓の中に何も見つけなかったときだけ、同じ中心の 192px 窓（学習時と同じ大きさ）を高精度モデルに見せる
           if(teacher)for(const win of watch){if(!win.data)continue;const cxp=win.center.x,cyp=win.center.y;
             if(extra.some(e=>Math.hypot(e.x-cxp,e.y-cyp)<win.w)||ballCandidates.some(c=>Math.hypot(c.x-cxp,c.y-cyp)<win.w))continue;
@@ -274,7 +274,7 @@ window.FrescoMotionReview = (() => {
             let hit=null;try{hit=await teacher.detect(teacherCtx.getImageData(0,0,teacher.size,teacher.size));}catch(e){hit=null;}
             if(token!==serial)return;
             if(hit&&hit.conf>=(teacher.conf??.5)){const px=x0+hit.x*size,py=y0+hit.y*size;teacherHits++;if(!extra.some(e=>Math.hypot(e.x-px,e.y-py)<18*unitPx))extra.push({x:px,y:py,local:true,teacher:true});}}
-          if(extra.length){pixelDetector.adopt(extra.map(p=>({x:p.x*scale,y:p.y*scale})),t);ballCandidates.push(...extra.map(p=>({x:p.x,y:p.y})));}
+          if(extra.length){pixelDetector.adopt(extra.map(p=>({x:p.x*scale,y:p.y*scale})),t);ballCandidates.push(...extra.map(p=>({x:p.x,y:p.y,...(p.weak?{weak:true}:{})})));}
           // 次フレーム用の窓: 予測位置、無ければ打音直後（0.2秒）の手首
           watch=[];const tn=t+1/30;
           // 関節の周りは除外（手首は小さく、それ以外は大きく）。ラケット面の球は手首から離れているので残る

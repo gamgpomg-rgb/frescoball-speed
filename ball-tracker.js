@@ -197,9 +197,9 @@
       });
       pairs.sort((a,b)=>a.cost-b.cost);const usedTracks=new Set(),usedPoints=new Set();
       for(const pair of pairs){if(usedTracks.has(pair.i)||usedPoints.has(pair.j))continue;
-        const p=points[pair.j];active[pair.i].points.push({x:p.x,y:p.y,t,kind:'observed',predicted:false});usedTracks.add(pair.i);usedPoints.add(pair.j);
+        const p=points[pair.j];active[pair.i].points.push({x:p.x,y:p.y,t,kind:'observed',predicted:false,...(p.weak?{weak:true}:{})});usedTracks.add(pair.i);usedPoints.add(pair.j);
       }
-      points.forEach((p,j)=>{if(!usedPoints.has(j))active.push({id:++id,points:[{x:p.x,y:p.y,t,kind:'observed',predicted:false}]});});
+      points.forEach((p,j)=>{if(!usedPoints.has(j))active.push({id:++id,points:[{x:p.x,y:p.y,t,kind:'observed',predicted:false,...(p.weak?{weak:true}:{})}]});});
     }
     finished.push(...active);
     return finished.filter(tr=>{
@@ -246,8 +246,13 @@
   const ARC_COLOR='#c58cff';
   function estimatedArcs(events,frames,regions,width,options={}){
     if(!Array.isArray(regions)||regions.length!==2||regions.some(r=>!r||![r.x,r.y,r.w,r.h].every(finite))||!finite(width)||width<=0)return [];
-    const g=gravityFor(width,regions),tracks=options.tracks||[],minT=finite(options.minT)?options.minT:.2,maxT=finite(options.maxT)?options.maxT:.9;
-    const hits=(events||[]).filter(e=>e&&finite(e.t)&&e.status!=='ignored'&&e.qualityCode!=='overlap_suspect').slice().sort((a,b)=>a.t-b.t);
+    const g=gravityFor(width,regions),tracks=options.tracks||[],minT=finite(options.minT)?options.minT:.2,maxT=finite(options.maxT)?options.maxT:.9,fullArcs=options.fullArcs!==false;
+    // 当てはめの採否。既定（strict:false）は観測4点・幅0.1秒・残差1.5%・継ぎ目1%・延長6%。strict:true は Codex #451 の暫定値
+    // （6点・0.15秒・1%・0.6%・4%）。実フレーム45飛行では既定で19〜24本、strict で5〜11本が当てはまり、残差の中央値はどちらも2〜3px。
+    const strict=options.strict===true,fit={minStrong:strict?6:4,minSpan:strict?.15:.1,spanFrac:strict?1/3:1/5,rms:width*(strict?.01:.015),point:width*.02,seam:width*(strict?.006:.01),extend:width*(strict?.04:.06)};
+    // 除外した音・隣の組の疑いの音は「消す」のではなく区切りとして残す（またいで1飛行にしない。Codex #451）
+    const hits=(events||[]).filter(e=>e&&finite(e.t)).slice().sort((a,b)=>a.t-b.t);
+    const clean=e=>e.status!=='ignored'&&e.qualityCode!=='overlap_suspect';
     const centers=regions.map(r=>({x:r.x+r.w/2,y:r.y+r.h/2})),leftIndex=centers[0].x<=centers[1].x?0:1;
     const frameAt=(t,tol=.08)=>{const fs=frames||[];let lo=0,hi=fs.length;while(lo<hi){const m=(lo+hi)>>1;if(fs[m].t<t)lo=m+1;else hi=m;}return [fs[lo],fs[lo-1]].filter(f=>f&&Math.abs(f.t-t)<=tol&&Math.abs((f.poseSampleTime??f.t)-t)<=.15).sort((a,b)=>Math.abs(a.t-t)-Math.abs(b.t-t))[0]||null;};
     const seen=w=>valid(w)&&finite(w.visibility)&&w.visibility>=.65&&(w.presence==null||w.presence>=.65);
@@ -256,16 +261,49 @@
     const wristSpeed=(side,t)=>{const a=frameAt(t-.1,.07),b=frameAt(t+.1,.07);if(!a||!b||b.t<=a.t)return null;const pa=a.poses?.[side],pb=b.poses?.[side];if(![11,12].every(k=>seen(pa?.[k])&&seen(pb?.[k])))return null;const v=[15,16].map(k=>{if(!seen(pa[k])||!seen(pb[k]))return 0;const ax=pa[k].x-(pa[11].x+pa[12].x)/2,ay=pa[k].y-(pa[11].y+pa[12].y)/2,bx=pb[k].x-(pb[11].x+pb[12].x)/2,by=pb[k].y-(pb[11].y+pb[12].y)/2;return Math.hypot(bx-ax,by-ay)/(b.t-a.t);});return Math.max(...v);};
     const out=[];
     for(let i=1;i<hits.length;i++){
-      const a=hits[i-1],b=hits[i],T=b.t-a.t;if(T<minT||T>maxT)continue;
-      let hitter=null;
-      const seg=tracks.flatMap(tr=>tr.estimated?[]:(tr.points||[]).filter(p=>!p.predicted&&valid(p)&&p.t>=a.t&&p.t<=b.t)).sort((p,q)=>p.t-q.t);
-      if(seg.length>=3){const dx=seg.at(-1).x-seg[0].x;if(Math.abs(dx)>width*.03)hitter=dx>0?leftIndex:1-leftIndex;}
-      if(hitter==null){const sp=[0,1].map(side=>wristSpeed(side,a.t));if(sp[0]!=null&&sp[1]!=null&&Math.max(...sp)>=width*.1&&Math.max(...sp)>=2*Math.min(...sp))hitter=sp[0]>sp[1]?0:1;}
-      if(hitter==null&&['a','b'].includes(a.player))hitter=a.player==='a'?0:1;
-      if(hitter==null)continue;
-      const p0=anchor(hitter,a.t),p1=anchor(1-hitter,b.t),count=Math.max(2,Math.ceil(T*30)),points=[];
-      for(let k=0;k<=count;k++){const u=k/count;points.push({t:a.t+T*u,x:p0.x+(p1.x-p0.x)*u,y:p0.y+(p1.y-p0.y)*u-.5*g*T*T*u*(1-u),predicted:true,kind:'hit-arc'});}
-      out.push({id:`arc-${a.t}-${b.t}`,displayOnly:true,estimated:true,hitter,anchors:[p0.source,p1.source],points});
+      const a=hits[i-1],b=hits[i],T=b.t-a.t;if(!clean(a)||!clean(b)||T<minT||T>maxT)continue;
+      // この飛行の観測。実測の track（推定・表示専用を除く）の観測点を区間で切り出す
+      const observed=tracks.flatMap(tr=>tr.estimated||tr.displayOnly?[]:[(tr.points||[]).filter(p=>!p.predicted&&valid(p)&&p.t>=a.t-.02&&p.t<=b.t+.02)]).filter(ps=>ps.length>=2);
+      const bridges=tracks.flatMap(tr=>tr.displayOnly&&!tr.estimated?(tr.points||[]).filter(p=>valid(p)&&p.t>=a.t-.02&&p.t<=b.t+.02):[]);
+      const candidates=observed.filter(ps=>ps.length>=4&&ps.at(-1).t-ps[0].t>=.1&&Math.abs(ps.at(-1).x-ps[0].x)>=width*.08).map(ps=>({ps,dx:ps.at(-1).x-ps[0].x}));
+      const count=Math.max(2,Math.ceil(T*30)),points=[];
+      if(!candidates.length){
+        // 観測が無い飛行: 手首どうしの弧（全区間の推定）。打者は打音時の手首の動き、無ければ打球の player
+        if(!fullArcs||observed.length)continue;   // 短い観測だけがある飛行は、対応が曖昧なので描かない
+        let hitter=null;const sp=[0,1].map(side=>wristSpeed(side,a.t));
+        if(sp[0]!=null&&sp[1]!=null&&Math.max(...sp)>=width*.1&&Math.max(...sp)>=2*Math.min(...sp))hitter=sp[0]>sp[1]?0:1;
+        if(hitter==null&&['a','b'].includes(a.player))hitter=a.player==='a'?0:1;
+        if(hitter==null)continue;
+        const p0=anchor(hitter,a.t),p1=anchor(1-hitter,b.t);
+        for(let k=0;k<=count;k++){const u=k/count;points.push({t:a.t+T*u,x:p0.x+(p1.x-p0.x)*u,y:p0.y+(p1.y-p0.y)*u-.5*g*T*T*u*(1-u),predicted:true,kind:'hit-arc',covered:false});}
+        out.push({id:`arc-${a.t}-${b.t}`,displayOnly:true,estimated:true,extrapolated:true,fitted:false,hitter,anchors:[p0.source,p1.source],points});
+        continue;
+      }
+      // 観測がある飛行: まず「この飛行に採用する観測」を決める（最長の候補と同じ向きのもの）。逆向きの同程度の候補があれば曖昧として描かない
+      candidates.sort((p,q)=>Math.abs(q.dx)-Math.abs(p.dx));
+      const main=candidates[0],dirSign=Math.sign(main.dx);
+      if(candidates.some(c=>c!==main&&Math.sign(c.dx)!==dirSign&&Math.abs(c.dx)>=Math.abs(main.dx)*.6))continue;
+      const chosen=candidates.filter(c=>Math.sign(c.dx)===dirSign).flatMap(c=>c.ps).sort((p,q)=>p.t-q.t);
+      const hitter=dirSign>0?leftIndex:1-leftIndex,p0=anchor(hitter,a.t),p1=anchor(1-hitter,b.t);
+      // 当てはめは強い観測だけ（動きだけの弱い塊は使わない）。x は等速、y は重力 g 固定。手首は見えているときだけ弱い拘束
+      const strong=chosen.filter(p=>!p.weak),span=strong.length?strong.at(-1).t-strong[0].t:0;
+      if(strong.length<fit.minStrong||span<Math.max(fit.minSpan,T*fit.spanFrac))continue;
+      const rows=strong.map(p=>({tau:p.t-a.t,x:p.x,y:p.y,w:1}));
+      if(p0.source==='wrist')rows.push({tau:0,x:p0.x,y:p0.y,w:.15});if(p1.source==='wrist')rows.push({tau:T,x:p1.x,y:p1.y,w:.15});
+      const solve=ys=>{let s0=0,s1=0,s2=0,sy=0,sty=0;rows.forEach((r,i)=>{s0+=r.w;s1+=r.w*r.tau;s2+=r.w*r.tau*r.tau;sy+=r.w*ys[i];sty+=r.w*r.tau*ys[i];});const det=s0*s2-s1*s1;return det?[(sy*s2-s1*sty)/det,(s0*sty-s1*sy)/det]:null;};
+      const fx=solve(rows.map(r=>r.x)),fy=solve(rows.map(r=>r.y-.5*g*r.tau*r.tau));if(!fx||!fy||Math.sign(fx[1])!==dirSign)continue;
+      const at_=t=>{const tau=t-a.t;return {x:fx[0]+fx[1]*tau,y:fy[0]+fy[1]*tau+.5*g*tau*tau};};
+      const errors=strong.map(p=>{const q=at_(p.t);return Math.hypot(q.x-p.x,q.y-p.y);}),rms=Math.sqrt(errors.reduce((acc,v)=>acc+v*v,0)/errors.length);
+      const seam=Math.max(errors[0],errors.at(-1));
+      // 採否: 全体の残差、各点の誤差、継ぎ目（最初と最後の観測）の誤差。無理につながない
+      if(rms>fit.rms||errors.some(v=>v>fit.point)||seam>fit.seam)continue;
+      // 描く範囲: 観測で挟まれた欠測が基本。打点側へは、弧の端が手首（見えているもの）に十分近いときだけ延ばす
+      const extendStart=p0.source==='wrist'&&Math.hypot(at_(a.t).x-p0.x,at_(a.t).y-p0.y)<=fit.extend;
+      const extendEnd=p1.source==='wrist'&&Math.hypot(at_(b.t).x-p1.x,at_(b.t).y-p1.y)<=fit.extend;
+      const from=extendStart?a.t:chosen[0].t,to=extendEnd?b.t:chosen.at(-1).t;
+      const coveredAt=t=>chosen.some(p=>Math.abs(p.t-t)<=1/30+1e-6)||bridges.some(p=>Math.abs(p.t-t)<=1/30+1e-6);
+      for(let k=0;k<=count;k++){const t=a.t+T*k/count;if(t<from-1e-6||t>to+1e-6)continue;const q=at_(t);points.push({t,x:q.x,y:q.y,predicted:true,kind:'hit-arc',covered:coveredAt(t)});}
+      if(points.length>=2)out.push({id:`arc-${a.t}-${b.t}`,displayOnly:true,estimated:true,extrapolated:false,fitted:true,residual:rms,seam,hitter,anchors:[p0.source,p1.source],extended:[extendStart,extendEnd],points});
     }
     return out;
   }
@@ -449,7 +487,9 @@
       for(let i=1;i<run.points.length;i++){
         const a=run.points[i-1],b=run.points[i];
         if(b.t-a.t>MAX_GAP+1e-6){cur=null;continue;}
-        const arc=a.kind==='hit-arc'||b.kind==='hit-arc',predicted=!arc&&!!(a.predicted||b.predicted),color=arc?ARC_COLOR:colorAt((a.t+b.t)/2),bucket=Math.floor((t-b.t)/.12);
+        const arc=a.kind==='hit-arc'||b.kind==='hit-arc';
+        if(arc&&a.covered&&b.covered){cur=null;continue;}   // 実測の線がある時間帯は弧を描かない（二重線の防止）
+        const predicted=!arc&&!!(a.predicted||b.predicted),color=arc?ARC_COLOR:colorAt((a.t+b.t)/2),bucket=Math.floor((t-b.t)/.12);
         if(cur&&cur.predicted===predicted&&cur.color===color&&cur.bucket===bucket)cur.points.push(b);
         else{cur={predicted,color,bucket,alpha:fade(t-(a.t+b.t)/2),points:[a,b]};chunks.push(cur);}
       }

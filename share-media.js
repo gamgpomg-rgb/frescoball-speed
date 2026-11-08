@@ -55,7 +55,7 @@ window.FrescoShare = (() => {
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('軌跡：実測は速度の色（90km/h以上は金色）・紫は打音から推定した弧',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('線：速度の色は映像から検出した球の候補・紫は見失った区間の推定（球速・打数には使いません）',box.x+20*W/1080,box.y+box.h-18*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
