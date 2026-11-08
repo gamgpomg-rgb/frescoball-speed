@@ -135,7 +135,7 @@ window.FrescoShare = (() => {
     const audioCount=(record?.analysisMode==='motion'?record?.audioHits:record?.hits||[])?.length||0;
     const measurementChoice=C.measurementDefault({analysisMode:record?.analysisMode,hasAudio,audioCount,verifiedCount});
     if(!measurement.querySelector(`option[value="${measurementChoice.value}"]`)?.disabled)measurement.value=measurementChoice.value;
-    if(record?.analysisMode==='motion'&&hasAudio&&audioCount)e('p',`映像で選手を確認できた打球は ${verifiedCount}／${audioCount} 件（${Math.round((measurementChoice.coverage||0)*100)}%）。${measurementChoice.value==='audio'?'8割未満のため、既定は音から計算した記録です。確認済みの打球だけで集計するには「音の打数＋映像で確認」を選んでください。':'8割以上なので、確認済みの打球で集計します。'}`,form);
+    if(record?.analysisMode==='motion'&&hasAudio&&audioCount)e('p',`映像で打点を選手に割り当てた打球（仮判定を含む）は ${verifiedCount}／${audioCount} 件（${Math.round((measurementChoice.coverage||0)*100)}%）。${measurementChoice.value==='audio'?'8割未満のため、既定は音から計算した記録です。':'8割以上なので、割り当て済みの打球を基準に集計します。'}`,form);
     e('p',videoBasis?'打数は映像の球の向きが入れ替わる瞬間が基準です（実験）。球を追えなかった返球は数に入りません。速度の目安は±10%です。':'打数は音が基準です。映像で読み取れない打球も含み、左右は前後の動きから推定します。明示的に除外した音は数えません。',form);
     const tl=label('タイトル'),title=e('input','',tl);title.value='今日のラリー';title.maxLength=24;tl.hidden=options.format!=='story';
     const startLabel=label('開始位置（秒）'),start=e('input','',startLabel);start.type='number';start.min=0;start.max=video.duration;start.step='.1';start.value=Math.min(video.currentTime,Math.max(0,video.duration-.1)).toFixed(2);
@@ -156,7 +156,10 @@ window.FrescoShare = (() => {
       if(measurement.value==='audio'){
         const audioHits=record?.analysisMode==='motion'?record.audioHits:record?.hits;
         if(!Array.isArray(audioHits))throw new Error('この記録には音から計算した速度がありません');
-        const reviewed=window.FrescoVideoQuality?window.FrescoVideoQuality.review(audioHits,record.speedReview||{}).hits:audioHits;
+        // 映像の見直しで明示的に除外した音は、音モードでも数えない（フォームの説明と一致させる）
+        const ignoredTimes=(motion?.events||[]).filter(event=>event.status==='ignored').map(event=>event.t);
+        const kept=ignoredTimes.length?audioHits.filter(h=>!ignoredTimes.some(t=>Math.abs(t-h.t)<.001)):audioHits;
+        const reviewed=window.FrescoVideoQuality?window.FrescoVideoQuality.review(kept,record.speedReview||{}).hits:kept;
         selectedRecord={...record,hits:reviewed,playbackHits:reviewed};
       }
       if(measurement.value==='confirmed'){

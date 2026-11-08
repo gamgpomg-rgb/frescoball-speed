@@ -116,3 +116,11 @@ assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:0,verifiedCo
 assert.equal(C.measurementDefault({analysisMode:'motion',hasAudio:false,audioCount:0,verifiedCount:12}).value,'confirmed','video-only records keep the confirmed basis');
 assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:53,verifiedCount:10}).coverage.toFixed(3),'0.189');
 console.log('Export measurement default follows pose coverage');
+
+// Audio export must honour sounds the user explicitly ignored during video review.
+{
+  const ignoredSelection=vm.createContext({record:{analysisMode:'motion',hits:[],audioHits:[{t:0,speed:50},{t:.5,speed:60},{t:1,speed:70}]},measurement:{value:'audio'},motion:{events:[{t:.5,status:'ignored'}]},window:{FrescoVideoQuality:require('../video-quality.js')},range:{start:0,end:2}});
+  vm.runInContext(code.slice(selectionStart,selectionEnd)+'\nresult=selectedRecord;',ignoredSelection);
+  assert.deepEqual(ignoredSelection.result.hits.map(h=>h.t),[0,1],'explicitly ignored sound must not return in audio export');
+  console.log('Audio export drops explicitly ignored sounds');
+}
