@@ -55,7 +55,7 @@ window.FrescoShare = (() => {
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('軌跡：90km/h以上は金色・薄い線は推定',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('軌跡：実測は速度の色（90km/h以上は金色）・紫は打音から推定した弧',box.x+20*W/1080,box.y+box.h-18*W/1080);}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
     g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
@@ -124,8 +124,8 @@ window.FrescoShare = (() => {
     const form=e('fieldset');const label=(text)=>e('label',text,form);
     const sl=label('見た目'),style=e('select','',sl);for(const [value,text]of [['play','プレーと球速'],['skeleton','骨格付き']]){const o=e('option',text,style);o.value=value;if(value==='skeleton'&&!C.motionRange(motion))o.disabled=true;}
     if(!C.motionRange(motion))e('p','骨格付きにするには、先に「2人を選んで骨格と軌跡を見る」で解析してください。',form);
-    const trailLabel=label('球の軌跡'),trail=e('select','',trailLabel);for(const [value,text]of [['off','表示しない'],['on','軌跡候補を表示']]){const o=e('option',text,trail);o.value=value;if(value==='on'&&!displayTracks.length)o.disabled=true;}
-    if(displayTracks.length)trail.value='on';
+    const trailLabel=label('球の軌跡'),trail=e('select','',trailLabel);for(const [value,text]of [['off','表示しない'],['on','軌跡候補を表示']]){const o=e('option',text,trail);o.value=value;if(value==='on'&&!displayTracks.length&&motion?.regions?.length!==2)o.disabled=true;}
+    if(displayTracks.length||motion?.regions?.length===2)trail.value='on';
     const measurementLabel=label('表示する記録'),measurement=e('select','',measurementLabel);
     const hasAudio=record?.analysisMode!=='motion'||Array.isArray(record?.audioHits);
     // 映像が主のモード（実験）で作った解析は、打数の基準が音ではなく映像の打点になる。
@@ -172,7 +172,7 @@ window.FrescoShare = (() => {
         const distances=new Set(hits.filter(h=>h.t>=range.start&&h.t<=range.end&&h.usedDistanceM!=null).map(h=>h.usedDistanceM));
         selectedRecord={...record,hits,playbackHits,settings:{values:{distance:distances.size===1?[...distances][0]:motion.settings.distanceM}},variedDistances:distances.size>1};
       }
-      state={mode:options.mode||'simple',format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks};
+      state={mode:options.mode||'simple',format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks.concat(window.FrescoBallTracker?.estimatedArcs?.(selectedRecord.playbackHits||selectedRecord.hits||[],motion?.frames||[],motion?.regions,video.videoWidth,{tracks:displayTracks})||[])};
       const c=C.crop(video.videoWidth,video.videoHeight,motion?.regions,state.focus);
       if(options.format==='story'){canvas.width=1080;canvas.height=1920;}else{const scale=Math.min(1,1280/Math.max(c.w,c.h));canvas.width=Math.max(2,Math.round(c.w*scale/2)*2);canvas.height=Math.max(2,Math.round(c.h*scale/2)*2);}
       return state;

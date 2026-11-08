@@ -144,7 +144,22 @@
       if(size[id]>maxN*1.5)continue;
       const d=Math.hypot(sx/n-cx,sy/n-cy);if(d>Math.min(W,H)*.4)continue;
       if(!best||d<best.d)best={d,x:origin.x+sx/n,y:origin.y+sy/n};}
-    return best?[{x:best.x,y:best.y}]:[];
+    if(best)return [{x:best.x,y:best.y}];
+    // 色の規則で何も無いとき（建物や人の前で暗いピンクが沈む区間）は、予測位置のすぐ近くに限って
+    // 「動いている小さな丸い塊」を拾う。窓の中で動いている面積が大きい（体や通行人）ときは拾わない。
+    // 新しい仮説は作らず、既にある仮説の継続にしか使われない（呼び出し側は予測位置の窓だけ渡す）。
+    const motion=new Uint8Array(W*H);let movingTotal=0;
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=(y*W+x)*4;const delta=Math.abs(data[i]-prev[i])+Math.abs(data[i+1]-prev[i+1])+Math.abs(data[i+2]-prev[i+2]);if(delta<45)continue;if(exclude.some(e=>excluded(e,x+origin.x,y+origin.y)))continue;motion[y*W+x]=1;movingTotal++;}
+    if(!movingTotal||movingTotal>W*H*.03)return [];
+    let weak=null;const maxWeak=Math.round(120*unit*unit);
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;if(!motion[i])continue;
+      const queue=[i];let n=0,sx=0,sy=0,minX=W,maxX=0,minY=H,maxY=0;motion[i]=0;
+      while(queue.length){const j=queue.pop(),px=j%W,py=Math.floor(j/W);n++;sx+=px;sy+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);for(const z of [j-1,j+1,j-W,j+W])if(z>=0&&z<motion.length&&motion[z]){motion[z]=0;queue.push(z);}}
+      const w=maxX-minX+1,h=maxY-minY+1,ratio=Math.max(w,h)/Math.min(w,h);
+      if(n<minN||n>maxWeak||ratio>3||n/(w*h)<.3)continue;
+      const d=Math.hypot(sx/n-cx,sy/n-cy);if(d>Math.min(W,H)*.18)continue;
+      if(!weak||d<weak.d)weak={d,x:origin.x+sx/n,y:origin.y+sy/n};}
+    return weak?[{x:weak.x,y:weak.y,weak:true}]:[];
   }
   function track(frames,width,regions){
     if(!Array.isArray(frames)||!finite(width)||width<=0)throw new Error('動画の追跡入力が不正です');
@@ -224,6 +239,35 @@
       matches.push({trackId:tr.id,point:p,trail,predicted:p.predicted,span});
     }
     matches.sort((a,b)=>b.span-a.span);return matches[0]||null;
+  }
+  // 打音から打音へ結ぶ「推定の弧」（表示専用・岩本さん承認 2026-11-09）。時刻は打音、両端は打者と受け手の
+  // 手首（見えなければ枠の内側）、形は選手枠から換算した重力の放物線。打者の側は、区間に実測の軌跡があれば
+  // その進行方向、なければ打音時の手首の動き、最後に打球の player から決める。計測には一切使わない。
+  const ARC_COLOR='#c58cff';
+  function estimatedArcs(events,frames,regions,width,options={}){
+    if(!Array.isArray(regions)||regions.length!==2||regions.some(r=>!r||![r.x,r.y,r.w,r.h].every(finite))||!finite(width)||width<=0)return [];
+    const g=gravityFor(width,regions),tracks=options.tracks||[],minT=finite(options.minT)?options.minT:.2,maxT=finite(options.maxT)?options.maxT:.9;
+    const hits=(events||[]).filter(e=>e&&finite(e.t)&&e.status!=='ignored'&&e.qualityCode!=='overlap_suspect').slice().sort((a,b)=>a.t-b.t);
+    const centers=regions.map(r=>({x:r.x+r.w/2,y:r.y+r.h/2})),leftIndex=centers[0].x<=centers[1].x?0:1;
+    const frameAt=(t,tol=.08)=>{const fs=frames||[];let lo=0,hi=fs.length;while(lo<hi){const m=(lo+hi)>>1;if(fs[m].t<t)lo=m+1;else hi=m;}return [fs[lo],fs[lo-1]].filter(f=>f&&Math.abs(f.t-t)<=tol&&Math.abs((f.poseSampleTime??f.t)-t)<=.15).sort((a,b)=>Math.abs(a.t-t)-Math.abs(b.t-t))[0]||null;};
+    const seen=w=>valid(w)&&finite(w.visibility)&&w.visibility>=.65&&(w.presence==null||w.presence>=.65);
+    const wristOf=(side,t,towardX)=>{const ps=frameAt(t)?.poses?.[side];const ws=[15,16].map(k=>ps?.[k]).filter(seen);return ws.sort((a,b)=>Math.abs(a.x-towardX)-Math.abs(b.x-towardX))[0]||null;};
+    const anchor=(side,t)=>{const other=1-side,w=wristOf(side,t,centers[other].x);if(w)return {x:w.x,y:w.y,source:'wrist'};const r=regions[side],dir=Math.sign(centers[other].x-centers[side].x)||1;return {x:centers[side].x+dir*r.w*.35,y:r.y+r.h*.4,source:'box'};};
+    const wristSpeed=(side,t)=>{const a=frameAt(t-.1,.07),b=frameAt(t+.1,.07);if(!a||!b||b.t<=a.t)return null;const pa=a.poses?.[side],pb=b.poses?.[side];if(![11,12].every(k=>seen(pa?.[k])&&seen(pb?.[k])))return null;const v=[15,16].map(k=>{if(!seen(pa[k])||!seen(pb[k]))return 0;const ax=pa[k].x-(pa[11].x+pa[12].x)/2,ay=pa[k].y-(pa[11].y+pa[12].y)/2,bx=pb[k].x-(pb[11].x+pb[12].x)/2,by=pb[k].y-(pb[11].y+pb[12].y)/2;return Math.hypot(bx-ax,by-ay)/(b.t-a.t);});return Math.max(...v);};
+    const out=[];
+    for(let i=1;i<hits.length;i++){
+      const a=hits[i-1],b=hits[i],T=b.t-a.t;if(T<minT||T>maxT)continue;
+      let hitter=null;
+      const seg=tracks.flatMap(tr=>tr.estimated?[]:(tr.points||[]).filter(p=>!p.predicted&&valid(p)&&p.t>=a.t&&p.t<=b.t)).sort((p,q)=>p.t-q.t);
+      if(seg.length>=3){const dx=seg.at(-1).x-seg[0].x;if(Math.abs(dx)>width*.03)hitter=dx>0?leftIndex:1-leftIndex;}
+      if(hitter==null){const sp=[0,1].map(side=>wristSpeed(side,a.t));if(sp[0]!=null&&sp[1]!=null&&Math.max(...sp)>=width*.1&&Math.max(...sp)>=2*Math.min(...sp))hitter=sp[0]>sp[1]?0:1;}
+      if(hitter==null&&['a','b'].includes(a.player))hitter=a.player==='a'?0:1;
+      if(hitter==null)continue;
+      const p0=anchor(hitter,a.t),p1=anchor(1-hitter,b.t),count=Math.max(2,Math.ceil(T*30)),points=[];
+      for(let k=0;k<=count;k++){const u=k/count;points.push({t:a.t+T*u,x:p0.x+(p1.x-p0.x)*u,y:p0.y+(p1.y-p0.y)*u-.5*g*T*T*u*(1-u),predicted:true,kind:'hit-arc'});}
+      out.push({id:`arc-${a.t}-${b.t}`,displayOnly:true,estimated:true,hitter,anchors:[p0.source,p1.source],points});
+    }
+    return out;
   }
   // Display-only bridges between independently sustained tracks. Never feed
   // these points into contact or speed estimation; no endpoint extrapolation.
@@ -405,20 +449,20 @@
       for(let i=1;i<run.points.length;i++){
         const a=run.points[i-1],b=run.points[i];
         if(b.t-a.t>MAX_GAP+1e-6){cur=null;continue;}
-        const predicted=!!(a.predicted||b.predicted),color=colorAt((a.t+b.t)/2),bucket=Math.floor((t-b.t)/.12);
+        const arc=a.kind==='hit-arc'||b.kind==='hit-arc',predicted=!arc&&!!(a.predicted||b.predicted),color=arc?ARC_COLOR:colorAt((a.t+b.t)/2),bucket=Math.floor((t-b.t)/.12);
         if(cur&&cur.predicted===predicted&&cur.color===color&&cur.bucket===bucket)cur.points.push(b);
         else{cur={predicted,color,bucket,alpha:fade(t-(a.t+b.t)/2),points:[a,b]};chunks.push(cur);}
       }
     }
     if(!chunks.length)return false;
-    chunks.sort((x,y)=>y.bucket-x.bucket);
+    chunks.sort((x,y)=>(y.bucket-x.bucket)||((y.color===ARC_COLOR)-(x.color===ARC_COLOR)));
     // 区間ごとに透明度が違うので、端を丸めずに描いて継ぎ目の二重塗りを避ける
     c.save();c.lineCap='butt';c.lineJoin='round';c.setLineDash?.([]);
     const stroke=(ch,style,alpha,lineWidth,blur)=>{c.strokeStyle=style;c.globalAlpha=alpha;c.lineWidth=lineWidth;c.shadowColor=ch.color;c.shadowBlur=blur;c.beginPath();ch.points.forEach((p,k)=>k?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();};
     for(const ch of chunks)stroke(ch,'#081421',(ch.predicted?.3:.55)*ch.alpha,6.4*unit,0);
     for(const ch of chunks)stroke(ch,ch.color,(ch.predicted?.45:.95)*ch.alpha,3.6*unit,ch.predicted?0:4*unit);
     for(const ch of chunks)if(!ch.predicted)stroke(ch,'#fff',.8*ch.alpha,1.2*unit,0);
-    const now=at(tracks,t);
+    const now=at((tracks||[]).filter(tr=>!tr.estimated),t);
     if(now){
       const p=now.point,color=colorAt(t),radius=2.6*unit;
       c.shadowBlur=0;c.globalAlpha=1;
@@ -428,5 +472,5 @@
     }
     c.restore();return true;
   }
-  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,refineLocal,fitMotion,predict,gravityFor,track,at,displayTracks,speedAt,speedColor,maxGapSeconds:MAX_GAP,carrySeconds:CARRY};
+  return {drawTrail,drawTrails,trailRuns,trailSeconds:TRAIL_SECONDS,drawImpacts,impactMarkers,impactSeconds:IMPACT_SECONDS,createDetector,refineLocal,fitMotion,predict,gravityFor,track,at,displayTracks,estimatedArcs,arcColor:ARC_COLOR,speedAt,speedColor,maxGapSeconds:MAX_GAP,carrySeconds:CARRY};
 });

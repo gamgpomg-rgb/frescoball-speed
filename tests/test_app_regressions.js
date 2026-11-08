@@ -24,7 +24,7 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v48/);
+assert.match(sw, /frescoball-speed-shell-v49/);
 // 映像が主の打点（実験・任意）: 設定があり、解析へ渡され、既定はオフ（音基準のまま）
 assert.match(html, /id="videoHits"/);
 assert.doesNotMatch(html, /id="videoHits"[^>]*checked/);

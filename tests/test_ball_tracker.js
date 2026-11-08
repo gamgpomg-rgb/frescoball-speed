@@ -125,3 +125,29 @@ console.log('Hand-proximity rejection passed');
   const gap=tr[0].points.find(p=>p.kind==='interpolated');assert(gap&&Math.abs(gap.y-lob(gap.t).y)<2,'interpolated point lies on the arc');
   console.log('Parabolic display bridge and gap interpolation passed');
 }
+
+// Estimated hit-to-hit arcs: display only, anchored on wrists, parabolic, never for ignored or overlapping sounds.
+{
+  const regions=[{x:0,y:100,w:100,h:300},{x:900,y:100,w:100,h:300}],W=1000;
+  const pose=(wx,wy)=>{const p=Array.from({length:33},()=>({x:0,y:0,visibility:0}));p[11]={x:wx-20,y:wy-40,visibility:1};p[12]={x:wx+20,y:wy-40,visibility:1};p[15]={x:wx,y:wy,visibility:1};p[16]={x:wx-30,y:wy+10,visibility:1};return p;};
+  const frames=Array.from({length:40},(_,i)=>({t:i/30,poses:[pose(80,250),pose(920,240)]}));
+  const hits=[{t:0,player:'a',status:'auto'},{t:.6,player:'b',status:'auto'},{t:1.1,player:'a',status:'auto',qualityCode:'overlap_suspect'},{t:1.5,player:'b',status:'ignored'}];
+  const arcs=B.estimatedArcs(hits,frames,regions,W);
+  assert.equal(arcs.length,1,'only the 0→0.6 pair qualifies (overlap suspect and ignored sounds are skipped)');
+  const arc=arcs[0];assert(arc.displayOnly&&arc.estimated);assert.deepEqual(arc.anchors,['wrist','wrist']);
+  assert.equal(arc.points[0].x,80);assert.equal(arc.points.at(-1).x,890,'arc runs from the hitter wrist to the receiver wrist nearest the court');
+  const midIndex=Math.floor(arc.points.length/2),mid=arc.points[midIndex],chord=(arc.points[0].y+arc.points.at(-1).y)/2;
+  assert(mid.y<chord-10,'the arc rises above the chord by the gravity sag');
+  assert(arc.points.every(p=>p.predicted&&p.kind==='hit-arc'));
+  // 実測の軌跡があれば進行方向を優先（player 表示が逆でも右へ飛ぶ球は左の選手が打った）
+  const track=[{id:1,points:Array.from({length:6},(_,i)=>({t:.1+i*.05,x:300+i*60,y:200}))}];
+  const byTrack=B.estimatedArcs([{t:0,player:'b',status:'auto'},{t:.6,player:'a',status:'auto'}],frames,regions,W,{tracks:track});
+  assert.equal(byTrack[0].hitter,0,'direction of the measured track decides the hitter');
+  // 手首が見えなければ枠の内側を使い、枠が無ければ描かない
+  const noPose=B.estimatedArcs(hits.slice(0,2),[],regions,W);assert.deepEqual(noPose[0].anchors,['box','box']);
+  assert.equal(B.estimatedArcs(hits,frames,null,W).length,0);
+  // drawTrails は弧を実線で色違いに描き、現在位置の印は実測が無ければ出さない
+  let strokes=0,fills=0;const c={save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},stroke(){strokes++;},arc(){},fill(){fills++;},setLineDash(){}};
+  assert(B.drawTrails(c,arcs,W,.3,hits));assert(strokes>0&&fills===0,'no current-point marker for an estimated arc');
+  console.log('Estimated hit arcs: wrist anchors, gravity sag, track-direction hitter, skips for ignored/overlap, solid distinct colour');
+}

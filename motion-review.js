@@ -21,7 +21,7 @@ window.FrescoMotionReview = (() => {
     if(!source)return null;
     return JSON.parse(JSON.stringify({schema:'frescoball-motion-v1',source,settings:{distanceM:currentDistance,rule:'practice'},regions:regions[0]&&regions[1]?regions:[],frames,tracks,events}));
   }
-  function refreshTracks(){drawingTracks=window.FrescoBallTracker?.displayTracks?.(tracks,events,source?.width,frames)||tracks;}
+  function refreshTracks(){drawingTracks=window.FrescoBallTracker?.displayTracks?.(tracks,events,source?.width,frames)||tracks;if(window.FrescoBallTracker?.estimatedArcs&&regions?.length===2)drawingTracks=drawingTracks.concat(window.FrescoBallTracker.estimatedArcs(events,frames,regions,source?.width,{tracks:drawingTracks}));}
   function changed(){refreshTracks();callbacks.onChange?.(snapshot());}
   function drawOverlay(c,w,h,t,options={}){
     if(!source||!source.width||!source.height)return false;
