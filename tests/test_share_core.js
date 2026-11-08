@@ -107,3 +107,12 @@ console.log('Trajectory display rejects background/body/static candidates and av
  assert(C.distribution([],0,1).every(r=>r.a===0&&r.b===0));
  console.log('Story distributions: interval boundaries, originating player, excluded speeds and left/right swap passed');
 }
+
+// Export default: confirmed only when pose-assigned shots cover most of the audio shots.
+assert.equal(C.measurementDefault({analysisMode:'audio',audioCount:50,verifiedCount:0}).value,'audio');
+assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:53,verifiedCount:10}).value,'audio','10 of 53 assigned must not hide the other 43 shots');
+assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:53,verifiedCount:45}).value,'confirmed');
+assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:0,verifiedCount:0}).value,'audio');
+assert.equal(C.measurementDefault({analysisMode:'motion',hasAudio:false,audioCount:0,verifiedCount:12}).value,'confirmed','video-only records keep the confirmed basis');
+assert.equal(C.measurementDefault({analysisMode:'motion',audioCount:53,verifiedCount:10}).coverage.toFixed(3),'0.189');
+console.log('Export measurement default follows pose coverage');

@@ -1,6 +1,6 @@
 /* Frescoball Speed Meter application-shell cache. */
 const CACHE_PREFIX = "frescoball-speed-shell-";
-const CACHE_NAME = "frescoball-speed-shell-v45";
+const CACHE_NAME = "frescoball-speed-shell-v46";
 const APP_SHELL = [
   "./",
   "./index.html",

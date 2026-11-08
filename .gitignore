@@ -5,3 +5,6 @@ __pycache__/
 models/*/part-*.bin
 !models/yolox-nano/part-*.bin
 .wrangler/
+
+# 個人動画の解析メモ・証拠画像（人物が写るため追跡しない）
+local/

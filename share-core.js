@@ -64,5 +64,14 @@
     segments.sort((a,b)=>Math.hypot(b.at(-1).x-b[0].x,b.at(-1).y-b[0].y)-Math.hypot(a.at(-1).x-a[0].x,a.at(-1).y-a[0].y));
     return segments[0]||[];
   }
-  return {distribution,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt};
+  // 映像で選手を割り当てられた打球が音の打球の大半を占めるときだけ「音の打数＋映像で確認」を既定にする。
+  // 割り当てが少ないまま confirmed を既定にすると、打数・平均・分布が母集団の一部で描かれる（2026-11-08 IMG_1345 検証）。
+  function measurementDefault({analysisMode,hasAudio=true,audioCount=0,verifiedCount=0,minCoverage=.8}={}){
+    const audio=Number.isFinite(audioCount)&&audioCount>0?audioCount:0,verified=Number.isFinite(verifiedCount)&&verifiedCount>0?verifiedCount:0;
+    const coverage=audio?Math.min(1,verified/audio):null;
+    if(analysisMode!=='motion')return {value:'audio',coverage,verified,audio};
+    if(!hasAudio)return {value:verified?'confirmed':'audio',coverage,verified,audio};
+    return {value:coverage!=null&&coverage>=minCoverage?'confirmed':'audio',coverage,verified,audio};
+  }
+  return {distribution,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt,measurementDefault};
 });
