@@ -50,7 +50,9 @@
   function pick(nav=typeof navigator!=='undefined'?navigator:null,force=null){
     if(!nav||typeof WebAssembly==='undefined')return null;
     const mobile=/Mobi|Android|iPhone|iPad|iPod/i.test(nav.userAgent||''),gpu=!!nav.gpu;
-    const rfdetr={model:'rfdetr',base:'./models/rfdetr-nano/',providers:['webgpu','wasm']},yolox={model:'yolox',base:'./models/yolox-nano/',providers:gpu?['webgpu','wasm']:['wasm']};
+    const rfdetr={model:'rfdetr',base:'./models/rfdetr-nano/',providers:['webgpu','wasm']},// スマホの試験（?model=yolox）は、GPU を使わず wasm のみ・スレッド1・1回の解析で呼ぶ回数は200回まで。
+    // iOS の Safari で ONNX Runtime のモデルがメモリ不足で落ちる報告があるため、落ちにくい側へ倒す。
+    yolox={model:'yolox',base:'./models/yolox-nano/',providers:gpu&&!mobile?['webgpu','wasm']:['wasm'],mobile,maxCalls:mobile?200:null,threads:mobile?1:null};
     if(force==='rfdetr')return rfdetr;if(force==='yolox')return yolox;
     // スマホは当面は対象外（iPhone の Safari で解析中にページが落ちる報告があり、原因を確認するまで止める）。
     // 検証時は ?model=yolox で明示的に有効にする。PC で WebGPU が無い場合は軽量版を wasm で使う
@@ -80,23 +82,37 @@
     return {manifest,bytes:assemble(parts,manifest.totalBytes)};
   }
   // ONNX Runtime（ort）でセッションを作り、detect(imageData) を返す。imageData は size×size の RGBA
-  async function createTeacher({ort,baseUrl,onProgress,providers=['webgpu','wasm']}){
+  async function createTeacher({ort,baseUrl,onProgress,providers=['webgpu','wasm'],maxCalls=null,threads=null,onStage=null}){
     if(!ort?.InferenceSession)throw new Error('ONNX Runtime が読み込まれていません');
+    if(threads&&ort.env?.wasm)ort.env.wasm.numThreads=threads;
+    onStage?.('fetch',{calls:0,adopted:0});
     const {manifest,bytes}=await fetchModel(baseUrl,onProgress);
+    onStage?.('prepare',{calls:0,adopted:0});
     const size=manifest.input.shape[2];
     let session=null,provider=null;
     for(const ep of providers){try{session=await ort.InferenceSession.create(bytes,{executionProviders:[ep]});provider=ep;break;}catch(e){session=null;}}
     if(!session)throw new Error('モデルを実行できる環境がありません');
     const inputName=manifest.input.name,boxesName=manifest.outputs.boxes,logitsName=manifest.outputs.logits;
     const kind=manifest.kind||'rfdetr',conf=finite(manifest.conf)?manifest.conf:.5,norm=manifest.input?.normalize==='bgr255'?preprocessBgr255:preprocess;
+    let calls=0,adopted=0,failed=0;
     return {size,provider,kind,conf,name:manifest.name,
+      // 1回の解析ごとに数え直す（呼び出し側が解析の始めに呼ぶ）
+      resetCalls(){calls=0;adopted=0;failed=0;},
+      stats(){return {calls,adopted,failed};},
       async detect(imageData){
         if(!imageData||imageData.width!==size||imageData.height!==size)throw new Error(`入力は${size}×${size}にしてください`);
+        if(maxCalls!=null&&calls>=maxCalls)return null;   // 上限を超えたら、以後は呼ばない
+        calls++;
+        if(calls===1||calls%10===0)onStage?.('infer',{calls,adopted,failed});   // 落ちる前の回数を残すため、推論の前に記録する
+        try{
         const input=new ort.Tensor('float32',norm(imageData.data,size),[1,3,size,size]);
         const out=await session.run({[inputName]:input});
-        if(kind==='yolox'){const o=out[boxesName];return decodeYolox(o.data,o.dims[1],o.dims[2]||manifest.outputs.stride||6,.05,size);}
-        const dets=out[boxesName],labels=out[logitsName];
-        return decode(dets.data,labels.data,labels.dims[1],labels.dims[2]);
+        let best;
+        if(kind==='yolox'){const o=out[boxesName];best=decodeYolox(o.data,o.dims[1],o.dims[2]||manifest.outputs.stride||6,.05,size);}
+        else{const dets=out[boxesName],labels=out[logitsName];best=decode(dets.data,labels.data,labels.dims[1],labels.dims[2]);}
+        if(best&&best.conf>=conf)adopted++;
+        return best;
+        }catch(error){failed++;throw error;}   // 呼び出し側は例外を握りつぶすので、失敗はここで数える
       },
       async close(){try{await session.release?.();}catch{}}
     };

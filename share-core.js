@@ -16,10 +16,19 @@
     const x=Math.max(0,left-pad),y=Math.max(0,top-pad);
     return{x,y,w:Math.min(width,right+pad)-x,h:Math.min(height,bottom+pad)-y};
   }
+  // 区間内で速度を出せた打球の速度。区間の最初の打球と、間隔がラリーの区切りを超えた打球は数えない。
+  // 平均・最高・「速度を出せた打球 n」・球速分布はすべてこの母集団から作る（ストーリーズの数字をそろえる）。
+  function windowSpeeds(selected,gap=2.5){
+    let last=null;const speeds=[];
+    selected.forEach(h=>{if(last!=null&&h.t>last&&h.t-last<=gap&&!h.qualityExcluded&&h.status!=='ignored'&&typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)speeds.push(h.speed);last=h.t;});
+    return speeds;
+  }
+  function inWindow(hits,start,end){return (hits||[]).filter(h=>Number.isFinite(h.t)&&h.t>=start&&h.t<=end).slice().sort((a,b)=>a.t-b.t);}
   function stats(hits,start,end,gap=2.5){
-    const selected=hits.filter(h=>Number.isFinite(h.t)&&h.t>=start&&h.t<=end).slice().sort((a,b)=>a.t-b.t);
-    let last=null,run=0,best=0;const speeds=[];
-    selected.forEach(h=>{run=last!=null&&h.t-last<=gap?run+1:1;best=Math.max(best,run);if(last!=null&&h.t>last&&h.t-last<=gap&&typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)speeds.push(h.speed);last=h.t;});
+    const selected=inWindow(hits,start,end);
+    let last=null,run=0,best=0;
+    selected.forEach(h=>{run=last!=null&&h.t-last<=gap?run+1:1;best=Math.max(best,run);last=h.t;});
+    const speeds=windowSpeeds(selected,gap);
     return {total:selected.length,rally:best,average:speeds.length?speeds.reduce((a,b)=>a+b,0)/speeds.length:null,max:speeds.length?Math.max(...speeds):null};
   }
   function distribution(hits,start,end,flip=false){
@@ -29,6 +38,35 @@
       let player=h.launchPlayer||ordered[i-1]?.player;if(!['a','b'].includes(player))return;
       if(flip)player=player==='a'?'b':'a';const band=h.speed<50?0:h.speed>=90?5:1+Math.floor((h.speed-50)/10);rows[band][player]++;
     });return rows;
+  }
+  // 球速の帯（結果画面と同じ刻み）。打球のない帯は描く側で省く。
+  const BANDS=(()=>{const b=[{lo:-Infinity,hi:30,label:'30以下'},{lo:30,hi:40,label:'30〜40'},{lo:40,hi:50,label:'40〜50'}];for(let s=50;s<120;s+=5)b.push({lo:s,hi:s+5,label:`${s}〜${s+5}`});b.push({lo:120,hi:Infinity,label:'120以上'});return b;})();
+  function speedSummary(hits,start,end,gap=2.5){
+    const bands=BANDS.map(b=>({label:b.label,count:0})),speeds=windowSpeeds(inWindow(hits,start,end),gap);
+    for(const v of speeds)bands[BANDS.findIndex(b=>v>=b.lo&&v<b.hi)].count++;
+    return {withSpeed:speeds.length,bands};
+  }
+  // 速度を出せなかった打球の理由を、その動画で実際にあったものだけ数える（結果画面用）。
+  // hits は時刻順。qualityCode は速度レビューが付けた理由。付いていない打球は、ラリーの最初・前の打球との間隔・初速の上限で分ける。
+  function noSpeedReasons(hits,o={}){
+    const minF=o.minFlightSeconds??.2,maxF=o.maxFlightSeconds??.9,counts=new Map();
+    const add=k=>counts.set(k,(counts.get(k)||0)+1);
+    (hits||[]).forEach((h,i)=>{
+      if(typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)return;
+      if(h.qualityCode==='manual')return add('manual');
+      if(h.qualityCode==='above_limit')return add('above_limit');
+      if(h.qualityCode==='overlap_suspect')return add('overlap');
+      if(h.qualityCode)return add('spike');
+      if(i===0||h.rNow===1)return add('first');
+      // 計測側が記録した理由を使う。記録が無い（古い記録など）打球を、件数合わせで「初速超」に振らない
+      if(h.noSpeedReason==='initial_speed_above_trust_limit')return add('trust');
+      const dt=h.t-hits[i-1].t;
+      if(dt>maxF)return add('long');
+      if(dt<minF)return add('short');
+      add('other');
+    });
+    const label={first:'ラリーの最初の1打',long:`間隔が${maxF}秒超`,short:`間隔が${minF}秒未満`,trust:`初速${o.trustLimitKmh??110}km/h超`,manual:'手動で除外',above_limit:`上限${o.videoCapKmh}km/h超`,spike:'飛び抜けた速度',overlap:'隣の組の音の疑い',other:'そのほか'};
+    return ['first','long','short','trust','manual','above_limit','spike','overlap','other'].filter(k=>counts.get(k)).map(k=>({key:k,label:label[k],count:counts.get(k)}));
   }
   function motionRange(motion){
     const fs=motion?.frames;if(!Array.isArray(fs)||fs.length<2)return null;
@@ -73,5 +111,5 @@
     if(!hasAudio)return {value:verified?'confirmed':'audio',coverage,verified,audio};
     return {value:coverage!=null&&coverage>=minCoverage?'confirmed':'audio',coverage,verified,audio};
   }
-  return {distribution,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt,measurementDefault};
+  return {distribution,speedSummary,noSpeedReasons,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt,measurementDefault};
 });

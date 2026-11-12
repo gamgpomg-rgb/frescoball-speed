@@ -19,7 +19,7 @@ const context = vm.createContext({
   currentVideoSettings: { values: { distance: "7", micPos: "center", firstOnsetSide: "near", rallyGap: "2.5", maxTrust: "200", calib: "" } },
   curStats: null, curFlip: false, currentMotion: null, RECORD_SCHEMA_VERSION: 2,
   HBINS: [{label: "all"}], binIndex: () => 0, playerName: p => p,
-  renderShotSummary:()=>{},resetUploadAnalysis: () => {}, renderPlayers: () => {}, renderDash: () => {}, setVideoExportAvailability: () => {}
+  renderShotSummary:()=>{},updateAnalysisSteps:()=>{},resetUploadAnalysis: () => {}, renderPlayers: () => {}, renderDash: () => {}, setVideoExportAvailability: () => {}
 });
 for (const name of ["validatedVideoDistance", "measureVideoInterval", "measureObservedInterval", "videoRallyGap", "buildStats", "rebuildTimeline", "aggregate", "defaultPlayerLabels", "normalizeRecord", "estimatedDrops", "makeRecord", "openRecord"]) {
   const start = html.indexOf(`function ${name}(`);
@@ -87,3 +87,10 @@ console.log('Estimated end-of-rally drops and manual correction history passed')
 const separate=context.estimatedDrops({hits:[{t:1},{t:2},{t:6},{t:7}]},10,2.5);
 assert.equal(separate.rallyBreaks,1);assert.equal(separate.trailingPause,true);assert.equal(separate.confirmedDrops,null);
 assert.equal(context.estimatedDrops({hits:[{t:1}],dropOverride:0},20,2.5).confirmedDrops,0);
+// 理由の記録（noSpeedReason）は計測の採否を変えず、保存・読み込みでも残る。記録の無い古い打球もそのまま読める
+{
+  const noReason = context.normalizeRecord({ hits: [{ t: 1, idx: 0, speed: null }] });
+  assert.equal("noSpeedReason" in noReason.hits[0], false);
+  const withReason = context.normalizeRecord({ hits: [{ t: 1, idx: 0, speed: null, noSpeedReason: "initial_speed_above_trust_limit" }] });
+  assert.equal(withReason.hits[0].noSpeedReason, "initial_speed_above_trust_limit");
+}

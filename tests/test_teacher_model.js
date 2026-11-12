@@ -31,7 +31,12 @@ const assert=require('assert'),T=require('../teacher-model');
   assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'}).model,'rfdetr');
   assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'}),null,'phones stay on the rule-based path until the Safari crash is understood');
   const forcedPhone=T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'},'yolox');
-  assert.equal(forcedPhone.model,'yolox');assert.deepEqual(forcedPhone.providers,['webgpu','wasm']);
+  assert.equal(forcedPhone.model,'yolox');assert.deepEqual(forcedPhone.providers,['wasm'],'phones never use the GPU, even when WebGPU exists');
+  assert.equal(forcedPhone.maxCalls,200);assert.equal(forcedPhone.threads,1);
+  assert.equal(T.pick({userAgent:'Mozilla/5.0 (Linux; Android 15) Mobile Chrome/140'},'yolox').providers.join(),'wasm');
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'},null),null,'without the switch a phone stays unsupported');
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0) Safari'},'rfdetr').maxCalls,undefined,'the trial limits apply only to the phone yolox path');
+  assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'},'yolox').maxCalls,null);
   const noGpu=T.pick({userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'});
   assert.equal(noGpu.model,'yolox');assert.deepEqual(noGpu.providers,['wasm']);
   assert.equal(T.pick({gpu:{},userAgent:'Mozilla/5.0 (Macintosh) Chrome/140'},'yolox').model,'yolox','forced choice for verification');
@@ -62,6 +67,27 @@ const assert=require('assert'),T=require('../teacher-model');
   assert.deepEqual(deleted,['m/part-00.bin'],'the bad part is dropped from the cache');
   store.clear();
   await assert.rejects(()=>{globalThis.fetch=async()=>({ok:true,clone(){return this;},json:async()=>({...manifest,parts:[{file:'../evil.bin',bytes:3}]})});return T.fetchModel('m/');},/一覧が不正/,'file names outside the model folder are refused');
+  // スマホ試験：スレッド1・wasm のみ・呼び出し上限・段階の記録・採用数
+  {
+    const yoloxManifest={...manifest,kind:'yolox',conf:.5,input:{name:'input',shape:[1,3,384,384],normalize:'bgr255'},outputs:{boxes:'dets',stride:6}};
+    globalThis.fetch=async()=>({ok:true,clone(){return this;},json:async()=>yoloxManifest,arrayBuffer:async()=>good.buffer.slice(0)});store.clear();
+    let runs=0,created=null;const stages=[];
+    const row=[192,192,20,20,.9,.9];
+    const ort={env:{wasm:{}},Tensor:class{constructor(t,d,s){this.data=d;this.dims=s;}},InferenceSession:{create:async(b,o)=>{created=o;return {run:async()=>{runs++;return {dets:{data:Float32Array.from(row),dims:[1,1,6]}};}};}}};
+    const t=await T.createTeacher({ort,baseUrl:'m/',providers:['wasm'],maxCalls:200,threads:1,onStage:(stage,info)=>stages.push([stage,info.calls])});
+    assert.equal(ort.env.wasm.numThreads,1);assert.deepEqual(created.executionProviders,['wasm']);
+    const img={width:384,height:384,data:new Uint8ClampedArray(384*384*4)};
+    for(let i=0;i<250;i++)await t.detect(img);
+    assert.equal(runs,200,'the model is not called after 200 calls');assert.equal(await t.detect(img),null);
+    assert.equal(t.stats().adopted,200);
+    assert.deepEqual(stages.slice(0,3).map(x=>x[0]),['fetch','prepare','infer']);
+    assert.deepEqual(stages.filter(x=>x[0]==='infer').map(x=>x[1]).slice(0,3),[1,10,20],'stage is recorded at the first call and every 10 calls');
+    t.resetCalls();await t.detect(img);assert.equal(runs,201,'resetCalls starts a new analysis');
+    // 推論の例外は数えて投げ直す（呼び出し側が握りつぶしても、失敗の回数が残る）
+    t.resetCalls();ort.InferenceSession.create=null;const failing=await T.createTeacher({ort:{...ort,InferenceSession:{create:async()=>({run:async()=>{throw new Error('oom');}})}},baseUrl:'m/',providers:['wasm']});
+    for(let i=0;i<3;i++)await assert.rejects(()=>failing.detect(img),/oom/);
+    assert.deepEqual(failing.stats(),{calls:3,adopted:0,failed:3});
+  }
   delete globalThis.caches;delete globalThis.fetch;
   console.log('Teacher model chunk verification passed');
 })().catch(e=>{console.error(e);process.exit(1);});

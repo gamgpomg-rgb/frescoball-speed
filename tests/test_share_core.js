@@ -124,3 +124,36 @@ console.log('Export measurement default follows pose coverage');
   assert.deepEqual(ignoredSelection.result.hits.map(h=>h.t),[0,1],'explicitly ignored sound must not return in audio export');
   console.log('Audio export drops explicitly ignored sounds');
 }
+// ストーリーズの「速度を出せた打球 n／m」と球速分布：区間内の速度ありだけを数え、除外・無視・速度なしは入れない
+{
+  const s=C.speedSummary([{t:0,speed:null},{t:1,speed:35},{t:2,speed:44},{t:3,speed:44},{t:4,speed:60,qualityExcluded:true},{t:5,speed:70,status:'ignored'},{t:6,speed:125},{t:20,speed:50}],0,10);
+  assert.equal(s.withSpeed,4);
+  assert.deepEqual(s.bands.filter(b=>b.count).map(b=>[b.label,b.count]),[['30〜40',1],['40〜50',2],['120以上',1]]);
+  assert.equal(C.speedSummary([],0,10).withSpeed,0);
+}
+// 区間がラリーの途中から始まっても、n・分布・平均・最高は同じ母集団（区間の最初の打球は速度に数えない）
+{
+  const hits=[{t:0,speed:null},{t:.5,speed:100},{t:1,speed:50},{t:1.5,speed:52}];
+  const st=C.stats(hits,.5,1.5),sm=C.speedSummary(hits,.5,1.5);
+  assert.equal(st.total,3);assert.equal(sm.withSpeed,2,'the first hit of the window has no interval inside the window');
+  assert.equal(sm.bands.reduce((a,b)=>a+b.count,0),sm.withSpeed,'distribution total equals n');
+  assert.equal(st.max,52);const top=sm.bands.filter(b=>b.count).at(-1).label;assert.equal(top,'50〜55','the max falls in the highest populated band');
+  assert.equal(C.speedSummary(hits,.5,1.5).withSpeed,C.stats(hits,.5,1.5).average==null?0:2);
+}
+// 速度なしの理由は、その動画で実際にあったものだけを数える
+{
+  const hits=[{t:0,speed:null,rNow:1},{t:.5,speed:50,rNow:2},{t:2,speed:null,rNow:3},{t:2.05,speed:null,rNow:4},
+    {t:5,speed:null,rNow:1},{t:5.5,speed:null,qualityCode:'overlap_suspect',rNow:2},{t:6,speed:null,qualityCode:'manual',rNow:3},
+    {t:6.5,speed:null,qualityCode:'above_limit',rNow:4},{t:7,speed:null,qualityCode:'global_isolated_spike',rNow:5},{t:7.5,speed:null,rNow:6,noSpeedReason:'initial_speed_above_trust_limit'}];
+  const r=Object.fromEntries(C.noSpeedReasons(hits,{videoCapKmh:80}).map(x=>[x.key,x.count]));
+  assert.deepEqual(r,{first:2,long:1,short:1,trust:1,manual:1,above_limit:1,spike:1,overlap:1});
+  assert.equal(C.noSpeedReasons(hits.slice(0,2),{}).map(x=>x.key).join(),'first','reasons that did not occur are not listed');
+  assert.equal(C.noSpeedReasons([{t:0,speed:50},{t:.5,speed:50}],{}).length,0);
+  assert.equal(C.noSpeedReasons([{t:0,speed:1,rNow:1},{t:.5,speed:null,rNow:2}],{}).map(x=>x.key).join(),'other');
+}
+// 理由の記録が無い打球（古い記録）は、推定で「初速超」に振らず「そのほか」にまとめる
+{
+  const old=[{t:0,speed:null,rNow:1},{t:.5,speed:null,rNow:2},{t:1,speed:null,rNow:3}];
+  assert.deepEqual(C.noSpeedReasons(old,{}).map(x=>[x.key,x.count]),[['first',1],['other',2]]);
+  assert.deepEqual(C.noSpeedReasons(old.map((h,i)=>i===1?{...h,noSpeedReason:'initial_speed_above_trust_limit'}:h),{}).map(x=>[x.key,x.count]),[['first',1],['trust',1],['other',1]]);
+}

@@ -280,6 +280,58 @@
 #upView button:focus-visible,#upView summary:focus-visible{outline:3px solid #ffe46b;outline-offset:3px}
 #upView input[type=checkbox]{min-width:24px;min-height:24px;vertical-align:middle}
 #upView .shot-summary{line-height:1.65}
+.activity-badge[hidden]{display:none}
+#histList .rec{align-items:center;padding:8px 10px;gap:8px}
+#histList .rec-main{min-width:0;flex:1}
+#histList .rec-l1{font-size:14px}
+#histList .rec-l2{display:flex;align-items:center;gap:6px;min-width:0}
+#histList .rec-l2 .meta{font-size:12px;min-width:0}
+#histList .rec .more{min-height:44px;margin:-6px 0 -10px -8px;padding:0 8px;border:0;background:none;color:var(--aqua);font-size:13px;font-weight:700;text-decoration:underline}
+#histList .rec-btns{display:flex;gap:12px;flex:none}
+#histList .rec-btns button{min-width:44px;min-height:44px;margin:0;padding:0 10px}
+#histList .rec-older{margin-left:14px;border-left:2px solid #4a3d6b;padding-left:6px}
+#histList .rec-older .rec{margin:4px 0;opacity:.9}
+#teacherTrialNote{font-size:13px;color:var(--aqua);margin:0 0 10px}
+/* 最初の画面：入口2つ */
+#upHead{display:grid;gap:10px;margin:6px 0 12px;text-align:center}
+#upHead .entry{display:grid;place-items:center;gap:2px;min-height:64px;border-radius:999px;font-size:18px;font-weight:800;margin:0;padding:12px 18px;cursor:pointer;line-height:1.3}
+#upHead .entry small{display:block;font-size:13px;font-weight:600}
+#upPick.entry{background:var(--aqua);color:#092a25;box-shadow:0 6px 16px rgba(22,230,195,.3)}
+#tabCam.entry{background:transparent;color:var(--ink);border:1.5px solid #6d5f8c;min-height:56px}
+#upHead.compact{grid-template-columns:1fr 1fr}
+#upHead.compact .entry{min-height:44px;font-size:14px;padding:8px 12px;box-shadow:none}
+#upHead.compact .entry small{display:none}
+#upHead.compact #upPick.entry{background:transparent;color:var(--ink);border:1px solid #6d5f8c}
+#upHead #upProg,#upHead #quickAnalyze{grid-column:1/-1}
+#videoReady{font-size:15px;color:var(--muted);text-align:center;margin:12px 0 4px}
+/* 結果：動画は画面幅いっぱい */
+@media(max-width:512px){#upStage{margin-left:-16px;margin-right:-16px;border-radius:0}}
+.dashGrid.main{gap:8px;margin:12px 0 0}
+.dashGrid.main .cell{padding:12px 6px}
+.dashGrid.main .cell .lbl{font-size:14px}
+.dashGrid.main .cell b{font-size:44px;line-height:1.05}
+.dashGrid.main .cell b small{font-size:13px;font-weight:600;margin-left:2px;color:var(--muted)}
+.speed-trust{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid #4a3d6b;font-size:14px;line-height:1.6;text-align:left}
+.speed-trust b{display:block;font-size:17px;color:var(--ink)}
+.speed-trust span{font-size:13px;color:var(--muted)}
+.main-hist{margin:14px 0 0}
+.main-hist h4{font-size:15px;color:var(--ink);margin:0 0 6px}
+#histo .bar{grid-template-columns:78px 1fr 34px;font-size:13px}
+#histo .bar .track{height:14px}
+.lr-line{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
+.result-actions{display:grid;gap:10px;margin:16px 0 0}
+.result-actions button{margin:0;min-height:60px;border-radius:999px;font-size:17px;font-weight:800;padding:12px}
+.result-actions button small{display:block;font-weight:600;font-size:13px}
+#storyMake{background:var(--aqua);color:#092a25}
+#storyChoice{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#storyChoice[hidden]{display:none}
+#upView .result-actions #vidBtn{margin:0!important;width:100%}
+.more-tools{margin:16px 0 0;max-width:none}
+.more-tools details{background:none;border:0;border-top:1px solid var(--line);border-radius:0;padding:0;margin:0;max-width:none}
+.more-tools .note13,.more-tools p{font-size:13px;line-height:1.7;color:var(--muted);margin:8px 0}
+.more-tools .dashGrid{margin-top:8px}
+#histoNotes div{font-size:13px;color:var(--muted);margin-top:6px}
+.more-tools label.row{display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 0}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -310,11 +362,6 @@
 })();
 </script>
 
-<div id="modeTabs">
-  <button id="tabUp" class="active">シンプル</button>
-  <button id="tabDetail">詳細</button>
-  <button id="tabCam">カメラ</button>
-</div>
 
 <!-- ===== 数値モード ===== -->
 <div id="numView" hidden>
@@ -399,6 +446,7 @@
     <div class="setting"><label>ライブ/解析: 信頼する初速上限 [km/h]（超は集計から除外）</label><input type="number" id="maxTrust" placeholder="既定" step="5" min="1"></div>
     <div class="setting"><label>解析: AIで雑音を除外（実験・初回はモデル4MB DL/要ネット）</label><input type="checkbox" id="aiFilter"></div>
     <div class="setting"><label>解析: 球の検出モデル（実験・PC向け・初回は通信。PCのChromeは高精度113MB、WebGPUの無いPCは軽量3.5MB。スマホでは当面使いません。球の軌跡の見落としを補うだけで、速度・打数は変わりません）</label><input type="checkbox" id="teacherBall"></div>
+    <div class="note" id="teacherTrialNote" hidden></div>
     <div class="setting"><label>解析: 映像から打点を出す（実験・会場のBGMやMCで音の検出が当てにならない動画向け。球の向きが入れ替わる瞬間を打点にするので、打数・速度・左右が映像基準に変わります。球がよく追える高画質の動画が前提です）</label><input type="checkbox" id="videoHits"></div>
     <div class="setting"><label>AI除外の厳しさ（声/風/音楽の確信度がこれ以上で除外・0.5推奨/低いほど多く除外）</label><input type="number" id="aiThresh" value="0.5" step="0.05" min="0.1" max="1"></div>
     <div class="note">
@@ -436,10 +484,9 @@
 #upLive .ul-meta { background: rgba(8,6,24,.5); border: 1px solid var(--line); border-radius: 12px;
   padding: 6px 10px; font-size: 13px; backdrop-filter: blur(6px); }
 #upLive .ul-meta b { font-family: var(--num); color: var(--yellow); font-size: 17px; }
-  .ul-p { position: absolute; bottom: 44px; text-align: center; line-height: 1.05; pointer-events: none;
+  .ul-p { position: absolute; bottom: 58px; text-align: center; line-height: 1.05; pointer-events: none;
     text-shadow: 0 1px 6px rgba(0,0,0,.75); }
   .ul-p.left { left: 6px; } .ul-p.right { right: 6px; }
-  #upStage[data-playing="true"] .ul-p { bottom: 8px; }
   .ul-p small { display: block; font-size: 8px; font-weight: 800; letter-spacing: .08em; color: #fff; opacity: .85; }
   .ul-p span { font-family: var(--num); font-weight: 800; font-size: 22px; color: #fff; }
 .player-counts{display:inline-flex;justify-content:center;align-items:center;background:#130d279e;border-radius:6px;padding:3px 6px}
@@ -492,9 +539,9 @@
     <button id="stepMotion" type="button" disabled>2. 映像で詳しく<small id="stateMotion">任意・2人を指定</small></button>
     <button id="stepReview" type="button" disabled>3. 確認・修正<small id="stateReview">任意・判定を修正</small></button>
   </nav>
-  <p id="videoReady" role="status">動画を選ぶと、まず音から球速と打数を計測できます。</p>
+  <p id="videoReady" role="status">ラリーの球速と打数を測る</p>
   <progress id="analysisProgress" max="100" value="0" hidden aria-label="現在の解析の進み具合" style="width:100%"></progress>
-  <div class="video-meta"><span id="selectedVideoName">動画を選んで自動計測</span><button id="distanceOpen" type="button">選手間 7.0 m · 変更</button></div>
+  <div class="video-meta"><span id="selectedVideoName">選手間の距離</span><button id="distanceOpen" type="button">7.0 m・変更</button></div>
   <dialog id="distanceDialog"><h3>選手間の距離</h3><p>選手どうしの距離を指定します。ラケットの打点間距離とは異なるため、球速は目安です。</p>
     <label for="upDistance">距離 [m]</label>
     <input type="number" id="upDistance" value="7.0" step="0.1" min="7" required aria-describedby="upDistanceNote" style="width:100px">
@@ -502,8 +549,9 @@
     <button type="button" id="upDistanceApply">この距離に変更</button>
     <button type="button" id="distanceCancel">キャンセル</button>
   </dialog>
-  <div class="upHead">
-    <label id="upPick">動画を選ぶ<input type="file" id="upFile" accept="video/*" hidden></label>
+  <div class="upHead" id="upHead">
+    <label id="upPick" class="entry"><span id="upPickText">動画を選んで測る</span><small>撮った動画から自動で計測</small><input type="file" id="upFile" accept="video/*" hidden></label>
+    <button id="tabCam" type="button" class="entry ghost"><span id="tabCamText">その場で測る</span><small>マイクで打音を拾う</small></button>
     <button id="quickAnalyze" disabled hidden>解析をやり直す</button>
     <div id="upProg" hidden>解析中… <span id="upPct">0</span>%</div>
   </div>
@@ -519,64 +567,65 @@
   </div>
   <div id="overlayOptions" hidden style="display:none"><label><input id="showSkeleton" type="checkbox" checked> 骨格</label> <label><input id="showBall" type="checkbox" checked> ボールの軌跡（推定）</label></div>
   <div id="upDash" hidden>
-    <p id="analysisNote" style="font-size:12px;color:var(--muted)"></p>
-    <div class="dashGrid" id="dashSummary"></div>
-    <p style="font-size:13px;color:var(--muted)">球速は選手間距離と打球間隔から求めた推定初速です。スピードガンの実測値ではありません。</p>
-    <div id="shotSummary" class="shot-summary advanced-results" hidden></div>
-    <details id="distributionDetails" class="distribution-details"><summary>速度分布を見る</summary>
-    <div class="players2">
-      <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
-      <button id="dSwap" aria-label="A/B入替">⇄</button>
-      <div class="pc b"><span id="dpBLabel">選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
-    </div>
-    <div id="speedButterfly" hidden>
-      <div class="sb-head"><span class="sb-l">LEFT PLAYER</span><b>球速分布</b><span class="sb-r">RIGHT PLAYER</span></div>
-      <div id="sbRows"></div>
-      <div id="sbNote" class="sb-note"></div>
-    </div>
-    <h4>全体の速度分布</h4>
-    <div id="histo"></div>
-    </details>
-    <section id="materialOut" class="share-section">
-      <h3>ラリーを保存する</h3>
-      <p>プレーと球速、または骨格付きの動画を作れます。保存前に見た目を確認できます。</p>
-      <p id="noVideoNote" hidden>動画を保存するには、元の動画を選び直してください。</p>
-      <div class="share-primary">
-        <button id="exportStoryBtn">ストーリーズ動画<small>縦長・好きな区間を保存</small></button>
-        <button id="exportStoryImgBtn">ストーリーズ画像<small>見せたい瞬間を1枚に</small></button>
+    <div class="dashGrid main" id="dashSummary"></div>
+    <div id="speedTrust" class="speed-trust" hidden></div>
+    <div class="main-hist"><h4>球速分布（km/h）</h4><div id="histo"></div><p class="lr-line" id="lrLine"></p></div>
+    <section id="materialOut" class="result-actions">
+      <button id="storyMake" type="button" aria-expanded="false" aria-controls="storyChoice">ストーリーズを作る</button>
+      <div id="storyChoice" hidden>
+        <button id="exportStoryBtn" class="ghost">動画<small>縦長・好きな区間</small></button>
+        <button id="exportStoryImgBtn" class="ghost">画像<small>見せたい瞬間を1枚に</small></button>
       </div>
-      <details><summary>その他の保存方法</summary><div class="share-secondary">
+      <button id="vidBtn" class="ghost" style="display:none">2人を選んで詳しく解析<small>骨格とボールの軌跡を動画に重ねる・任意</small></button>
+      <p id="noVideoNote" hidden>動画を保存するには、元の動画を選び直してください。</p>
+      <p id="shareStatus" role="status"></p>
+    </section>
+    <details id="motionDetails" hidden><summary>2人の動き・判定の確認</summary><div id="motionHost"></div></details>
+    <details id="moreTools" class="more-tools"><summary>くわしい数字・保存方法・補正</summary>
+      <div class="dashGrid" id="dashExtra"></div>
+      <div id="histoNotes"></div>
+      <p id="analysisNote"></p>
+      <p>球速は選手間距離と打球間隔から求めた推定初速です。スピードガンの実測値ではありません。</p>
+      <div id="shotSummary" class="shot-summary advanced-results" hidden></div>
+      <details id="distributionDetails" class="distribution-details"><summary>左右別の分布を見る</summary>
+      <div class="players2">
+        <div class="pc a"><span id="dpALabel">選手A 打数</span><b id="dpA">0</b><span id="dsA">平均 -- km/h</span></div>
+        <button id="dSwap" aria-label="A/B入替">⇄</button>
+        <div class="pc b"><span id="dpBLabel">選手B 打数</span><b id="dpB">0</b><span id="dsB">平均 -- km/h</span></div>
+      </div>
+      <div id="speedButterfly" hidden>
+        <div class="sb-head"><span class="sb-l">LEFT PLAYER</span><b>球速分布</b><span class="sb-r">RIGHT PLAYER</span></div>
+        <div id="sbRows"></div>
+        <div id="sbNote" class="sb-note"></div>
+      </div>
+      </details>
+      <details><summary>その他の保存方法</summary><div class="share-secondary share-section" style="border:0;background:none;padding:0;margin:0">
         <button id="exportVideoBtn" class="ghost">元の画角で動画を保存<small>球速付き・骨格付き</small></button>
         <button id="resultCardBtn" class="ghost">リザルトカード</button>
-      </div>
+      </div></details>
+      <details><summary>落球数を実測値に合わせる</summary>
+        <p id="dropEstimateNote"></p>
+        <label>実際の落球数 <input id="dropCount" type="number" min="0" step="1" style="width:90px"></label>
+        <button id="saveDropCount" type="button">修正を反映</button>
+        <button id="resetDropCount" type="button">推定に戻す</button>
+        <p id="dropStatus" role="status"></p>
       </details>
-      <p id="shareStatus" role="status"></p>
-
-    </section>
-  <button id="vidBtn" class="ghost" style="width:100%;margin:2px 0 10px;border-radius:12px;padding:11px;display:none">2人を選んで骨格と軌跡を見る<small style="display:block;font-weight:normal">動きとボールの軌跡を動画に重ねる・任意</small></button>
-  <button id="reviewCurrent" class="advanced-results ghost" type="button">今の場面の判定を直す</button>
-  <details id="motionDetails" hidden><summary>2人の動き・判定の確認</summary><div id="motionHost"></div></details>
-    <details><summary>落球数を実測値に合わせる</summary>
-      <p id="dropEstimateNote"></p>
-      <label>実際の落球数 <input id="dropCount" type="number" min="0" step="1" style="width:90px"></label>
-      <button id="saveDropCount" type="button">修正を反映</button>
-      <button id="resetDropCount" type="button">推定に戻す</button>
-      <p id="dropStatus" role="status"></p>
-    </details>
-    <details class="advanced-results"><summary>詳しい記録・調整</summary>
-
-    <section class="speed-review">
-      <h3>気になる速度を見直す</h3>
-      <label><input type="checkbox" id="speedAuto" checked> 飛び抜けた速度を自動で除く</label>
-      <p id="speedReviewNote" role="status"></p>
-      <details><summary>速い順に確認・元に戻す</summary>
-        <p>外した速度は、平均・最高速・保存する画像や動画にも含めません。打数は変わりません。</p>
-        <label>この動画で集計する上限 [km/h] <input id="videoSpeedCap" type="number" min="1" step="1" placeholder="指定なし"></label>
-        <button id="applySpeedCap" class="ghost">上限を反映</button>
-        <div id="speedReviewList"></div>
+      <button id="reviewCurrent" class="advanced-results ghost" type="button">今の場面の判定を直す</button>
+      <label class="row"><input type="checkbox" id="detailMode"> 詳細モード（段階表示・確認と修正・細かい映像解析）</label>
+      <details class="advanced-results"><summary>詳しい記録・調整</summary>
+      <section class="speed-review">
+        <h3>気になる速度を見直す</h3>
+        <label><input type="checkbox" id="speedAuto" checked> 飛び抜けた速度を自動で除く</label>
+        <p id="speedReviewNote" role="status"></p>
+        <details><summary>速い順に確認・元に戻す</summary>
+          <p>外した速度は、平均・最高速・保存する画像や動画にも含めません。打数は変わりません。</p>
+          <label>この動画で集計する上限 [km/h] <input id="videoSpeedCap" type="number" min="1" step="1" placeholder="指定なし"></label>
+          <button id="applySpeedCap" class="ghost">上限を反映</button>
+          <div id="speedReviewList"></div>
+        </details>
+      </section>
+        <details><summary>記録のバックアップ</summary><p>機種変更やブラウザのデータ削除に備える、解析結果の控えです。元の動画は含まれません。通常の解析には必要ありません。</p><button id="exportJsonBtn" class="ghost">記録の控えを保存</button></details>
       </details>
-    </section>
-      <details><summary>記録のバックアップ</summary><p>機種変更やブラウザのデータ削除に備える、解析結果の控えです。元の動画は含まれません。通常の解析には必要ありません。</p><button id="exportJsonBtn" class="ghost">記録の控えを保存</button></details>
     </details>
   </div>
   <div id="upHistory">
@@ -798,21 +847,56 @@ function applySettings(settings) {
 const TEACHER_ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/";
 const TEACHER_ORT_SRI = "sha384-spJihwjw5DABHdp7XVsBfqbR7hlxe8gdmFg+FQUzeWG58zV7iOKXd30heVr3CZG0";   // ort.webgpu.min.js 1.29.0
 let teacherInstance = null, teacherLoading = null;
+// 球の検出モデルのスマホ試験（?model=yolox で開いたときだけ）。どの段階まで進んだかを端末に残し、落ちた場所が分かるようにする。
+const TEACHER_FORCE = new URLSearchParams(location.search).get("model");
+const TEACHER_TRIAL = TEACHER_FORCE === "yolox";
+const TRIAL_KEY = "frescoball-speed.teacher-trial.v1";
+const TRIAL_STAGES = { runtime: "実行基盤の読み込み", fetch: "モデルの取得", prepare: "準備", infer: "推論", done: "完了" };
+let teacherRunLoaded = false;   // 今回の解析でモデルを実際に読み込んだ（loadTeacher が呼ばれた）ときだけ true
+function trialWrite(stage, calls = 0, adopted = 0, error = null, failed = 0) {
+  if (!TEACHER_TRIAL) return;
+  try { localStorage.setItem(TRIAL_KEY, JSON.stringify({ stage, calls, adopted, failed, error, at: new Date().toISOString() })); } catch (_) {}
+}
+function trialLine() {
+  let r = null;
+  try { r = JSON.parse(localStorage.getItem(TRIAL_KEY) || "null"); } catch (_) {}
+  if (!r || !TRIAL_STAGES[r.stage]) return "前回の試験：まだ記録がありません";
+  const failed = r.failed || 0;
+  if (r.stage === "done") {
+    if (r.calls > 0 && failed >= r.calls) return `前回の試験：最後まで進みましたが、推論はすべて失敗しました（${r.calls}回）`;
+    return `前回の試験：最後まで動きました（推論${r.calls}回・採用${r.adopted}回${failed ? `・うち失敗${failed}回` : ""}）`;
+  }
+  if (r.error) return `前回の試験：『${TRIAL_STAGES[r.stage]}』の段階でエラーになりました（${r.error}）`;
+  // 途中で中止した場合も、ページが落ちた場合も、最後に書いた段階が残るだけ。区別はできない。
+  return `前回の試験：最後に記録された段階は『${TRIAL_STAGES[r.stage]}』${r.stage === "infer" ? `（${r.calls}回${failed ? `・うち失敗${failed}回` : ""}）` : ""}。途中で中止した場合も同じ表示になります`;
+}
+if (TEACHER_TRIAL) {
+  const note = $("teacherTrialNote"), label = $("teacherBall").closest(".setting").querySelector("label");
+  // 試験中の説明は、pick() が実際に返す内容（providers・maxCalls）から作る
+  const choice = window.FrescoTeacher ? FrescoTeacher.pick(navigator, TEACHER_FORCE) : null;
+  const detail = choice ? `軽量モデルを試します（${choice.providers.includes("webgpu") ? "GPUを使う" : "GPUなし・wasmのみ"}・${choice.maxCalls ? `1回の解析で${choice.maxCalls}回まで` : "呼び出しの上限なし"}）` : "この環境ではモデルを使えません";
+  label.textContent = "【試験中】" + label.textContent.replace("スマホでは当面使いません。", "") + " ※?model=yolox で開いているため、" + detail + "。";
+  note.textContent = trialLine(); note.hidden = false;
+}
 async function loadTeacher(onProgress) {
   const on = $("teacherBall") && $("teacherBall").checked;
-  if (!on || !window.FrescoTeacher || !FrescoTeacher.supported()) return null;
-  if (teacherInstance) return teacherInstance;
+  if (!on || !window.FrescoTeacher || !FrescoTeacher.pick(navigator, TEACHER_FORCE)) return null;
+  if (teacherInstance) { teacherInstance.resetCalls?.(); teacherRunLoaded = true; return teacherInstance; }
   if (!teacherLoading) teacherLoading = (async () => {
     if (!window.ort) {
+      trialWrite("runtime");
       await new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = TEACHER_ORT_BASE + "ort.webgpu.min.js"; s.integrity = TEACHER_ORT_SRI; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => reject(new Error("ONNX Runtime を取得できません")); document.head.append(s); });
       window.ort.env.wasm.wasmPaths = TEACHER_ORT_BASE;
     }
     // PC の Chrome（WebGPU）は高精度モデル、スマホや WebGPU の無い環境は軽量モデル。?model=yolox|rfdetr で検証用に固定できる
-    const choice = FrescoTeacher.pick(navigator, new URLSearchParams(location.search).get("model"));
+    const choice = FrescoTeacher.pick(navigator, TEACHER_FORCE);
     if (!choice) throw new Error("この環境では球の検出モデルを使えません");
-    teacherInstance = await FrescoTeacher.createTeacher({ ort: window.ort, baseUrl: choice.base, providers: choice.providers, onProgress });
+    teacherInstance = await FrescoTeacher.createTeacher({ ort: window.ort, baseUrl: choice.base, providers: choice.providers, onProgress,
+      maxCalls: choice.maxCalls, threads: choice.threads, onStage: (stage, info) => trialWrite(stage, info.calls, info.adopted, null, info.failed || 0) });
+    teacherRunLoaded = true;
     return teacherInstance;
-  })().finally(() => { teacherLoading = null; });
+  })().catch(error => { if (TEACHER_TRIAL) { let r = null; try { r = JSON.parse(localStorage.getItem(TRIAL_KEY) || "null"); } catch (_) {} trialWrite(r?.stage || "runtime", r?.calls || 0, r?.adopted || 0, String(error.message || error).slice(0, 80), r?.failed || 0); } throw error; })
+    .finally(() => { teacherLoading = null; });
   return teacherLoading;
 }
 function saveSettings() {
@@ -1592,16 +1676,17 @@ let videoMode='simple';
 function selectVideoMode(mode){
   videoMode=mode;exitCamera();$("numView").style.display="none";$("upView").classList.add("show");
   $("upView").classList.toggle("simple-mode",mode==='simple');
-  $("tabUp").classList.toggle("active",mode==='simple');$("tabDetail").classList.toggle("active",mode==='detail');$("tabCam").classList.remove("active");
+  $("detailMode").checked=mode==='detail';$("tabCam").classList.remove("active");
   window.FrescoMotionReview?.setMode?.(mode);syncLive();$("activityBadge").hidden=analysisActivity.status==='idle';
 }
-$("tabCam").addEventListener("click",()=>{if(analysisActivity.busy)return;$("activityBadge").hidden=true;exitUpload();$("tabUp").classList.remove("active");$("tabDetail").classList.remove("active");enterCamera();});
+$("tabCam").addEventListener("click",()=>{if(analysisActivity.busy)return;$("activityBadge").hidden=true;exitUpload();enterCamera();});
 $("hudClose").addEventListener("click",()=>selectVideoMode(videoMode));
-$("tabUp").addEventListener("click",()=>selectVideoMode('simple'));
-$("tabDetail").addEventListener("click",()=>selectVideoMode('detail'));
+// 「シンプル／詳細」の切替は、結果の「くわしい数字・保存方法・補正」の中の「詳細モード」に移した。
+$("detailMode").addEventListener("change",()=>selectVideoMode($("detailMode").checked?'detail':'simple'));
+$("storyMake").addEventListener("click",()=>{const box=$("storyChoice"),open=box.hidden;box.hidden=!open;$("storyMake").setAttribute("aria-expanded",String(open));});
 // 動画解析を初期表示にする。
 // ハンドラが参照する後方定義（camStream等）の初期化後に呼ぶため、スクリプト評価後へ遅延。
-setTimeout(() => $("tabUp").click(), 0);
+setTimeout(() => selectVideoMode('simple'), 0);
 
 /* ============================================================================
    動画解析モード：アップロード動画の音声トラックを“オフライン再解析”し、
@@ -1936,16 +2021,16 @@ function buildStats(onsets) {
   const cleanOnsets = split.times;
   const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0, qualityRejected = 0;
   for (const t of cleanOnsets) {
-    let speed = null;
+    let speed = null, noSpeedReason = null;   // noSpeedReason は理由の記録だけ（速度・採否の計算は変えない）
     if (lastOnset !== null) {
       const result = measureObservedInterval(t - lastOnset, idx - 1, currentVideoSettings);
       if (result.accepted) speed = result.initialSpeedKmh;
-      else { qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
+      else { noSpeedReason = result.reason || null; qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
     }
     if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
     if (rNow === 0) rallies++;
     rNow++; if (rNow > rMax) rMax = rNow;
-    hits.push({ t, idx, player: idx % 2 === 0 ? "a" : "b", speed, rNow });
+    hits.push({ t, idx, player: idx % 2 === 0 ? "a" : "b", speed, rNow, ...(noSpeedReason ? { noSpeedReason } : {}) });
     lastOnset = t; lastHitTime = t; idx++;
   }
   return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected, splitRemoved: split.removed };
@@ -2025,6 +2110,7 @@ function resetUploadAnalysis() {
   $("quickAnalyze").disabled=true; $("quickAnalyze").hidden=true; $("motionDetails").open=false; $("motionOverlay").hidden=true; $("overlayOptions").hidden=true; $("motionDetails").hidden=true;
   $("upDistanceApply").disabled = true; $("upDistance").disabled = false;
   currentRecordMeta = { id: null, dateISO: null, fileName: "", duration: 0 };
+  teacherRunLoaded = false;
   $("upProg").hidden = true;
   $("upProg").textContent = "";
   $("upDash").hidden = true;
@@ -2080,11 +2166,14 @@ function updateAnalysisSteps(phase,percent) {
   $("analysisProgress").hidden=!busy; $("analysisProgress").value=percent==null?analysisActivity.percent:Number(percent)||0;
   $("stepQuick").classList.toggle("completed",audio&&phase!=="audio");
   $("stepMotion").classList.toggle("completed",motion&&phase!=="motion");
-  $("selectedVideoName").textContent=selectedVideoFile?.name||"動画を選んで自動計測";
-  $("distanceOpen").textContent=`選手間 ${Number($("upDistance").value||7).toFixed(1)} m · 変更`;
+  $("selectedVideoName").textContent=selectedVideoFile?.name||"選手間の距離";
+  $("distanceOpen").textContent=`${Number($("upDistance").value||7).toFixed(1)} m・変更`;
   $("distanceOpen").disabled=busy;
-  $("upPick").classList.toggle("compact",Boolean(selectedVideoFile));
-  $("videoReady").textContent=selectedVideoFile?'音からの計測だけでも結果の確認・保存ができます。2人を選ぶと映像を詳しく解析します。':'動画を選ぶと、まず音から球速と打数を計測できます。';
+  const compact=Boolean(selectedVideoFile)||!$("upDash").hidden;
+  $("upPick").classList.toggle("compact",compact);$("upHead").classList.toggle("compact",compact);
+  $("upPickText").textContent=compact?"動画を選び直す":"動画を選んで測る";$("tabCamText").textContent="その場で測る";
+  $("videoReady").hidden=compact;
+  $("videoReady").textContent='ラリーの球速と打数を測る';
 }
 $("stepQuick").addEventListener('click',()=>{if(!selectedVideoFile)$("upFile").click();else if(!curStats?.audioReady)$("quickAnalyze").click();else $("upStage").scrollIntoView({behavior:'smooth'});});
 $("stepMotion").addEventListener('click',()=>openMotionWorkflow());
@@ -2103,21 +2192,36 @@ function renderDash() {
   $("dropEstimateNote").textContent=`打球の間が空いた区切りと、最後の打球後の空白から ${dropInfo.estimated} 回と推定しています。休憩や検出漏れも含まれるため、必要なときだけ実際の回数に直してください。`;
   updateAnalysisSteps();
   $("analysisNote").textContent = curStats.analysisMode === "motion" && curStats.countBasis === "video" ? "打数・球速・左右は、映像の球の向きが入れ替わる瞬間を打点として計測しています（実験）。球を追えなかった返球は数に入りません。速度は音基準より粗く、目安は±10%です。" : curStats.analysisMode === "motion" ? "打数・球速は音を基準に計測。映像で読み取れない打球も含みます。左右とA／Dは推定、落球数は音の区切りからの推定です。" : "音から求めた速報です。左右は交互の推定で、隣の組の音が含まれることがあります。2人を選ぶと映像でも詳しく調べられます。";
+  const withSpeed = curStats.hits.filter(h => h.speed != null).length, totalHits = curStats.total;
+  const unit = t => `<small>${t}</small>`;
   $("dashSummary").innerHTML = [
-    ["打数", curStats.total], ["最高速", ag.maxSpeed ? ag.maxSpeed.toFixed(1) : "--"], ["平均速", ag.avgAll ? ag.avgAll.toFixed(1) : "--"],
+    ["打数", curStats.total], ["最高", ag.maxSpeed ? ag.maxSpeed.toFixed(1) + unit("km/h") : "--"], ["平均", ag.avgAll ? ag.avgAll.toFixed(1) + unit("km/h") : "--"]
+  ].map(([l, v]) => `<div class="cell"><div class="lbl">${l}</div><b>${v}</b></div>`).join("");
+  $("dashExtra").innerHTML = [
     ["最長ラリー", curStats.rMax], ["ラリー本数（推定）", curStats.rallies], [dropInfo.corrected ? "落球数（修正済み）" : "落球数（推定）", drops]
   ].map(([l, v]) => `<div class="cell"><div class="lbl">${l}</div><b>${v}</b></div>`).join("");
+  const trust = $("speedTrust"), gate = QUALITY_GATE, capKmh = Number(currentVideoSettings?.values?.maxTrust) || gate.maxInitialSpeedKmh;
+  trust.hidden = !totalHits;
+  const reasons = withSpeed < totalHits ? FrescoShareCore.noSpeedReasons(curStats.hits, { minFlightSeconds: gate.minFlightSeconds, maxFlightSeconds: gate.maxFlightSeconds,
+    trustLimitKmh: capKmh, videoCapKmh: curStats.speedReview?.maxSpeedKmh }) : [];
+  trust.innerHTML = `<b>速度を出せた打球 ${withSpeed}／${totalHits}</b>` + (reasons.length
+    ? `<span>速度なしの内訳：${reasons.map(r => `${r.label} ${r.count}`).join("・")}</span>` : "");
   $("dpA").textContent = ag.pHits.a; $("dpB").textContent = ag.pHits.b;
   $("dsA").textContent = "平均 " + (ag.avgA ? ag.avgA.toFixed(1) : "--") + " km/h";
   $("dsB").textContent = "平均 " + (ag.avgB ? ag.avgB.toFixed(1) : "--") + " km/h";
-  const mx = Math.max(1, ...ag.hist.map(h => h.count));
-  $("histo").innerHTML = ag.hist.map(h =>
-    `<div class="bar"><div class="lab">${h.label}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
-    + ((curStats.excluded > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">※ 設定上限を超えた速度 ${curStats.excluded} 件を速度集計から除外（上限 ${Number(currentVideoSettings?.values?.maxTrust) || QUALITY_GATE.maxInitialSpeedKmh} km/h超）。打数には計上。</div>` : "")
-    + ((curStats.qualityRejected > curStats.excluded) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ 測定条件に合わないため ${curStats.qualityRejected} 件を速度集計から除外（短間隔・長間隔・上限超過）。打数には計上。</div>` : "")
-    + ((curStats.splitRemoved > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ 重複した可能性のある打音 ${curStats.splitRemoved} 件を除去（間隔が前後の半分に割れた反響・割り込み）。</div>` : "")
-    + ((curStats.aiRejected > 0) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
-    + (curStats.review ? `<div style="font-size:11px;color:var(--aqua);margin-top:4px">旧方式による映像推定（${escapeHtml(curStats.review.version)}）：${curStats.review.rejected || 0} 件を候補から除外。対象外判定の正しさは未確認です。</div>` : "");
+  const shown = ag.hist.filter(h => h.count > 0), mx = Math.max(1, ...shown.map(h => h.count));
+  const bandLabel = l => l.replace("≤30", "30以下").replace("120+", "120以上").replace("–", "〜");
+  $("histo").innerHTML = shown.length ? shown.map(h =>
+    `<div class="bar"><div class="lab">${bandLabel(h.label)}</div><div class="track"><div class="fill" style="width:${h.count / mx * 100}%"></div></div><div class="cnt">${h.count}</div></div>`).join("")
+    : `<div class="lr-line">速度を出せた打球がありません</div>`;
+  const basis = curStats.analysisMode === "motion" && curStats.countBasis === "video" ? "球の向きから" : "交互の推定";
+  $("lrLine").textContent = `左右の打数は ${ag.pHits.a}・${ag.pHits.b}（${basis}）。細かい左右別の分布は下の折りたたみにあります。`;
+  $("histoNotes").innerHTML = ""
+    + ((curStats.excluded > 0) ? `<div>※ 設定上限を超えた速度 ${curStats.excluded} 件を速度集計から除外（上限 ${capKmh} km/h超）。打数には計上。</div>` : "")
+    + ((curStats.qualityRejected > curStats.excluded) ? `<div>※ 測定条件に合わないため ${curStats.qualityRejected} 件を速度集計から除外（短間隔・長間隔・上限超過）。打数には計上。</div>` : "")
+    + ((curStats.splitRemoved > 0) ? `<div>※ 重複した可能性のある打音 ${curStats.splitRemoved} 件を除去（間隔が前後の半分に割れた反響・割り込み）。</div>` : "")
+    + ((curStats.aiRejected > 0) ? `<div>※ AIが雑音 ${curStats.aiRejected} 件（声/風/環境音など）を打数から除外。</div>` : "")
+    + (curStats.review ? `<div>旧方式による映像推定（${escapeHtml(curStats.review.version)}）：${curStats.review.rejected || 0} 件を候補から除外。対象外判定の正しさは未確認です。</div>` : "");
   renderSpeedButterfly();
   return ag;
 }
@@ -2150,7 +2254,6 @@ function renderSpeedButterfly() {
 // --- 再生に同期したライブ表示 ---
 function syncLive() {
   if (!curStats) return;
-  $("upStage").setAttribute?.("data-playing",String(!$("upVideo").paused));
   const t = $("upVideo").currentTime;
   let cur = null, hitsTo = 0, lastH = null;
   for (const h of curStats.hits) {
@@ -2204,7 +2307,7 @@ $("upFile").addEventListener("change", async e => {
     if (generation !== uploadAnalysisGeneration) return;
     currentMotion = previous?.motion || null;
     curStats = previous?.stats || {hits:[],total:0,rMax:0,rallies:0,qualityRejected:0,excluded:0};
-    currentRecordMeta = previous?.meta || {id:null,dateISO:null,fileName:f.name,duration:v.duration};
+    currentRecordMeta = previous?.meta || {id:null,dateISO:null,fileName:f.name,duration:v.duration,fileSize:f.size};
     setVideoExportAvailability(true);
     $("upProg").hidden = true;
     updateAnalysisSteps();
@@ -2240,7 +2343,7 @@ $("upDistanceApply").addEventListener("click", async () => {
   try { distance = validatedVideoDistance($("upDistance").value); }
   catch (err) { $("upDistanceNote").textContent = err.message; $("upDistance").focus(); return; }
   $("distanceDialog").close();
-  $("distanceOpen").textContent=`選手間 ${distance.toFixed(1)} m · 変更`;
+  $("distanceOpen").textContent=`${distance.toFixed(1)} m・変更`;
   if(!curStats)return;
   currentVideoSettings = currentVideoSettings || currentSettings();
   currentVideoSettings.values.distance = String(distance);
@@ -2275,16 +2378,16 @@ function rebuildTimeline(hitsIn) {
   const gap = videoRallyGap();
   const hits = []; let lastOnset = null, lastHitTime = null, idx = 0, rNow = 0, rMax = 0, rallies = 0, excluded = 0, qualityRejected = 0;
   for (const h of hitsIn) {
-    const t = h.t; let speed = null;
+    const t = h.t; let speed = null, noSpeedReason = null;
     if (lastOnset !== null) {
       const result = measureObservedInterval(t - lastOnset, idx - 1, currentVideoSettings);
       if (result.accepted) speed = result.initialSpeedKmh;
-      else { qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
+      else { noSpeedReason = result.reason || null; qualityRejected++; if (result.reason === "initial_speed_above_trust_limit") excluded++; }
     }
     if (lastHitTime !== null && (t - lastHitTime) > gap) rNow = 0;
     if (rNow === 0) rallies++;
     rNow++; if (rNow > rMax) rMax = rNow;
-    hits.push({ t, idx, player: h.player, speed, rNow });
+    hits.push({ t, idx, player: h.player, speed, rNow, ...(noSpeedReason ? { noSpeedReason } : {}) });
     lastOnset = t; lastHitTime = t; idx++;
   }
   return { hits, rMax, rallies, total: hits.length, excluded, qualityRejected };
@@ -2308,8 +2411,8 @@ function openMotionWorkflow() {
         const stats=buildStats(onsets);curStats.audioHits=stats.hits;curStats.audioReady=true;curStats.aiRejected=aiRejected||0;
         return curStats.audioHits;
       },
-      onProgress:progress=>{if(generation===uploadAnalysisGeneration){updateActivity("motion",progress.percent,progress.busy?"running":progress.status||"cancelled");if(progress.message)$("activityMessage").textContent=progress.message;updateAnalysisSteps();}},
-      onComplete:()=>{$("motionDetails").open=false;$("upStage").scrollIntoView({behavior:"smooth",block:"start"});},
+      onProgress:progress=>{if(generation===uploadAnalysisGeneration){if(progress.busy&&!analysisActivity.busy)teacherRunLoaded=false;updateActivity("motion",progress.percent,progress.busy?"running":progress.status||"cancelled");if(progress.message)$("activityMessage").textContent=progress.message;updateAnalysisSteps();}},
+      onComplete:()=>{if(teacherRunLoaded&&teacherInstance?.stats){const t=teacherInstance.stats();trialWrite("done",t.calls,t.adopted,null,t.failed);}teacherRunLoaded=false;$("motionDetails").open=false;$("upStage").scrollIntoView({behavior:"smooth",block:"start"});},
       onChange:snapshot => { if(generation!==uploadAnalysisGeneration)return;currentMotion=snapshot;renderShotSummary(snapshot);if(snapshot?.frames?.length){updateFromMotion(snapshot);$("upDash").hidden=false;}else if(curStats?.audioReady){curStats={...curStats,...rebuildTimeline(curStats.audioHits),analysisMode:"audio"};renderDash();$("upDash").hidden=false;}saveCurrentRecord(); }
     });
     $("upStage").hidden=false; $("motionDetails").hidden=false; $("motionDetails").open=true; $("motionOverlay").hidden=false; $("overlayOptions").hidden=false;
@@ -2360,6 +2463,7 @@ function normalizeRecord(raw) {
       t: Number(hit.t) || 0, idx,
       player: hit.player === "a" || hit.player === "b" ? hit.player : (idx % 2 === 0 ? "a" : "b"),
       speed: hit.speed == null ? null : Number(hit.speed),
+      ...(typeof hit.noSpeedReason === "string" ? { noSpeedReason: hit.noSpeedReason } : {}),
       ...(Object.prototype.hasOwnProperty.call(hit, "originalSpeed") ? { originalSpeed: hit.originalSpeed, qualityExcluded: Boolean(hit.qualityExcluded), qualityCode: hit.qualityCode, qualityReason: hit.qualityReason } : {}),
       rNow: Number(hit.rNow) || 0
     };
@@ -2416,6 +2520,7 @@ function makeRecord(meta = {}) {
     id: meta.id == null ? Date.now() : meta.id,
     dateISO: meta.dateISO || new Date().toISOString(),
     fileName: meta.fileName || "解析結果",
+    fileSize: meta.fileSize ?? null,
     duration: Math.round(meta.duration || 0),
     schemaVersion: RECORD_SCHEMA_VERSION,
     measurementSpecVersion: MEASUREMENT_SPEC.version,
@@ -2434,15 +2539,16 @@ function makeRecord(meta = {}) {
     hits: curStats.hits.map(h => ({
       ...(Object.prototype.hasOwnProperty.call(h, "originalSpeed") ? { originalSpeed: h.originalSpeed, qualityExcluded: Boolean(h.qualityExcluded), qualityCode: h.qualityCode, qualityReason: h.qualityReason } : {}),
       t: h.t, idx: h.idx, player: h.player === "b" ? "b" : "a",
-      speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow
+      speed: h.speed != null ? +h.speed.toFixed(1) : null, rNow: h.rNow,
+      ...(typeof h.noSpeedReason === "string" ? { noSpeedReason: h.noSpeedReason } : {})
     }))
   });
 }
 
-async function saveRecord(fileName, duration, recordId = null, dateISO = null) {
-  const rec = makeRecord({ id: recordId, dateISO, fileName, duration });
+async function saveRecord(fileName, duration, recordId = null, dateISO = null, fileSize = null) {
+  const rec = makeRecord({ id: recordId, dateISO, fileName, duration, fileSize });
   if (!rec) return null;
-  currentRecordMeta = { id: rec.id, dateISO: rec.dateISO, fileName: rec.fileName, duration: rec.duration };
+  currentRecordMeta = { id: rec.id, dateISO: rec.dateISO, fileName: rec.fileName, duration: rec.duration, fileSize: rec.fileSize };
   try {
     const d = await db();
     await new Promise((res, rej) => {
@@ -2465,20 +2571,43 @@ async function saveCurrentRecord() {
   if (!curStats) return null;
   return saveRecord(
     currentRecordMeta.fileName || "解析結果", currentRecordMeta.duration || 0,
-    currentRecordMeta.id, currentRecordMeta.dateISO
+    currentRecordMeta.id, currentRecordMeta.dateISO, selectedVideoFile?.size ?? currentRecordMeta.fileSize ?? null
   );
 }
 
-async function loadHistory() {
-  let recs = [];
+// 同じ動画かどうかの見分け方：ファイル名と長さ（秒・四捨五入）が同じで、両方にファイルサイズがあれば、それも同じ。
+// 記録はもともとファイル名と長さを保存している。ファイルサイズは今回から保存する（古い記録は名前と長さだけで見分ける）。
+function videoKey(r) {
+  if (!r || r.type === "live" || !r.fileName || r.fileName === "解析結果" || r.fileName === "ライブ計測") return null;
+  return r.fileName + "|" + Math.round(Number(r.duration) || 0);
+}
+function sameVideo(a, b) {
+  const key = videoKey(a);
+  if (!key || key !== videoKey(b)) return false;
+  return a.fileSize == null || b.fileSize == null || a.fileSize === b.fileSize;
+}
+const recordTime = r => String(r.dateISO || "");
+// 一覧では、同じ動画の記録を最新の1件にまとめる。保存済みの記録は上書きも削除もしない（古い解析分は「ほかn件」で開ける）。
+function collapseSameVideo(recs) {
+  const kept = [], counts = new Map(), groups = new Map();
+  for (const r of recs.slice().sort((a, b) => recordTime(b).localeCompare(recordTime(a)) || b.id - a.id)) {
+    const dup = kept.find(k => sameVideo(k, r));
+    if (dup) { counts.set(dup.id, (counts.get(dup.id) || 1) + 1); groups.get(dup.id).push(r); }
+    else { kept.push(r); groups.set(r.id, [r]); }
+  }
+  return { recs: kept, counts, groups };
+}
+async function readAllRecords() {
   try {
     const d = await db();
-    recs = await new Promise((res, rej) => {
+    return await new Promise((res, rej) => {
       const req = d.transaction("sessions", "readonly").objectStore("sessions").getAll();
       req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error);
     });
-  } catch (_) {}
-  recs = recs.map(normalizeRecord).sort((a, b) => b.id - a.id);
+  } catch (_) { return []; }
+}
+async function loadHistory() {
+  let recs = (await readAllRecords()).map(normalizeRecord);
   // ライブ計測ログは30日で自動削除（動画解析の記録は残す）。
   const liveCutoff = RESULT.retentionCutoffISO(Date.now(), 30);
   const expired = recs.filter(r => r.type === "live" && String(r.dateISO || "") < liveCutoff);
@@ -2492,18 +2621,31 @@ async function loadHistory() {
       } catch (_) {}
     })();
   }
+  const collapsed = collapseSameVideo(recs); recs = collapsed.recs;
   const el = $("histList");
   if (!recs.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">まだ記録がありません</div>'; return; }
-  el.innerHTML = recs.map(r => {
+  const row = (r, olderCount = 0) => {
     const d = new Date(r.dateISO), ds = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     const reviewed = r.review ? " ・ 映像精査済" : "";
     const legacySpeed=r.analysisMode==="motion"&&r.speedDefinition!=="estimated-initial"?"（旧計算）":"";
-    return `<div class="rec" data-id="${r.id}"><div><div>${ds} ・ 打${r.total} / 最長${r.rMax}${reviewed}</div><div class="meta">${escapeHtml(r.playerLabels.a)}${r.pHits.a} ${escapeHtml(r.playerLabels.b)}${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h${legacySpeed}</div></div><div><button class="open">開く</button> <button class="del" aria-label="削除">✕</button></div></div>`;
+    return `<div class="rec" data-id="${r.id}"><div class="rec-main"><div class="rec-l1">${ds} ・ 打${r.total} / 最長${r.rMax}${reviewed}</div><div class="rec-l2"><span class="meta">${escapeHtml(r.playerLabels.a)}${r.pHits.a} ${escapeHtml(r.playerLabels.b)}${r.pHits.b} ・ 最高${r.maxSpeed ? r.maxSpeed.toFixed(0) : "--"}km/h${legacySpeed}</span></div>${olderCount ? `<div class="rec-l3"><button class="more" type="button" aria-expanded="false">ほか${olderCount}件</button></div>` : ""}</div><div class="rec-btns"><button class="open">開く</button><button class="del" aria-label="削除">✕</button></div></div>`;
+  };
+  el.innerHTML = recs.map(r => {
+    const older = (collapsed.groups.get(r.id) || []).slice(1);
+    return row(r, older.length) + (older.length ? `<div class="rec-older" data-for="${r.id}" hidden>${older.map(o => row(o)).join("")}</div>` : "");
   }).join("");
+  const byId = new Map([...recs, ...[...collapsed.groups.values()].flat()].map(x => [x.id, x]));
   el.querySelectorAll(".rec").forEach(div => {
-    const id = +div.dataset.id, r = recs.find(x => x.id === id);
+    const id = +div.dataset.id, r = byId.get(id);
     div.querySelector(".open").addEventListener("click", () => openRecord(r));
-    div.querySelector(".del").addEventListener("click", () => deleteRecord(id));
+    div.querySelector(".del").addEventListener("click", () => {   // 押した1件だけを消す。確認は日時入りで1回
+      const d = new Date(r.dateISO), ds = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      if (confirm(`${ds} の記録（打${r.total}）を消します。元に戻せません。よろしいですか？`)) deleteRecord(id);
+    });
+    div.querySelector(".more")?.addEventListener("click", e => {
+      const box = el.querySelector(`.rec-older[data-for="${id}"]`), open = box.hidden;
+      box.hidden = !open; e.currentTarget.setAttribute("aria-expanded", String(open));
+    });
   });
 }
 function openRecord(raw) {
@@ -2529,9 +2671,10 @@ function openRecord(raw) {
   };
   currentMotion = r.motion || null;renderShotSummary(currentMotion);
   curFlip = Boolean(r.flip);
-  currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration };
+  currentRecordMeta = { id: r.id, dateISO: r.dateISO, fileName: r.fileName, duration: r.duration, fileSize: r.fileSize ?? null };
   if(currentMotion?.frames?.length)updateFromMotion(currentMotion);
   renderDash(); $("upDash").hidden = false; $("upStage").hidden = true;
+  updateAnalysisSteps();   // 結果を出した後にもう一度呼び、入口を小さくする
   $("vidBtn").style.display = "none";   // 過去記録は動画がないため再精査は不可
   setVideoExportAvailability(false);
 }

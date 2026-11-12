@@ -34,69 +34,125 @@ window.FrescoShare = (() => {
     if(window.FrescoBallTracker?.drawImpacts)drawn=window.FrescoBallTracker.drawImpacts(g,window.FrescoBallTracker.impactMarkers(hits,tracks,t),width,t,hits)||drawn;
     return drawn;
   }
-  function draw(canvas,video,state){
-    const {format,style,motion,record,start,end,title,focus,measurementSource,statsLabel}=state;
-    const confirmed=measurementSource==='confirmed';
-    const W=canvas.width,H=canvas.height,g=canvas.getContext('2d');
-    const crop=C.crop(video.videoWidth,video.videoHeight,motion?.regions,focus);
-    const story=format==='story',stats=C.stats(record?.hits||[],start,end),distance=record?.settings?.values?.distance;
-    g.fillStyle='#120a2e';g.fillRect(0,0,W,H);
-    const closeups=story&&motion?.regions?.length===2;
-    let box=story?C.fit(crop.w,crop.h,0,220,W,closeups?560:860):{x:0,y:0,w:W,h:H};
-    if(story){
-      g.save();g.globalAlpha=.25;g.filter='blur(32px)';g.drawImage(video,0,200,W,1280);g.restore();
-      g.textAlign='left';g.fillStyle='#16e6c3';g.font='700 28px "Hiragino Sans", sans-serif';g.fillText('FRESCOBALL',64,72);
-      g.fillStyle='#fff';g.font='800 64px "Hiragino Sans", sans-serif';g.fillText(title||'今日のラリー',64,150,W-128);
-      g.fillStyle='#d7d4e6';g.font='400 30px "Hiragino Sans", sans-serif';g.fillText(style==='skeleton'?'ふたりの動きを見返す':'ふたりでつないだラリー',64,198);
+  function rrect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+  // 解析条件の1行。1行に収まらないときだけ「｜」で2行に分ける（どちらも24px）。
+  function conditionLines(g,text,maxWidth){
+    if(g.measureText(text).width<=maxWidth)return [text];
+    const cut=text.lastIndexOf('｜');if(cut<0)return [text];
+    return [text.slice(0,cut),text.slice(cut)];
+  }
+  function conditionText(c,total,withSpeed,distance,varied){
+    c=c||{};const v=x=>x==null||x===''?'--':x;
+    const ai=c.ai?`AI判定あり（除外${c.aiRejected||0}）`:'AI判定なし';
+    return `解析条件：感度${v(c.sens)}・声カット${v(c.voiceCut)}・${ai}・打音${c.onsets==null?total:c.onsets}・速度なし${Math.max(0,total-withSpeed)}｜選手間${varied?'区間ごと':distance?distance+'m':'未設定'}`;
+  }
+  // 集計の根拠（statsLabel は集計した範囲）。ストーリーズ下部に1行で残す。
+  function basisText(state){
+    const range=state.statsLabel||'この動画区間の記録';
+    return `${range}・${state.measurementSource==='confirmed'?'映像で確認した記録（推定初速）':'音から求めた推定初速'}`;
+  }
+  // ストーリーズの「動かない部分」（見出し・凡例・数字・分布・根拠・解析条件）。1回だけ別のキャンバスに描き、毎フレームは貼るだけにする。
+  // 背景のぼかしは、小さいキャンバスに映像を縮めて描き、引き伸ばして作る（毎フレームの大きなぼかし処理をしない）。
+  function storyCache(state,W,H,crop,stats){
+    if(state.__story&&state.__story.W===W&&state.__story.H===H)return state.__story;
+    const {record,start,end,title}=state,FONT='"Hiragino Sans", sans-serif',distance=record?.settings?.values?.distance;
+    const summary=C.speedSummary(record?.hits||[],start,end),bands=summary.bands.filter(b=>b.count>0),legendH=state.showTrajectory?84:0;
+    const HEADER=150,NUM=192,TRUST=82,COND=120,distH=bands.length?58+bands.length*40:60;
+    const areaH=Math.max(360,Math.min(1000,H-HEADER-legendH-NUM-TRUST-distH-COND-30));
+    const box=C.fit(crop.w,crop.h,0,HEADER,W,areaH);box.y=HEADER;
+    // 映像が横長で高さに余りが出るときは、数字のカード・分布の行・セクション間を大きくして、空白が下に偏らないようにする
+    const spare=Math.max(0,areaH-box.h+90),nb=bands.length;
+    const cardExtra=Math.min(110,Math.round(spare*.3)),rowExtra=nb?Math.min(50,Math.floor(spare*.35/nb)):0;
+    const pad=Math.min(200,Math.floor(Math.max(0,spare-cardExtra-rowExtra*nb)/3));
+    const L={pad,cardH:170+cardExtra,rowH:40+rowExtra,legendY:box.y+box.h,numY:box.y+box.h+legendH+22+pad};
+    const layer=document.createElement('canvas');layer.width=W;layer.height=H;const g=layer.getContext('2d');
+    g.textAlign='left';g.fillStyle='#16e6c3';g.font=`700 28px ${FONT}`;g.fillText('FRESCOBALL',64,56);
+    g.fillStyle='#fff';g.font=`800 60px ${FONT}`;g.fillText(title||'今日のラリー',64,126,W-128);
+    // 凡例は映像の外に置く（1080幅で26px）。
+    if(state.showTrajectory){
+      const ly=L.legendY+50;g.font=`500 26px ${FONT}`;
+      const items=[['映像で追えた球（色は速度）',null],['見失った区間の推定','#c58cff']];
+      const widths=items.map(([t])=>64+g.measureText(t).width),gap=36;let x=64;
+      items.forEach(([t,c],i)=>{
+        let fill=c;if(!c){const gr=g.createLinearGradient(x,0,x+52,0);gr.addColorStop(0,'#4173ff');gr.addColorStop(.35,'#28cdf5');gr.addColorStop(.7,'#28daa1');gr.addColorStop(1,'#f1df46');fill=gr;}
+        g.fillStyle=fill;rrect(g,x,ly-12,52,8,4);g.fill();
+        g.fillStyle='#e6e1f4';g.fillText(t,x+64,ly);x+=widths[i]+gap;
+      });
     }
+    // 数字3つ：打数・平均・最高（ストーリーズの打数は総打数）
+    const cellW=(952-48)/3,numY=L.numY,cells=[['打数',String(stats.total),''],['平均',stats.average==null?'--':stats.average.toFixed(0),stats.average==null?'':' km/h'],['最高',stats.max==null?'--':stats.max.toFixed(0),stats.max==null?'':' km/h']];
+    cells.forEach(([label,value,unit],i)=>{
+      const x=64+i*(cellW+24);g.fillStyle='rgba(255,255,255,.06)';rrect(g,x,numY,cellW,L.cardH,22);g.fill();g.strokeStyle='#4a3d6b';g.lineWidth=2;g.stroke();
+      g.textAlign='center';g.fillStyle='#cfc5e6';g.font=`600 28px ${FONT}`;g.fillText(label,x+cellW/2,numY+44+(L.cardH-170)*.25);
+      let vf=Math.round(92*(1+(L.cardH-170)/170*.5)),vw,uw;
+      g.font=`600 28px ${FONT}`;uw=unit?g.measureText(unit).width:0;
+      for(;;){g.font=`800 ${vf}px ${FONT}`;vw=g.measureText(value).width;if(vw+uw<=cellW-36||vf<=60)break;vf-=4;}
+      const sx=x+cellW/2-(vw+uw)/2;g.textAlign='left';g.fillStyle=i===0?'#ffd23f':'#fff';g.font=`800 ${vf}px ${FONT}`;g.fillText(value,sx,numY+142+(L.cardH-170)*.75);
+      if(unit){g.fillStyle='#cfc5e6';g.font=`600 28px ${FONT}`;g.fillText(unit,sx+vw,numY+142+(L.cardH-170)*.75);}
+    });
+    // 速度を出せた打球 n／m（n・分布・平均・最高は同じ母集団。m は打数と同じ）
+    const trY=numY+L.cardH+18+L.pad;g.fillStyle='rgba(255,255,255,.06)';rrect(g,64,trY,952,64,14);g.fill();g.strokeStyle='#4a3d6b';g.lineWidth=2;g.stroke();
+    g.fillStyle='#fff';g.font=`800 38px ${FONT}`;g.textAlign='center';g.fillText(`速度を出せた打球 ${summary.withSpeed}／${stats.total}`,540,trY+44,920);g.textAlign='left';
+    // 球速分布（全体・打球のない帯は省く）
+    const dy=trY+64+34+L.pad,condTop=H-COND;
+    g.fillStyle='#fff';g.font=`700 32px ${FONT}`;g.fillText('球速分布',64,dy+26);
+    g.fillStyle='#cfc5e6';g.font=`500 24px ${FONT}`;g.textAlign='right';g.fillText('単位：km/h',1016,dy+26);g.textAlign='left';
+    if(!bands.length){g.fillStyle='#cfc5e6';g.font=`500 26px ${FONT}`;g.fillText('速度を出せた打球がありません',64,dy+80);}
+    else{
+      const top=dy+46,rowH=Math.max(36,Math.min(L.rowH,Math.floor((condTop-12-top)/bands.length))),max=Math.max(1,...bands.map(b=>b.count)),barH=Math.round(rowH*.56);
+      bands.forEach((b,i)=>{const y=top+i*rowH,mid=y+rowH/2;
+        g.font=`600 26px ${FONT}`;g.fillStyle='#e6e1f4';g.textAlign='right';g.fillText(b.label,236,mid+9);
+        g.fillStyle='rgba(255,255,255,.07)';rrect(g,262,mid-barH/2,640,barH,barH/2);g.fill();
+        const bw=Math.max(barH,640*b.count/max);const gr=g.createLinearGradient(262,0,262+bw,0);gr.addColorStop(0,'#16e6c3');gr.addColorStop(1,'#2ec5ff');g.fillStyle=gr;rrect(g,262,mid-barH/2,bw,barH,barH/2);g.fill();
+        g.fillStyle='#fff';g.font=`800 28px ${FONT}`;g.textAlign='left';g.fillText(String(b.count),918,mid+10);
+      });
+    }
+    // 下端：集計の根拠 → 解析条件（どちらも24px）
+    g.font=`500 24px ${FONT}`;g.fillStyle='#c4bdd5';g.textAlign='left';
+    const cond=conditionLines(g,conditionText(state.conditions,stats.total,summary.withSpeed,distance,record?.variedDistances),952);
+    cond.forEach((line,i)=>g.fillText(line,64,H-52-(cond.length-1-i)*34,952));
+    g.fillText(basisText(state),64,H-52-cond.length*34,952);
+    const bg=document.createElement('canvas');bg.width=Math.max(8,Math.round(W/64));bg.height=Math.max(8,Math.round(H/64));
+    const comp=document.createElement('canvas');comp.width=W;comp.height=H;
+    return state.__story={W,H,box,layer,bg,bgCtx:bg.getContext('2d'),comp,compCtx:comp.getContext('2d'),n:0};
+  }
+  function draw(canvas,video,state){
+    const {format,style,motion,record,start,end,focus,measurementSource}=state;
+    const confirmed=measurementSource==='confirmed';
+    const W=canvas.width,H=canvas.height,g=canvas.getContext('2d'),FONT='"Hiragino Sans", sans-serif';
+    const crop=C.crop(video.videoWidth,video.videoHeight,motion?.regions,focus);
+    const story=format==='story',stats=C.stats(record?.hits||[],start,end);
+    let box={x:0,y:0,w:W,h:H},sc=null;
+    if(story){
+      sc=storyCache(state,W,H,crop,stats);box=sc.box;
+      // 背景（映像を縮めて引き伸ばしたぼかし）と動かない部分は、10フレームに1回だけ合成し、毎フレームは1枚貼るだけにする
+      if(sc.n++%10===0){const c2=sc.compCtx;c2.fillStyle='#120a2e';c2.fillRect(0,0,W,H);sc.bgCtx.drawImage(video,0,0,sc.bg.width,sc.bg.height);c2.save();c2.globalAlpha=.22;c2.drawImage(sc.bg,0,0,W,H);c2.restore();c2.drawImage(sc.layer,0,0);}
+      g.drawImage(sc.comp,0,0);
+    }else{g.fillStyle='#120a2e';g.fillRect(0,0,W,H);}
     g.drawImage(video,crop.x,crop.y,crop.w,crop.h,box.x,box.y,box.w,box.h);
     if(state.showTrajectory&&state.trajectoryTracks?.length){g.fillStyle='rgba(5,10,22,.12)';g.fillRect(box.x,box.y,box.w,box.h);}
     if(style==='skeleton'){
       g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);const drawn=skeleton(g,motion,video.currentTime);g.restore();
 
     }
-    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();g.fillStyle='#ddd8ef';g.font=`${20*W/1080}px "Hiragino Sans", sans-serif`;if(story)g.fillText('線：速度の色は映像から検出した球の候補・紫は見失った区間の推定（球速・打数には使いません）',box.x+20*W/1080,box.y+box.h-18*W/1080);}
+    if(state.showTrajectory){g.save();g.beginPath();g.rect(box.x,box.y,box.w,box.h);g.clip();g.translate(box.x,box.y);g.scale(box.w/crop.w,box.h/crop.h);g.translate(-crop.x,-crop.y);trajectory(g,state.trajectoryTracks,video.currentTime,video.videoWidth,record?.playbackHits||record?.hits||[]);g.restore();}
     const hit=C.hitAt(record?.playbackHits||record?.hits||[],video.currentTime,start),u=W/1080;
     g.textAlign='left';g.fillStyle='rgba(9,6,25,.75)';g.fillRect(box.x+18*u,box.y+18*u,252*u,92*u);
-    g.fillStyle='#fff';g.font=`800 ${38*u}px "Hiragino Sans", sans-serif`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
-    g.font=`${20*u}px "Hiragino Sans", sans-serif`;g.fillStyle='#ddd8ef';g.fillText(confirmed?'対象打球の推定初速':'音から推定した初速',box.x+34*u,box.y+94*u);
+    g.fillStyle='#fff';g.font=`800 ${38*u}px ${FONT}`;g.fillText(hit?`${hit.speed.toFixed(0)} km/h`:'-- km/h',box.x+34*u,box.y+64*u);
+    g.font=`${20*u}px ${FONT}`;g.fillStyle='#ddd8ef';g.fillText(confirmed?'対象打球の推定初速':'音から推定した初速',box.x+34*u,box.y+94*u);
     const visibleHits=(record?.playbackHits||record?.hits||[]).filter(e=>e.t>=start&&e.t<=video.currentTime&&e.status!=='ignored');
     for(const [i,side] of ['a','b'].entries()){
       const player=record?.flip?(side==='a'?'b':'a'):side;
-      const x=i?box.x+box.w-132*u:box.x+8*u;
-      const bottomClearance=story?(state.showTrajectory?34:8):44;
-      const y=box.y+box.h-(68+bottomClearance)*u;
-      const count=String(visibleHits.filter(e=>e.player===player).length),center=x+62*u;
-      g.textAlign='center';g.fillStyle=i?'#ffd23f':'#58d5ef';g.font=`700 ${13*u}px "Hiragino Sans", sans-serif`;g.fillText(i?'RIGHT PLAYER':'LEFT PLAYER',center,y+16*u);
-      g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;const countWidth=Math.max(44*u,Math.min(100*u,g.measureText(count).width+16*u));
-      g.fillStyle='rgba(9,6,25,.62)';g.fillRect(center-countWidth/2,y+21*u,countWidth,47*u);
-      g.fillStyle='#fff';g.font=`${11*u}px "Hiragino Sans", sans-serif`;g.fillText('総打数',center,y+34*u);g.font=`800 ${24*u}px "Hiragino Sans", sans-serif`;g.fillText(count,center,y+60*u,countWidth-12*u);g.textAlign='left';
+      const bottomClearance=story?8:44;
+      const count=String(visibleHits.filter(e=>e.player===player).length);
+      const label=i?'RIGHT PLAYER':'LEFT PLAYER';
+      g.font=`700 ${20*u}px ${FONT}`;const lw=g.measureText(label).width;
+      const cw=Math.max(lw+24*u,96*u),x=i?box.x+box.w-cw-10*u:box.x+10*u,y=box.y+box.h-(104+bottomClearance)*u,center=x+cw/2;
+      g.fillStyle='rgba(9,6,25,.66)';g.fillRect(x,y,cw,104*u);
+      g.textAlign='center';g.fillStyle=i?'#ffd23f':'#58d5ef';g.fillText(label,center,y+26*u);
+      g.fillStyle='#fff';g.font=`${18*u}px ${FONT}`;g.fillText('総打数',center,y+48*u);g.font=`800 ${44*u}px ${FONT}`;g.fillText(count,center,y+92*u,cw-12*u);g.textAlign='left';
     }
-    if(story){
-      if(closeups)motion.regions.forEach((region,i)=>{
-        const area={x:64+i*496,y:840,w:456,h:250};
-        const fitted=C.fit(region.w,region.h,area.x,area.y,area.w,area.h);
-        g.fillStyle='rgba(9,6,25,.5)';g.fillRect(area.x,area.y,area.w,area.h);
-        g.drawImage(video,region.x,region.y,region.w,region.h,fitted.x,fitted.y,fitted.w,fitted.h);
-        if(style==='skeleton'){g.save();g.beginPath();g.rect(fitted.x,fitted.y,fitted.w,fitted.h);g.clip();g.translate(fitted.x,fitted.y);g.scale(fitted.w/region.w,fitted.h/region.h);g.translate(-region.x,-region.y);skeleton(g,motion,video.currentTime);g.restore();}
-        g.fillStyle=i?'#ffd23f':'#16e6c3';g.font='700 24px "Hiragino Sans", sans-serif';g.fillText(record?.playerLabels?.[i?'b':'a']||`${i+1}人目`,area.x,area.y-18,area.w);
-      });
-      const cells=[[confirmed?'対象の打数':'打数',`${stats.total} 回`],[confirmed?'推定初速の平均':'推定初速の平均',stats.average==null?'--':`${stats.average.toFixed(0)} km/h`],['選手間の距離',record?.variedDistances?'区間ごと':distance?`${distance} m`:'未設定']];
-      cells.forEach(([label,value],i)=>{const x=64+i*328;g.fillStyle='#bcb4d3';g.font='500 27px "Hiragino Sans", sans-serif';g.fillText(label,x,1160);g.fillStyle=i===0?'#ffd23f':'#fff';g.font='800 49px "Hiragino Sans", sans-serif';g.fillText(value,x,1230,304);});
-      const distribution=C.distribution(record?.playbackHits||record?.hits||[],start,end,record?.flip);
-      const max=Math.max(1,...distribution.flatMap(r=>[r.a,r.b]));
-      g.fillStyle='#fff';g.font='700 32px "Hiragino Sans",sans-serif';g.fillText('球速分布',64,1320);
-      g.font='700 24px "Hiragino Sans",sans-serif';g.fillStyle='#58d5ef';g.fillText('LEFT PLAYER',64,1370);g.fillStyle='#ffd23f';g.textAlign='right';g.fillText('RIGHT PLAYER',1016,1370);g.textAlign='left';
-      distribution.forEach((row,i)=>{const y=1400+i*59;
-        g.fillStyle='#ffffff18';g.fillRect(130,y,300,24);g.fillRect(650,y,300,24);
-        g.fillStyle='#58d5ef';g.fillRect(430-row.a/max*300,y,row.a/max*300,24);g.fillStyle='#ffd23f';g.fillRect(650,y,row.b/max*300,24);
-        g.font='22px "Hiragino Sans",sans-serif';g.fillStyle='#fff';g.fillText(String(row.a),70,y+21);g.textAlign='center';g.fillText(row.label,540,y+21);g.textAlign='right';g.fillText(String(row.b),1016,y+21);g.textAlign='left';
-      });
-      g.fillStyle='#c4bdd5';g.font='22px "Hiragino Sans",sans-serif';g.fillText('単位：km/h ・ 選んだ区間の打ち出した側別 ・ 左右は推定',64,1795);
-      g.fillStyle='#c4bdd5';g.font='400 25px "Hiragino Sans", sans-serif';g.fillText(`${statsLabel||'この動画区間の記録'}・${confirmed?'対象打球の推定初速（自動・仮判定を含む）':'音から求めた初速推定値'}`,64,1850,952);
-      g.fillStyle='#9c92b3';g.font='400 24px "Hiragino Sans", sans-serif';
-    }
-    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px "Hiragino Sans", sans-serif`;g.fillText(confirmed&&(motion?.events||[]).some(e=>e.origin==='video')?'映像の球の軌跡から打点を推定・設定距離による推定初速':confirmed?'音の打数＋映像で確認・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
+    if(!story){g.fillStyle='rgba(9,6,25,.75)';g.fillRect(0,H-40*u,W,40*u);g.fillStyle='#fff';g.font=`${22*u}px ${FONT}`;g.fillText(confirmed&&(motion?.events||[]).some(e=>e.origin==='video')?'映像の球の軌跡から打点を推定・設定距離による推定初速':confirmed?'音の打数＋映像で確認・設定距離による推定初速':'音からの記録・設定距離に基づく初速推定',18*u,H-12*u,W-36*u);}
     return canvas;
   }
   function open(options){
@@ -172,7 +228,7 @@ window.FrescoShare = (() => {
         const distances=new Set(hits.filter(h=>h.t>=range.start&&h.t<=range.end&&h.usedDistanceM!=null).map(h=>h.usedDistanceM));
         selectedRecord={...record,hits,playbackHits,settings:{values:{distance:distances.size===1?[...distances][0]:motion.settings.distanceM}},variedDistances:distances.size>1};
       }
-      state={mode:options.mode||'simple',format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks.concat(window.FrescoBallTracker?.estimatedArcs?.(selectedRecord.playbackHits||selectedRecord.hits||[],motion?.frames||[],motion?.regions,video.videoWidth,{tracks:displayTracks})||[])};
+      state={mode:options.mode||'simple',conditions:{sens:record?.settings?.values?.sens,voiceCut:record?.settings?.values?.voiceCut,ai:Boolean(record?.settings?.values?.aiFilter),aiRejected:record?.aiRejected||0,onsets:((record?.analysisMode==='motion'?record.audioHits:record?.hits)||[]).filter(h=>h.t>=range.start&&h.t<=range.end).length},format:options.format,style:style.value,motion,record:selectedRecord,measurementSource:measurement.value,start:range.start,end:range.end,captureTime:range.captureTime,statsLabel:range.statsLabel,title:title.value,focus:focus.value==='pair',showTrajectory:trail.value==='on',trajectoryTracks:displayTracks.concat(window.FrescoBallTracker?.estimatedArcs?.(selectedRecord.playbackHits||selectedRecord.hits||[],motion?.frames||[],motion?.regions,video.videoWidth,{tracks:displayTracks})||[])};
       const c=C.crop(video.videoWidth,video.videoHeight,motion?.regions,state.focus);
       if(options.format==='story'){canvas.width=1080;canvas.height=1920;}else{const scale=Math.min(1,1280/Math.max(c.w,c.h));canvas.width=Math.max(2,Math.round(c.w*scale/2)*2);canvas.height=Math.max(2,Math.round(c.h*scale/2)*2);}
       return state;

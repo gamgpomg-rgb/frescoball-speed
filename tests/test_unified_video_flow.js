@@ -43,6 +43,10 @@ vm.runInContext(html.slice(a,b),c);
   workflow.onChange(sparse);assert.equal(c.curStats.total,30,'additional analysis preserves every audio hit');assert.equal(c.curStats.rallies,1,'missing poses never split the rally');
   const before=c.currentMotion;c.uploadAnalysisGeneration++;workflow.onChange({...snapshot,settings:{distanceM:10}});
   assert.equal(c.currentMotion,before,'old workflow cannot overwrite another video');
+  // 同じ動画を選び直しても、保存済みの記録は上書きしない（新しい記録として保存される。一覧の表示だけで1件にまとめる）
+  c.currentRecordMeta={id:42,dateISO:'2026-11-12T00:00:00Z',fileName:'again.mov',duration:20};
+  await el('upFile').handlers.change({target:{files:[{name:'again.mov',size:100}]}});
+  assert.equal(c.currentRecordMeta.id,null,'re-picking a video starts a new record instead of reusing the saved id');
   c.analyzeFile=async()=>{throw new Error('test decode failure');};
   await c.runQuickAnalysis();
   assert.equal(el('quickAnalyze').hidden,false,'failed auto analysis exposes retry');
