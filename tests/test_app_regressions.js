@@ -24,7 +24,7 @@ assert.match(html, /if \(startingMeasurement\) return;/);
 
 assert.match(html, /DETECTION\.DEFAULTS\.liveWarmupSeconds/);
 assert.match(html, /DETECTION\.DEFAULTS\.videoWarmupSeconds/);
-assert.match(sw, /frescoball-speed-shell-v50/);
+assert.match(sw, /frescoball-speed-shell-v51/);
 // 映像が主の打点（実験・任意）: 設定があり、解析へ渡され、既定はオフ（音基準のまま）
 assert.match(html, /id="videoHits"/);
 assert.doesNotMatch(html, /id="videoHits"[^>]*checked/);
@@ -51,6 +51,11 @@ for (const asset of ['result-utils.js', 'motion-core.js', 'motion-review.js', 'v
   assert(sw.includes(`./${asset}`));
   assert(server.includes(`"/${asset}"`));
 }
+// 動画解析の打音検出は、共通部品のハイパス（線形 Q）と、開始位置4通りの合成を使う
+assert.match(html, /DETECTION\.highpassBiquad\(mono, sr, DETECTION\.DEFAULTS\.highpassHz, DETECTION\.DEFAULTS\.highpassQ\)/);
+assert.match(html, /DETECTION\.createOnsetScanner\(buf, sr,/);
+assert.match(html, /DETECTION\.mergeOnsets\(lists, REFRACTORY\)/);
+assert.doesNotMatch(html, /hp\.Q\.value/);
 assert.doesNotMatch(html, /id="tabNum"/);
 assert.match(html, /FrescoMotionReview.open/);
 

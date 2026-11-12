@@ -1617,42 +1617,6 @@ const HBINS = (() => {
 })();
 function binIndex(v) { for (let i = 0; i < HBINS.length; i++) if (v >= HBINS[i].lo && v < HBINS[i].hi) return i; return HBINS.length - 1; }
 
-// --- 反復radix-2 FFT（in-place・複素） ---
-function fft(re, im) {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) { const tr = re[i]; re[i] = re[j]; re[j] = tr; const ti = im[i]; im[i] = im[j]; im[j] = ti; }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), half = len >> 1;
-    for (let i = 0; i < n; i += len) {
-      let cwr = 1, cwi = 0;
-      for (let k = 0; k < half; k++) {
-        const a = i + k, b = i + k + half;
-        const vr = re[b] * cwr - im[b] * cwi, vi = re[b] * cwi + im[b] * cwr;
-        re[b] = re[a] - vr; im[b] = im[a] - vi; re[a] += vr; im[a] += vi;
-        const ncwr = cwr * wr - cwi * wi; cwi = cwr * wi + cwi * wr; cwr = ncwr;
-      }
-    }
-  }
-}
-// 2500–12000Hz帯のスペクトル平坦度（ライブの spectralFlatness と同等指標）
-function flatnessAt(buf, start, sr) {
-  const N = 1024;
-  if (start + N > buf.length) return 0;
-  const re = new Float32Array(N), im = new Float32Array(N);
-  for (let i = 0; i < N; i++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)); re[i] = buf[start + i] * w; }
-  fft(re, im);
-  const nyq = sr / 2, lo = Math.floor(2500 / nyq * (N / 2)), hi = Math.floor(12000 / nyq * (N / 2));
-  let logSum = 0, linSum = 0, cnt = 0;
-  for (let i = lo; i < hi && i < N / 2; i++) { const p = re[i] * re[i] + im[i] * im[i] + 1e-12; logSum += Math.log(p); linSum += p; cnt++; }
-  if (!cnt) return 0;
-  return Math.exp(logSum / cnt) / (linSum / cnt);
-}
-
 function assertAnalysisActive(shouldContinue) {
   if (!shouldContinue || shouldContinue()) return;
   const error = new Error("新しい解析に切り替わったため中止しました");
@@ -1660,37 +1624,32 @@ function assertAnalysisActive(shouldContinue) {
   throw error;
 }
 
-// --- 打音オンセット検出（ライブの onaudioprocess を 512サンプルホップで非リアルタイム再現） ---
+// --- 打音オンセット検出（512サンプル区切り。開始位置を4通りずらして走らせ、合成する） ---
+// 1通りだけだと、打音が区切りのどこに落ちるかで拾えたり拾えなかったりする（同じ動画で42〜48打に揺れた）。
 async function detectOnsets(buf, sr, onProgress, shouldContinue) {
   assertAnalysisActive(shouldContinue);
-  const HOP = 512;
   const sens = parseFloat($("sens").value) || 6;
   const vc = Math.max(0, Math.min(10, parseFloat($("voiceCut").value) || 5));
-  const needAttack = 1.6 + vc * 0.28, needFlat = 0.06 + vc * 0.022;
-  const detector = DETECTION.createOnsetDetector({
-    refractorySeconds: REFRACTORY,
-    warmupSeconds: DETECTION.DEFAULTS.videoWarmupSeconds,
-    startTime: 0
-  });
-  const onsets = [], n = buf.length; let frame = 0;
-  for (let p = 0; p + HOP <= n; p += HOP) {
-    if ((frame & 255) === 0) assertAnalysisActive(shouldContinue);
-    let sum = 0; for (let i = 0; i < HOP; i++) { const s = buf[p + i]; sum += s * s; }
-    const rms = Math.sqrt(sum / HOP), now = p / sr;
-    const detection = detector.process({
-      rms,
-      now,
+  const phases = DETECTION.DEFAULTS.videoPhases, lists = [];
+  for (let k = 0; k < phases.length; k++) {
+    const scanner = DETECTION.createOnsetScanner(buf, sr, {
+      phase: phases[k],
       sensitivity: sens,
-      attackThreshold: needAttack,
-      flatnessThreshold: needFlat,
-      flatness: () => flatnessAt(buf, p, sr)
+      attackThreshold: 1.6 + vc * 0.28,
+      flatnessThreshold: 0.06 + vc * 0.022,
+      refractorySeconds: REFRACTORY,
+      warmupSeconds: DETECTION.DEFAULTS.videoWarmupSeconds
     });
-    if (detection.detected) onsets.push(now);
-    if ((++frame & 4095) === 0) { if (onProgress) onProgress(p / n); await new Promise(r => setTimeout(r)); }
+    while (!scanner.step(4096)) {
+      assertAnalysisActive(shouldContinue);
+      if (onProgress) onProgress((k + scanner.progress()) / phases.length);
+      await new Promise(r => setTimeout(r));
+    }
+    lists.push(scanner.onsets);
   }
   assertAnalysisActive(shouldContinue);
   if (onProgress) onProgress(1);
-  return onsets;
+  return DETECTION.mergeOnsets(lists, REFRACTORY);
 }
 
 // --- mp4box.js を必要時だけ読み込む（巨大動画の音声トラックだけをデマックスするため） ---
@@ -1848,17 +1807,6 @@ async function decodeAudioFull(file) {
   else { mono = new Float32Array(len); const nc = ab.numberOfChannels; for (let c = 0; c < nc; c++) { const d = ab.getChannelData(c); for (let i = 0; i < len; i++) mono[i] += d[i] / nc; } }
   return { buf: mono, sampleRate: ab.sampleRate };
 }
-// モノPCMに2.5kHzハイパス（ライブと同一フィルタ）を適用
-async function highpassMono(buf, sr) {
-  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const off = new OAC(1, buf.length, sr);
-  const ab = off.createBuffer(1, buf.length, sr); ab.getChannelData(0).set(buf);
-  const src = off.createBufferSource(); src.buffer = ab;
-  const hp = off.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2500; hp.Q.value = 0.7;
-  src.connect(hp); hp.connect(off.destination); src.start();
-  const rendered = await off.startRendering();
-  return rendered.getChannelData(0);
-}
 // --- C: YAMNet音響分類で「打撃音でない雑音オンセット」を除外（オプトイン・実験） ---
 let _yamP = null, _yam = null, _yamImpactIdx = null, _yamNoiseIdx = null;
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("読み込み失敗: " + src)); document.head.appendChild(s); }); }
@@ -1932,7 +1880,10 @@ async function analyzeFile(file, onProgress, shouldContinue) {
     }
     const r = await decodeAudioFull(file); assertAnalysisActive(shouldContinue); mono = r.buf; sr = r.sampleRate; if (onProgress) onProgress(0.55);
   }
-  const filtered = await highpassMono(mono, sr);
+  // 2.5kHzハイパス。Web Audio の highpass は Q をデシベルで受け取り、0.7 を渡すと帯域の縁が持ち上がって
+  // 打音を取りこぼすため、動画解析は共通部品の線形 Q=0.7 を使う（ライブ計測の経路は従来のまま）。
+  await new Promise(r => setTimeout(r));
+  const filtered = DETECTION.highpassBiquad(mono, sr, DETECTION.DEFAULTS.highpassHz, DETECTION.DEFAULTS.highpassQ);
   assertAnalysisActive(shouldContinue);
   const aiOn = $("aiFilter") && $("aiFilter").checked;
   let onsets = await detectOnsets(filtered, sr, p => onProgress && onProgress(0.55 + p * (aiOn ? 0.30 : 0.45)), shouldContinue);
