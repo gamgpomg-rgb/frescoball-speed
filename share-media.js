@@ -41,15 +41,17 @@ window.FrescoShare = (() => {
     const cut=text.lastIndexOf('｜');if(cut<0)return [text];
     return [text.slice(0,cut),text.slice(cut)];
   }
+  // 左右どちらかに打球のある帯だけを、全体の帯と同じ区切り・順序で返す
+  function bandRows(left,right){return left.map((b,i)=>({label:b.label,l:b.count,r:right[i].count})).filter(r=>r.l||r.r);}
   function conditionText(c,total,withSpeed,distance,varied){
     c=c||{};const v=x=>x==null||x===''?'--':x;
     const ai=c.ai?`AI判定あり（除外${c.aiRejected||0}）`:'AI判定なし';
     return `解析条件：感度${v(c.sens)}・声カット${v(c.voiceCut)}・${ai}・打音${c.onsets==null?total:c.onsets}・速度なし${Math.max(0,total-withSpeed)}｜選手間${varied?'区間ごと':distance?distance+'m':'未設定'}`;
   }
   // 集計の根拠（statsLabel は集計した範囲）。ストーリーズ下部に1行で残す。
-  function basisText(state){
+  function basisText(state,lr){
     const range=state.statsLabel||'この動画区間の記録';
-    return `${range}・${state.measurementSource==='confirmed'?'映像で確認した記録（推定初速）':'音から求めた推定初速'}`;
+    return `${range}・${state.measurementSource==='confirmed'?'映像で確認した記録（推定初速）':'音から求めた推定初速'}${lr?`・左右は映像で確認${lr.estimated?`（うち推定${lr.estimated}打）`:''}`:''}`;
   }
   // ストーリーズの「動かない部分」（見出し・凡例・数字・分布・根拠・解析条件）。1回だけ別のキャンバスに描き、毎フレームは貼るだけにする。
   // 背景のぼかしは、小さいキャンバスに映像を縮めて描き、引き伸ばして作る（毎フレームの大きなぼかし処理をしない）。
@@ -57,7 +59,9 @@ window.FrescoShare = (() => {
     if(state.__story&&state.__story.W===W&&state.__story.H===H)return state.__story;
     const {record,start,end,title}=state,FONT='"Hiragino Sans", sans-serif',distance=record?.settings?.values?.distance;
     const summary=C.speedSummary(record?.hits||[],start,end),bands=summary.bands.filter(b=>b.count>0),legendH=state.showTrajectory?84:0;
-    const HEADER=150,NUM=192,TRUST=82,COND=120,distH=bands.length?58+bands.length*40:60;
+    // 左右別の分布は、書き出しに使う記録が「映像で選手を確認した記録」（measurementSource==='confirmed'）で、左右が交互の推定の速度が1割以下のときだけ。それ以外は全体の分布。
+    const lr=state.measurementSource==='confirmed'?C.speedSummarySides(record?.hits||[],start,end,record?.flip):null,sides=Boolean(lr?.reliable);
+    const HEADER=150,NUM=192,TRUST=82,COND=120,distH=bands.length?58+(sides?44:0)+bands.length*40:60;
     const areaH=Math.max(360,Math.min(1000,H-HEADER-legendH-NUM-TRUST-distH-COND-30));
     const box=C.fit(crop.w,crop.h,0,HEADER,W,areaH);box.y=HEADER;
     // 映像が横長で高さに余りが出るときは、数字のカード・分布の行・セクション間を大きくして、空白が下に偏らないようにする
@@ -98,6 +102,21 @@ window.FrescoShare = (() => {
     g.fillStyle='#fff';g.font=`700 32px ${FONT}`;g.fillText('球速分布',64,dy+26);
     g.fillStyle='#cfc5e6';g.font=`500 24px ${FONT}`;g.textAlign='right';g.fillText('単位：km/h',1016,dy+26);g.textAlign='left';
     if(!bands.length){g.fillStyle='#cfc5e6';g.font=`500 26px ${FONT}`;g.fillText('速度を出せた打球がありません',64,dy+80);}
+    else if(sides){
+      // 左右別：中央に帯、左に LEFT PLAYER、右に RIGHT PLAYER。見出しの文字と数字で示す（色だけに頼らない）
+      const rows=bandRows(lr.left,lr.right),name=side=>{const n=record?.playerLabels?.[(record?.flip?side==='a'?'b':'a':side)];return n&&!/^選手[AB]$/.test(n)?`（${n}）`:'';};
+      g.font=`700 26px ${FONT}`;g.textAlign='left';g.fillStyle='#58d5ef';g.fillText(`LEFT PLAYER${name('a')} 計${lr.leftTotal}`,64,dy+72,440);
+      g.textAlign='right';g.fillStyle='#ffd23f';g.fillText(`RIGHT PLAYER${name('b')} 計${lr.rightTotal}`,1016,dy+72,440);g.textAlign='left';
+      const top=dy+90,rowH=Math.max(36,Math.min(L.rowH,Math.floor((condTop-12-top)/rows.length))),max=Math.max(1,...rows.flatMap(r=>[r.l,r.r])),barH=Math.round(rowH*.56);
+      rows.forEach((r,i)=>{const y=top+i*rowH,mid=y+rowH/2;
+        g.fillStyle='rgba(255,255,255,.07)';rrect(g,130,mid-barH/2,300,barH,barH/2);g.fill();rrect(g,650,mid-barH/2,300,barH,barH/2);g.fill();
+        const lw=Math.max(r.l?barH:0,300*r.l/max),rw=Math.max(r.r?barH:0,300*r.r/max);
+        g.fillStyle='#58d5ef';if(r.l){rrect(g,430-lw,mid-barH/2,lw,barH,barH/2);g.fill();}
+        g.fillStyle='#ffd23f';if(r.r){rrect(g,650,mid-barH/2,rw,barH,barH/2);g.fill();}
+        g.fillStyle='#fff';g.font=`800 28px ${FONT}`;g.textAlign='left';g.fillText(String(r.l),64,mid+10);g.textAlign='right';g.fillText(String(r.r),1016,mid+10);
+        g.font=`600 26px ${FONT}`;g.fillStyle='#e6e1f4';g.textAlign='center';g.fillText(r.label,540,mid+9);g.textAlign='left';
+      });
+    }
     else{
       const top=dy+46,rowH=Math.max(36,Math.min(L.rowH,Math.floor((condTop-12-top)/bands.length))),max=Math.max(1,...bands.map(b=>b.count)),barH=Math.round(rowH*.56);
       bands.forEach((b,i)=>{const y=top+i*rowH,mid=y+rowH/2;
@@ -111,7 +130,7 @@ window.FrescoShare = (() => {
     g.font=`500 24px ${FONT}`;g.fillStyle='#c4bdd5';g.textAlign='left';
     const cond=conditionLines(g,conditionText(state.conditions,stats.total,summary.withSpeed,distance,record?.variedDistances),952);
     cond.forEach((line,i)=>g.fillText(line,64,H-52-(cond.length-1-i)*34,952));
-    g.fillText(basisText(state),64,H-52-cond.length*34,952);
+    g.fillText(basisText(state,sides?lr:null),64,H-52-cond.length*34,952);
     const bg=document.createElement('canvas');bg.width=Math.max(8,Math.round(W/64));bg.height=Math.max(8,Math.round(H/64));
     const comp=document.createElement('canvas');comp.width=W;comp.height=H;
     return state.__story={W,H,box,layer,bg,bgCtx:bg.getContext('2d'),comp,compCtx:comp.getContext('2d'),n:0};

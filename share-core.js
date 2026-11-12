@@ -18,11 +18,12 @@
   }
   // 区間内で速度を出せた打球の速度。区間の最初の打球と、間隔がラリーの区切りを超えた打球は数えない。
   // 平均・最高・「速度を出せた打球 n」・球速分布はすべてこの母集団から作る（ストーリーズの数字をそろえる）。
-  function windowSpeeds(selected,gap=2.5){
-    let last=null;const speeds=[];
-    selected.forEach(h=>{if(last!=null&&h.t>last&&h.t-last<=gap&&!h.qualityExcluded&&h.status!=='ignored'&&typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)speeds.push(h.speed);last=h.t;});
-    return speeds;
+  function windowSpeedHits(selected,gap=2.5){
+    let last=null,prev=null;const out=[];
+    selected.forEach(h=>{if(last!=null&&h.t>last&&h.t-last<=gap&&!h.qualityExcluded&&h.status!=='ignored'&&typeof h.speed==='number'&&Number.isFinite(h.speed)&&h.speed>0)out.push({hit:h,prev});last=h.t;prev=h;});
+    return out;
   }
+  function windowSpeeds(selected,gap=2.5){return windowSpeedHits(selected,gap).map(x=>x.hit.speed);}
   function inWindow(hits,start,end){return (hits||[]).filter(h=>Number.isFinite(h.t)&&h.t>=start&&h.t<=end).slice().sort((a,b)=>a.t-b.t);}
   function stats(hits,start,end,gap=2.5){
     const selected=inWindow(hits,start,end);
@@ -45,6 +46,24 @@
     const bands=BANDS.map(b=>({label:b.label,count:0})),speeds=windowSpeeds(inWindow(hits,start,end),gap);
     for(const v of speeds)bands[BANDS.findIndex(b=>v>=b.lo&&v<b.hi)].count++;
     return {withSpeed:speeds.length,bands};
+  }
+  // 左右別の球速分布（ストーリーズ用）。母集団は speedSummary と同じ。速度は打ち出した側（launchPlayer、無ければ直前の打球の打者）に付ける。
+  // flip は A/B の入れ替え。全部の速度に打者が付いたとき（left+right＝withSpeed）だけ complete になる。
+  // 左右が交互の推定（映像で打者が決まらず countedEvents が埋めた打球＝playerEstimated）に基づく速度が、速度のある打球のこの割合を超えたら、左右別にしない。
+  const SIDE_ESTIMATE_MAX_RATIO=.1;
+  function speedSummarySides(hits,start,end,flip=false,gap=2.5){
+    const left=BANDS.map(b=>({label:b.label,count:0})),right=BANDS.map(b=>({label:b.label,count:0}));let nl=0,nr=0,withSpeed=0,estimated=0,unknown=0;
+    for(const {hit,prev} of windowSpeedHits(inWindow(hits,start,end),gap)){
+      withSpeed++;let player=hit.launchPlayer||prev?.player;
+      // この速度の左右を決めたのは直前の打球の打者。その打球が推定なら推定。印（playerEstimated）が無い古い記録は「分からない」として数える
+      if(prev?.playerEstimated===true)estimated++;else if(prev?.playerEstimated!==false)unknown++;
+      if(!['a','b'].includes(player))continue;
+      if(flip)player=player==='a'?'b':'a';
+      const i=BANDS.findIndex(b=>hit.speed>=b.lo&&hit.speed<b.hi);
+      if(player==='a'){left[i].count++;nl++;}else{right[i].count++;nr++;}
+    }
+    const complete=withSpeed>0&&nl+nr===withSpeed;
+    return {withSpeed,left,right,leftTotal:nl,rightTotal:nr,estimated,unknown,complete,reliable:complete&&unknown===0&&estimated<=withSpeed*SIDE_ESTIMATE_MAX_RATIO};
   }
   // 速度を出せなかった打球の理由を、その動画で実際にあったものだけ数える（結果画面用）。
   // hits は時刻順。qualityCode は速度レビューが付けた理由。付いていない打球は、ラリーの最初・前の打球との間隔・初速の上限で分ける。
@@ -111,5 +130,5 @@
     if(!hasAudio)return {value:verified?'confirmed':'audio',coverage,verified,audio};
     return {value:coverage!=null&&coverage>=minCoverage?'confirmed':'audio',coverage,verified,audio};
   }
-  return {distribution,speedSummary,noSpeedReasons,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt,measurementDefault};
+  return {SIDE_ESTIMATE_MAX_RATIO,distribution,speedSummary,speedSummarySides,noSpeedReasons,windowFor,fit,crop,stats,motionRange,hitAt,trajectoryTracks,trajectoryAt,measurementDefault};
 });

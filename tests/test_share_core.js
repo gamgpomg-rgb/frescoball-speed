@@ -157,3 +157,51 @@ console.log('Export measurement default follows pose coverage');
   assert.deepEqual(C.noSpeedReasons(old,{}).map(x=>[x.key,x.count]),[['first',1],['other',2]]);
   assert.deepEqual(C.noSpeedReasons(old.map((h,i)=>i===1?{...h,noSpeedReason:'initial_speed_above_trust_limit'}:h),{}).map(x=>[x.key,x.count]),[['first',1],['trust',1],['other',1]]);
 }
+// ストーリーズの左右別分布：左の合計＋右の合計＝速度を出せた打球 n。速度は打ち出した側に付け、A/B入れ替えで左右が逆になる。打者が付かないときは complete にならない
+{
+  const hits=[{t:0,player:'a',speed:null},{t:.5,player:'b',speed:45},{t:1,player:'a',speed:44},{t:1.5,player:'b',speed:62},{t:2,player:'a',speed:41}].map(h=>({...h,playerEstimated:false}));
+  const s=C.speedSummarySides(hits,0,10),all=C.speedSummary(hits,0,10);
+  assert.equal(s.withSpeed,all.withSpeed);assert.equal(s.leftTotal+s.rightTotal,s.withSpeed);assert.equal(s.complete,true);
+  // 打ち出した側＝直前の打球の打者：45 と 62 は a が打ち出し、44 と 41 は b が打ち出し
+  assert.deepEqual([s.leftTotal,s.rightTotal],[2,2]);
+  assert.equal(s.left.find(b=>b.label==='60〜65').count,1);assert.equal(s.right.find(b=>b.label==='60〜65').count,0);
+  const f=C.speedSummarySides(hits,0,10,true);assert.equal(f.left.find(b=>b.label==='60〜65').count,0);assert.equal(f.right.find(b=>b.label==='60〜65').count,1);
+  assert.equal(C.speedSummarySides(hits.map(h=>({...h,player:null})),0,10).complete,false,'without players the split is not trusted');
+  assert.equal(C.speedSummarySides([{t:0,speed:null}],0,10).complete,false);
+}
+// 左右別と全体の切り替え：映像で確認した記録（measurementSource==='confirmed'）で全部の速度に打者が付いたときだけ左右別。音だけの記録は全体のまま
+{
+  const texts=[];
+  const g=new Proxy({},{get:(t,k)=>k==='measureText'?()=>({width:10}):k==='createLinearGradient'?()=>({addColorStop(){}}):k==='fillText'?(txt)=>texts.push(String(txt)):()=>{},set:()=>true});
+  const mkCanvas=()=>({width:1080,height:1920,getContext:()=>g});
+  const ctx=vm.createContext({window:{FrescoShareCore:C},document:{createElement:mkCanvas},structuredClone});
+  vm.runInContext(code,ctx);
+  const video={videoWidth:1920,videoHeight:1080,currentTime:1};
+  const hits=[{t:0,player:'a',speed:null},{t:.5,player:'b',speed:45},{t:1,player:'a',speed:44},{t:1.5,player:'b',speed:62},{t:2,player:'a',speed:41}].map(h=>({...h,playerEstimated:false}));
+  const run=(measurementSource,h)=>{texts.length=0;ctx.window.FrescoShare.draw(mkCanvas(),video,{format:'story',style:'play',record:{hits:h,playerLabels:{a:'選手A',b:'選手B'},settings:{values:{distance:'7'}}},start:0,end:10,measurementSource,statsLabel:'動画全体の記録',conditions:{}});return texts.join('|');};
+  const lr=run('confirmed',hits);assert(/LEFT PLAYER 計2/.test(lr)&&/RIGHT PLAYER 計2/.test(lr),'confirmed record draws the left/right distribution');assert(lr.includes('左右は映像で確認'));
+  const audio=run('audio',hits);assert(!/計2/.test(audio.replace(/速度なし/g,''))&&!audio.includes('左右は映像で確認'),'audio-only record keeps the overall distribution');
+  assert(!run('confirmed',hits.map(h=>({...h,player:null}))).includes('左右は映像で確認'),'unattributed speeds fall back to the overall distribution');
+}
+// 左右が交互の推定に基づく速度の割合：0件・1割以下は左右別（1割以下は「うち推定n打」付き）、1割超と印の無い古い記録は全体の分布に戻す
+{
+  const chain=(n,estimatedAt)=>Array.from({length:n+1},(_,i)=>({t:i*.5,player:i%2?'b':'a',speed:i?45:null,playerEstimated:estimatedAt.includes(i)}));
+  const zero=C.speedSummarySides(chain(20,[]),0,100);
+  assert.equal(zero.estimated,0);assert.equal(zero.reliable,true);
+  // 速度は直前の打球の打者に付く。i=3 が推定なら、i=4 の速度が推定1件（20件中 5%）
+  const few=C.speedSummarySides(chain(20,[3]),0,100);
+  assert.equal(few.estimated,1);assert.equal(few.reliable,true);assert.equal(few.leftTotal+few.rightTotal,few.withSpeed);
+  const edge=C.speedSummarySides(chain(20,[3,5]),0,100);assert.equal(edge.estimated,2);assert.equal(edge.reliable,true,'exactly 10% is still allowed');
+  const many=C.speedSummarySides(chain(20,[3,5,7]),0,100);assert.equal(many.estimated,3);assert.equal(many.reliable,false,'more than 10% falls back to the overall distribution');
+  assert.equal(C.SIDE_ESTIMATE_MAX_RATIO,.1);
+  const legacy=C.speedSummarySides(chain(20,[]).map(({playerEstimated,...h})=>h),0,100);
+  assert.equal(legacy.unknown,20);assert.equal(legacy.reliable,false,'records without the estimate flag are treated as unknown, so the safe overall distribution is used');
+  // 描画：推定が少なければ「（うち推定n打）」付きの左右別、多ければ全体
+  const texts=[];const g=new Proxy({},{get:(t,k)=>k==='measureText'?()=>({width:10}):k==='createLinearGradient'?()=>({addColorStop(){}}):k==='fillText'?(txt)=>texts.push(String(txt)):()=>{},set:()=>true});
+  const mk=()=>({width:1080,height:1920,getContext:()=>g});
+  const ctx2=vm.createContext({window:{FrescoShareCore:C},document:{createElement:mk},structuredClone});vm.runInContext(code,ctx2);
+  const draw=h=>{texts.length=0;ctx2.window.FrescoShare.draw(mk(),{videoWidth:1920,videoHeight:1080,currentTime:1},{format:'story',style:'play',record:{hits:h,playerLabels:{a:'選手A',b:'選手B'},settings:{values:{distance:'7'}}},start:0,end:100,measurementSource:'confirmed',statsLabel:'動画全体の記録',conditions:{}});return texts.join('|');};
+  assert(draw(chain(20,[])).includes('左右は映像で確認')&&!draw(chain(20,[])).includes('うち推定'));
+  assert(draw(chain(20,[3])).includes('左右は映像で確認（うち推定1打）'));
+  const over=draw(chain(20,[3,5,7]));assert(!over.includes('左右は映像で確認')&&!over.includes('LEFT PLAYER 計'),'over 10% estimated: overall distribution, no mention of left/right');
+}
